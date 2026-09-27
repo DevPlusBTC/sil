@@ -1,0 +1,99 @@
+{
+  "name": "sil-language-support",
+  "displayName": "SIL Language Support (SMT Verified)",
+  "description": "Soporte oficial para el Lenguaje de Intención Semántica con verificación SMT en tiempo real.",
+  "version": "1.0.0",
+  "publisher": "sil-lang",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "main": "./client/out/extension.js",
+  "contributes": {
+    "languages": [{
+      "id": "sil",
+      "aliases": ["SIL", "sil"],
+      "extensions": [".sil"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "sil",
+      "scopeName": "source.sil",
+      "path": "./syntaxes/sil.tmLanguage.json"
+    }],
+    "configuration": {
+      "type": "object",
+      "title": "SIL Language Configuration",
+      "properties": {
+        "sil.enableSMTDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Habilitar diagnósticos SMT en tiempo real (requiere z3-solver instalado)"
+        },
+        "sil.smtTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "description": "Timeout para verificación SMT por archivo (ms)"
+        },
+        "sil.formatter.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Habilitar formateador canónico al guardar"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "sil.compile",
+        "title": "SIL: Compilar archivo actual a C99",
+        "category": "SIL"
+      },
+      {
+        "command": "sil.verify",
+        "title": "SIL: Verificar invariantes SMT del archivo actual",
+        "category": "SIL"
+      },
+      {
+        "command": "sil.format",
+        "title": "SIL: Formatear documento (silfmt)",
+        "category": "SIL"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "sil.compile",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "editorTextFocus && editorLangId == sil"
+      },
+      {
+        "command": "sil.verify",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorTextFocus && editorLangId == sil"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "eslint": "^8.50.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "activationEvents": [
+    "onLanguage:sil"
+  ]
+}

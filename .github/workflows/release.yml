@@ -1,0 +1,100 @@
+name: Compilación y Distribución Automática SIL
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-binaries:
+    name: Compilar Binarios Nativos (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: silc-linux-amd64
+            artifact: silc-linux-amd64
+          - os: macos-latest
+            target: silc-darwin-arm64
+            artifact: silc-darwin-arm64
+          - os: windows-latest
+            target: silc-windows-amd64.exe
+            artifact: silc-windows-amd64.exe
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Entorno Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Dependencias del Compilador
+        run: |
+          python -m pip install --upgrade pip
+          pip install z3-solver pyinstaller
+
+      - name: Compilar Ejecutable Standalone silc
+        run: |
+          pyinstaller --onefile --name ${{ matrix.target }} silc_bootstrap.py
+
+      - name: Generar Suma de Verificación SHA256
+        shell: bash
+        run: |
+          cd dist
+          sha256sum ${{ matrix.target }} > ${{ matrix.target }}.sha256
+          cat ${{ matrix.target }}.sha256
+
+      - name: Publicar Artefactos en Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            dist/${{ matrix.target }}
+            dist/${{ matrix.target }}.sha256
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job adicional: Validar que el código C99 generado compila correctamente
+  validate-c99:
+    name: Validar Backend C99 (GCC/Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar z3-solver
+        run: pip install z3-solver
+      - name: Ejecutar compilador y validar salida C99
+        run: |
+          python3 silc_bootstrap.py > /tmp/sil_output.c
+          gcc -std=c99 -Wall -Wextra -Werror -fsyntax-only /tmp/sil_output.c
+          echo "C99 syntax validation: PASSED"
+
+  # Job: Ejecutar suite de pruebas
+  test-suite:
+    name: Suite de Pruebas Completa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install z3-solver
+      - name: Ejecutar tests compilador
+        run: python3 test_sil_compiler.py -v
+      - name: Ejecutar tests stdlib
+        run: python3 test_sil_stdlib.py -v
+      - name: Ejecutar tests WASM
+        run: python3 test_sil_wasm.py -v

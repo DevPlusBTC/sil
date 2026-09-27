@@ -1,0 +1,27 @@
+# Archivo de Configuración de Proyecto SIL: sil.toml
+# Ejemplo de configuración para un servicio crítico de pagos
+
+[proyecto]
+nombre = "servicio_pagos_critico"
+version = "1.0.0"
+autor = "Equipo Core <dev@empresa.com>"
+edicion_sil = "2026"
+
+[dependencias]
+crypto_tpm = { git = "https://github.com/sil-lang/crypto-tpm", tag = "v1.2.0" }
+red_ebpf = { git = "https://github.com/sil-lang/ebpf-mesh", tag = "v0.8.1" }
+
+[verificacion_smt]
+timeout_segundos = 10
+demostrador_preferido = "z3"  # Alternativas: cvc5, yices2
+estricto = true
+
+[compilacion]
+objetivo = "native"  # native, wasm, spiirv, c99
+optimizacion = "max"  # none, speed, size, max
+vectorizacion = "auto"  # auto, simd, gpu, none
+
+[runtime]
+arena_inicial_kb = 64
+arena_max_mb = 512
+fibras_max = 100000
