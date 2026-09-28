@@ -1,0 +1,22 @@
+[package]
+name = "silc-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "silc"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+miette.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+silc-frontend.workspace = true
+silc-causal-ir.workspace = true
+silc-backend.workspace = true

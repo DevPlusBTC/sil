@@ -28,3 +28,8 @@ Thumbs.db
 
 # PDFs (source documents)
 *.pdf
+
+# Rust
+silc-core/target/
+silc-core/Cargo.lock
+**/*.rs.bk

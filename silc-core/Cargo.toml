@@ -1,0 +1,60 @@
+[workspace]
+members = [
+    "silc-cli",
+    "silc-frontend",
+    "silc-causal-ir",
+    "silc-backend",
+    "silc-runtime",
+    "silc-test",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["SIL Language Contributors"]
+license = "MIT"
+repository = "https://github.com/DevPlusBTC/sil"
+rust-version = "1.75.0"
+
+[workspace.dependencies]
+# Frontend
+logos = "0.15"
+chumsky = "0.9"
+miette = { version = "7.0", features = ["fancy"] }
+thiserror = "2.0"
+
+# Causal-IR + SMT
+z3 = "0.12"
+sha3 = "0.10"
+blake3 = "1.5"
+petgraph = "0.6"
+slotmap = "1.0"
+rustc-hash = "2.0"
+
+# Backend
+inkwell = { version = "0.4", features = ["llvm17-0", "target-all"] }
+wasm-encoder = "0.202"
+wasmparser = "0.202"
+
+# Runtime FFI
+cc = "1.1"
+libc = "0.2"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+# Tests
+insta = "1.38"
+proptest = "1.5"
+criterion = "0.5"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+# Internal crates
+silc-frontend = { path = "silc-frontend" }
+silc-causal-ir = { path = "silc-causal-ir" }
+silc-backend = { path = "silc-backend" }
+silc-runtime = { path = "silc-runtime" }

@@ -1,0 +1,20 @@
+[package]
+name = "silc-backend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+inkwell = { workspace = true, optional = true }
+wasm-encoder.workspace = true
+wasmparser.workspace = true
+thiserror.workspace = true
+miette.workspace = true
+silc-causal-ir.workspace = true
+
+[features]
+default = []
+llvm = ["dep:inkwell"]
