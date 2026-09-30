@@ -126,8 +126,8 @@ pub enum Token {
         Some(s[1..s.len()-1].to_string())
     })]
     Texto(String),
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_\-]*")]
-    Ident,
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_\-]*", |lex| lex.slice().to_string())]
+    Ident(String),
     #[token("->")] Arrow,
     #[token("==")] EqEq,
     #[token("!=")] NotEq,
@@ -217,7 +217,7 @@ pub fn lexear(fuente: &str) -> Vec<TokenFull> {
             }
             Ok(tok) => out.push(TokenFull::Tok(SpannedToken { tok, span })),
             Err(_) => {
-                out.push(TokenFull::Tok(SpannedToken { tok: Token::Ident, span }));
+                out.push(TokenFull::Tok(SpannedToken { tok: Token::Ident(String::from("\u{0}ERR")), span }));
             }
         }
     }
