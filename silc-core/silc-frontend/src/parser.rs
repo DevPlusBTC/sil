@@ -710,6 +710,29 @@ fn parse_tipo(p: &mut P) -> Result<TipoDato, ErrorFrontend> {
                 p.expect_kw(Token::A)?;
                 Ok(TipoDato::Mapa(Box::new(k), Box::new(parse_tipo(p)?)))
             }
+            Token::TConjunto => {
+                p.bump();
+                p.expect_kw(Token::De)?;
+                Ok(TipoDato::Conjunto(Box::new(parse_tipo(p)?)))
+            }
+            Token::TTupla => {
+                p.bump();
+                p.expect_kw(Token::De)?;
+                p.expect_sym(Token::LParen)?;
+                let mut xs = Vec::new();
+                if !p.peek_is_sym(&Token::RParen) {
+                    loop {
+                        xs.push(parse_tipo(p)?);
+                        if p.peek_is_sym(&Token::Comma) {
+                            p.bump();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                p.expect_sym(Token::RParen)?;
+                Ok(TipoDato::Tupla(xs))
+            }
             Token::Ident(_) => {
                 let id = parse_ident(p)?;
                 Ok(TipoDato::Nominal(id.nombre.clone()))

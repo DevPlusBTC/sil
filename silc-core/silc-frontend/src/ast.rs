@@ -107,8 +107,9 @@ pub enum TipoDato {
     USD, EUR,
     Lista(Box<TipoDato>),
     Mapa(Box<TipoDato>, Box<TipoDato>),
+    Conjunto(Box<TipoDato>),
+    Tupla(Vec<TipoDato>),
     Nominal(String),
-    // TODO(M2): Conjunto, Tupla, Tensor
 }
 
 /// Declaración de estructura (product type).

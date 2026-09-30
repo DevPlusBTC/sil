@@ -1,28 +1,47 @@
-//! Nodos Causal-IR: cuádruplo ortogonal ⟨ID_SSA, Operación, Capacidad, Invariante⟩.
+//! Nodos Causal-IR: cuadruplo ortogonal ⟨ID_SSA, Operacion, Capacidad, Invariante⟩.
 //!
+//! M3: definicion completa — tipos, operaciones, bloques, arenas.
 //! Corresponde a Whitepaper §7.2.
 
-use slotmap::new_key_type;
+use slotmap::{new_key_type, SlotMap};
+use std::collections::HashMap;
 
 new_key_type! {
     /// ID estable para valores SSA.
     pub struct ValueId;
-    /// ID estable para bloques básicos.
+    /// ID estable para bloques basicos.
     pub struct BlockId;
     /// ID estable para arenas.
     pub struct ArenaId;
 }
 
-/// Tipo SIL (subset M0, completo en M3).
+// =============================================================================
+// Tipos
+// =============================================================================
+
+/// Tipo SIL completo (mapeo 1:1 desde AST TipoDato).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SilType {
     Entero64,
+    Flotante64,
     Booleano,
     Texto,
+    CapacidadHardware,
     Void,
+    USD,
+    EUR,
+    Lista(Box<SilType>),
+    Mapa(Box<SilType>, Box<SilType>),
+    Conjunto(Box<SilType>),
+    Tupla(Vec<SilType>),
+    Nominal(String),
 }
 
-/// Permiso de capacidad (Zero-Trust).
+// =============================================================================
+// Capacidades (Zero-Trust)
+// =============================================================================
+
+/// Permiso de capacidad.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Permiso {
     LecturaArchivo,
@@ -31,7 +50,7 @@ pub enum Permiso {
     Ejecucion,
 }
 
-/// Requerimiento de capacidad para una operación de E/S.
+/// Requerimiento de capacidad para operacion de E/S.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapacidadReq {
     pub permiso: Permiso,
@@ -39,14 +58,27 @@ pub struct CapacidadReq {
     pub recurso: Option<String>,
 }
 
-/// Clase de invariante SMT.
+impl CapacidadReq {
+    /// TTL por defecto: 500 microsegundos (500_000 ns).
+    pub const TTL_DEFECTO_NS: u64 = 500_000;
+
+    pub fn red(recurso: Option<String>) -> Self {
+        Self { permiso: Permiso::Red, ttl_ns: Self::TTL_DEFECTO_NS, recurso }
+    }
+}
+
+// =============================================================================
+// Invariantes SMT
+// =============================================================================
+
+/// Clase de invariante.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaseInvariante {
     Asuncion,
     Demostracion,
 }
 
-/// Fórmula lógica (para traducción SMT).
+/// Formula logica (para traduccion SMT).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FormulaLogica {
     Var(String),
@@ -57,15 +89,27 @@ pub enum FormulaLogica {
         lhs: Box<FormulaLogica>,
         rhs: Box<FormulaLogica>,
     },
+    No(Box<FormulaLogica>),
 }
 
-/// Operador lógico/aritmético.
+/// Operador logico/aritmetico.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpLogico {
-    Gt, Lt, Eq, Add, Sub, Mul,
+    Gt,
+    Lt,
+    Eq,
+    Ne,
+    Ge,
+    Le,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    And,
+    Or,
 }
 
-/// Invariante SMT adjunta a una instrucción.
+/// Invariante SMT adjunta a instruccion.
 #[derive(Debug, Clone)]
 pub struct InvarianteSMT {
     pub formula: FormulaLogica,
@@ -73,24 +117,237 @@ pub struct InvarianteSMT {
     pub clase: ClaseInvariante,
 }
 
-/// Instrucción causal.
+impl InvarianteSMT {
+    /// Calcula hash SHA3-512 canonico de la formula.
+    pub fn con_hash(formula: FormulaLogica, clase: ClaseInvariante) -> Self {
+        use sha3::{Digest, Sha3_512};
+        let canon = canonizar(&formula);
+        let mut h = Sha3_512::new();
+        h.update(canon.as_bytes());
+        let digest = h.finalize();
+        let mut hash = [0u8; 64];
+        hash.copy_from_slice(&digest);
+        Self { formula, hash, clase }
+    }
+}
+
+/// Serializacion canonica para hashing estable.
+fn canonizar(f: &FormulaLogica) -> String {
+    match f {
+        FormulaLogica::Var(v) => format!("V:{v}"),
+        FormulaLogica::ConstInt(n) => format!("I:{n}"),
+        FormulaLogica::ConstBool(b) => format!("B:{b}"),
+        FormulaLogica::BinOp { op, lhs, rhs } => {
+            format!("({:?} {} {})", op, canonizar(lhs), canonizar(rhs))
+        }
+        FormulaLogica::No(x) => format!("(No {})", canonizar(x)),
+    }
+}
+
+// =============================================================================
+// Operaciones IR
+// =============================================================================
+
+/// Constante.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Constante {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Texto(String),
+}
+
+/// Operador aritmetico (con flag de seguridad SMT).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OpArit {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+/// Operador de comparacion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OpCmp {
+    Gt,
+    Lt,
+    Eq,
+    Ne,
+    Ge,
+    Le,
+}
+
+/// Operacion de E/S mediada por capacidad.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum OpIO {
+    LeerArchivo,
+    EscribirArchivo,
+    EnviarRed,
+    RecibirRed,
+}
+
+/// Instruccion causal.
 #[derive(Debug, Clone)]
 pub struct InstrCausal {
+    /// Resultado SSA (None para instrucciones sin valor: retornar-void, solicitar-cap, etc.)
+    pub resultado: Option<ValueId>,
     pub op: Operacion,
     pub capacidad: Option<CapacidadReq>,
     pub invariante: Option<InvarianteSMT>,
 }
 
-/// Operación IR.
+/// Operacion IR.
 #[derive(Debug, Clone)]
 pub enum Operacion {
-    Param { nombre: String, tipo: SilType },
-    AsignarArena { arena: ArenaId, nombre: String, valor: ValueId },
-    Retornar { valor: Option<ValueId> },
+    Param {
+        nombre: String,
+        tipo: SilType,
+    },
+    Const {
+        valor: Constante,
+        tipo: SilType,
+    },
+    AsignarArena {
+        arena: ArenaId,
+        nombre: String,
+        valor: ValueId,
+    },
+    Promover {
+        valor: ValueId,
+        destino: ArenaId,
+    },
+    BinOpSegura {
+        op: OpArit,
+        lhs: ValueId,
+        rhs: ValueId,
+        /// true si SMT probo no-overflow → backend emite `nsw` y omite checks.
+        sin_overflow: bool,
+    },
+    Comparar {
+        op: OpCmp,
+        lhs: ValueId,
+        rhs: ValueId,
+    },
+    Retornar {
+        valor: Option<ValueId>,
+    },
+    Ramificar {
+        cond: ValueId,
+        entonces: BlockId,
+        sino: BlockId,
+    },
+    Saltar {
+        destino: BlockId,
+    },
+    SolicitarCapacidad {
+        req: CapacidadReq,
+    },
+    ValidarCapacidad {
+        token: ValueId,
+    },
+    InvocarIO {
+        operacion: OpIO,
+        args: Vec<ValueId>,
+        token: ValueId,
+    },
+    CrearFibra {
+        entrada: BlockId,
+        arena: ArenaId,
+    },
+    EnviarCanal {
+        canal: ValueId,
+        valor: ValueId,
+    },
+    RecibirCanal {
+        canal: ValueId,
+    },
 }
 
-/// Tarea en IR.
-#[derive(Debug, Clone, Default)]
+// =============================================================================
+// Bloques y funcion
+// =============================================================================
+
+/// Terminador de bloque.
+#[derive(Debug, Clone)]
+pub enum Terminador {
+    Retorno(Option<ValueId>),
+    Salto(BlockId),
+    Rama {
+        cond: ValueId,
+        entonces: BlockId,
+        sino: BlockId,
+    },
+    Inalcanzable,
+}
+
+/// Bloque basico.
+#[derive(Debug, Clone)]
+pub struct Bloque {
+    pub id: BlockId,
+    pub instrs: Vec<InstrCausal>,
+    pub terminador: Terminador,
+}
+
+/// Clase de arena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArenaKind {
+    /// Arena local de tarea (vive lo que la tarea).
+    TareaLocal,
+    /// Sub-arena ciclica por iteracion (liberacion O(1) al fin de ciclo).
+    Ciclica,
+    /// Arena de persistencia long-lived (hoisting).
+    Persistente,
+}
+
+/// Info de arena.
+#[derive(Debug, Clone)]
+pub struct ArenaInfo {
+    pub kind: ArenaKind,
+    pub nombre: String,
+}
+
+/// Restriccion de hardware (del bloque `bajo restricciones:`).
+#[derive(Debug, Clone)]
+pub struct Restriccion {
+    pub clave: String,
+    pub valor: String,
+}
+
+/// Tarea en IR: CFG + tablas SSA + arenas + restricciones.
+#[derive(Debug, Clone)]
 pub struct TareaIR {
     pub nombre: String,
+    pub params: Vec<(String, SilType)>,
+    pub retorno: SilType,
+    pub bloques: SlotMap<BlockId, Bloque>,
+    pub entrada: BlockId,
+    /// Tipos de cada valor SSA.
+    pub tipos: HashMap<ValueId, SilType>,
+    /// Nombres de variables (para debug/smt): ValueId → nombre fuente.
+    pub nombres: HashMap<ValueId, String>,
+    pub arenas: SlotMap<ArenaId, ArenaInfo>,
+    pub arena_local: ArenaId,
+    pub restricciones: Vec<Restriccion>,
+}
+
+impl TareaIR {
+    /// Itera invariantes por clase (para el verificador SMT).
+    pub fn invariantes(&self, clase: ClaseInvariante) -> Vec<&InvarianteSMT> {
+        let mut out = Vec::new();
+        for (_, b) in self.bloques.iter() {
+            for i in &b.instrs {
+                if let Some(inv) = &i.invariante {
+                    if inv.clase == clase {
+                        out.push(inv);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Numero total de instrucciones (para metricas).
+    pub fn num_instrs(&self) -> usize {
+        self.bloques.values().map(|b| b.instrs.len()).sum()
+    }
 }
