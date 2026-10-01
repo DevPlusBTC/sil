@@ -1,0 +1,8 @@
+definir tarea procesar_pago(monto: Entero64) -> Entero64:
+    asumir monto > 0
+    demostrar monto > 0
+    let impuesto: Entero64 = monto * 19
+    retornar monto + impuesto
+    bajo restricciones:
+        gestion_memoria: arena
+        tiempo_ejecucion: constante
