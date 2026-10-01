@@ -31,7 +31,7 @@ Thumbs.db
 
 # Rust
 silc-core/target/
-silc-core/Cargo.lock
+# Cargo.lock SE COMMITEA (reproducibilidad M9)
 **/*.rs.bk
 
 # Artefactos examples

@@ -1,0 +1,15 @@
+# Configuración Cargo determinista (reproducibilidad bit-for-bit).
+# Ver M9: builds idénticos en máquinas distintas con mismo toolchain + lockfile.
+
+[build]
+# Rutas relativas en debuginfo (evita absolutos de la máquina).
+rustflags = ["--remap-path-prefix", "$HOME=~"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["--remap-path-prefix", "$HOME=~", "-C", "link-arg=-Wl,--build-id=none"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["--remap-path-prefix", "$HOME=~"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["--remap-path-prefix", "$HOME=~"]

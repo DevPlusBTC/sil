@@ -1,0 +1,116 @@
+name: CI Rust (build + test + clippy + fmt)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'silc-core/**'
+      - '.github/workflows/rust.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'silc-core/**'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Reproducibilidad: timestamp fijo desde git (o época si no hay git).
+  # El job de reproducibilidad lo sobrescribe con el commit real.
+  SOURCE_DATE_EPOCH: '1700000000'
+
+jobs:
+  # --- 1. Formato (falla rápido si no está formateado) ---
+  fmt:
+    name: fmt --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Verificar formato
+        run: cargo fmt --all --check
+        working-directory: silc-core
+
+  # --- 2. Matrix: build + test + clippy en 3 OS ---
+  build-test:
+    name: build+test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Build workspace
+        run: cargo build --workspace --locked
+        working-directory: silc-core
+
+      - name: Tests workspace
+        run: cargo test --workspace --locked
+        working-directory: silc-core
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        working-directory: silc-core
+
+  # --- 3. Python prototipo (no romper Fase -1) ---
+  python-proto:
+    name: python prototipo (31 tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Tests compilador
+        run: python3 test_sil_compiler.py
+      - name: Tests stdlib
+        run: python3 test_sil_stdlib.py
+      - name: Tests WASM
+        run: python3 test_sil_wasm.py
+
+  # --- 4. Reproducibilidad: doble build → hashes idénticos ---
+  reproducibilidad:
+    name: reproducible build (2x sha256)
+    runs-on: ubuntu-latest
+    needs: [build-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+
+      - name: Fijar SOURCE_DATE_EPOCH al commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> $GITHUB_ENV
+
+      - name: Build 1 (locked, frozen)
+        run: |
+          cargo build --locked --frozen -p silc-cli --release
+          sha256sum target/release/silc | tee /tmp/hash1.txt
+        working-directory: silc-core
+
+      - name: Limpiar y Build 2
+        run: |
+          cargo clean -p silc-cli
+          cargo build --locked --frozen -p silc-cli --release
+          sha256sum target/release/silc | tee /tmp/hash2.txt
+        working-directory: silc-core
+
+      - name: Comparar hashes
+        run: |
+          echo "Build 1: $(cat /tmp/hash1.txt)"
+          echo "Build 2: $(cat /tmp/hash2.txt)"
+          diff /tmp/hash1.txt /tmp/hash2.txt && echo "REPRODUCIBLE: hashes idénticos" || (echo "NO REPRODUCIBLE" && exit 1)
