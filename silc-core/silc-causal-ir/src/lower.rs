@@ -84,7 +84,12 @@ impl Ctx {
         invariante: Option<InvarianteSMT>,
     ) -> ValueId {
         let id = self.nuevo_valor(tipo);
-        self.emitir(InstrCausal { resultado: Some(id), op, capacidad, invariante });
+        self.emitir(InstrCausal {
+            resultado: Some(id),
+            op,
+            capacidad,
+            invariante,
+        });
         id
     }
 }
@@ -104,9 +109,10 @@ fn bajar_tipo(t: &A::TipoDato) -> Result<SilType, ErrorBajada> {
         A::TipoDato::USD => Ok(SilType::USD),
         A::TipoDato::EUR => Ok(SilType::EUR),
         A::TipoDato::Lista(x) => Ok(SilType::Lista(Box::new(bajar_tipo(x)?))),
-        A::TipoDato::Mapa(k, v) => {
-            Ok(SilType::Mapa(Box::new(bajar_tipo(k)?), Box::new(bajar_tipo(v)?)))
-        }
+        A::TipoDato::Mapa(k, v) => Ok(SilType::Mapa(
+            Box::new(bajar_tipo(k)?),
+            Box::new(bajar_tipo(v)?),
+        )),
         A::TipoDato::Conjunto(x) => Ok(SilType::Conjunto(Box::new(bajar_tipo(x)?))),
         A::TipoDato::Tupla(xs) => {
             let mut out = Vec::with_capacity(xs.len());
@@ -140,7 +146,10 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
                 A::Literal::Booleano(b) => (Constante::Bool(*b), SilType::Booleano),
             };
             Ok(ctx.emitir_con_resultado(
-                Operacion::Const { valor: c, tipo: t.clone() },
+                Operacion::Const {
+                    valor: c,
+                    tipo: t.clone(),
+                },
                 t,
                 None,
                 None,
@@ -153,7 +162,10 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
             let _ = bajar_expr(ctx, base)?;
             let t = SilType::Nominal(format!("prop:{}", prop.nombre));
             Ok(ctx.emitir_con_resultado(
-                Operacion::Const { valor: Constante::Int(0), tipo: t.clone() },
+                Operacion::Const {
+                    valor: Constante::Int(0),
+                    tipo: t.clone(),
+                },
                 t,
                 None,
                 None,
@@ -173,14 +185,23 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
                     // Tipo resultado = tipo lhs (M3: sin promoción numérica).
                     let t = ctx.tipo_de(l);
                     Ok(ctx.emitir_con_resultado(
-                        Operacion::BinOpSegura { op: o, lhs: l, rhs: r, sin_overflow: false },
+                        Operacion::BinOpSegura {
+                            op: o,
+                            lhs: l,
+                            rhs: r,
+                            sin_overflow: false,
+                        },
                         t,
                         None,
                         None,
                     ))
                 }
-                A::BinOp::Gt | A::BinOp::Lt | A::BinOp::Eq | A::BinOp::Ne
-                | A::BinOp::Ge | A::BinOp::Le => {
+                A::BinOp::Gt
+                | A::BinOp::Lt
+                | A::BinOp::Eq
+                | A::BinOp::Ne
+                | A::BinOp::Ge
+                | A::BinOp::Le => {
                     let o = match op {
                         A::BinOp::Gt => OpCmp::Gt,
                         A::BinOp::Lt => OpCmp::Lt,
@@ -190,7 +211,11 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
                         _ => OpCmp::Le,
                     };
                     Ok(ctx.emitir_con_resultado(
-                        Operacion::Comparar { op: o, lhs: l, rhs: r },
+                        Operacion::Comparar {
+                            op: o,
+                            lhs: l,
+                            rhs: r,
+                        },
                         SilType::Booleano,
                         None,
                         None,
@@ -202,7 +227,7 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
 }
 
 /// Convierte Expr AST → FormulaLogica (para invariantes SMT).
-fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
+fn a_formula(e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
     match e {
         A::Expr::Var(id) => Ok(FormulaLogica::Var(id.nombre.clone())),
         A::Expr::Lit(lit) => match lit {
@@ -227,15 +252,19 @@ fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
             };
             Ok(FormulaLogica::BinOp {
                 op: o,
-                lhs: Box::new(a_formula(ctx, lhs)?),
-                rhs: Box::new(a_formula(ctx, rhs)?),
+                lhs: Box::new(a_formula(lhs)?),
+                rhs: Box::new(a_formula(rhs)?),
             })
         }
         A::Expr::AccesoProp { base, prop, .. } => {
             // M3: propiedad como variable compuesta "base.prop".
             let b = match base.as_ref() {
                 A::Expr::Var(id) => id.nombre.clone(),
-                _ => return Err(ErrorBajada::ExpresionNoBajable("base compleja en invariante".into())),
+                _ => {
+                    return Err(ErrorBajada::ExpresionNoBajable(
+                        "base compleja en invariante".into(),
+                    ))
+                }
             };
             Ok(FormulaLogica::Var(format!("{b}.{}", prop.nombre)))
         }
@@ -249,7 +278,7 @@ fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
 fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
     match s {
         A::Stmt::Asumir { cond, .. } => {
-            let f = a_formula(ctx, cond)?;
+            let f = a_formula(cond)?;
             let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Asuncion);
             // Emitimos marcador: instrucción sin valor, solo invariante.
             ctx.emitir(InstrCausal {
@@ -265,7 +294,7 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
         }
         A::Stmt::Demostrar { cond, .. } | A::Stmt::Verificar { cond, .. } => {
             let v = bajar_expr(ctx, cond)?;
-            let f = a_formula(ctx, cond)?;
+            let f = a_formula(cond)?;
             let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Demostracion);
             // Adjuntamos la invariante a una instrucción de comparación ya emitida
             // buscándola por resultado; simplificación M3: emitimos marcador.
@@ -281,7 +310,9 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             });
             Ok(())
         }
-        A::Stmt::Asignar { nombre, tipo, expr, .. } => {
+        A::Stmt::Asignar {
+            nombre, tipo, expr, ..
+        } => {
             let v = bajar_expr(ctx, expr)?;
             let t = ctx.tipo_de(v);
             // Verificar anotación de tipo si existe (M3: igualdad estructural).
@@ -295,7 +326,11 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             }
             let arena = ctx.arena_local;
             let av = ctx.emitir_con_resultado(
-                Operacion::AsignarArena { arena, nombre: nombre.nombre.clone(), valor: v },
+                Operacion::AsignarArena {
+                    arena,
+                    nombre: nombre.nombre.clone(),
+                    valor: v,
+                },
                 t,
                 None,
                 None,
@@ -337,7 +372,10 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         let id = ctx.nuevo_valor(t.clone());
         ctx.emitir(InstrCausal {
             resultado: Some(id),
-            op: Operacion::Param { nombre: p.nombre.nombre.clone(), tipo: t.clone() },
+            op: Operacion::Param {
+                nombre: p.nombre.nombre.clone(),
+                tipo: t.clone(),
+            },
             capacidad: None,
             invariante: None,
         });
@@ -365,7 +403,10 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         .cuerpo
         .restricciones
         .iter()
-        .map(|r| Restriccion { clave: r.clave.clone(), valor: r.valor.clone() })
+        .map(|r| Restriccion {
+            clave: r.clave.clone(),
+            valor: r.valor.clone(),
+        })
         .collect();
 
     // 5. Tipo de retorno.
@@ -407,7 +448,9 @@ mod tests {
     fn bajar(src: &str) -> TareaIR {
         let prog = parsear(&lexear(src)).expect("parse OK");
         assert_eq!(prog.defs.len(), 1);
-        let A::Decl::Tarea(t) = &prog.defs[0] else { panic!("esperaba tarea") };
+        let A::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!("esperaba tarea")
+        };
         bajar_tarea(t).expect("lower OK")
     }
 
@@ -417,24 +460,29 @@ mod tests {
         // params: 1 valor; retorno: sin valor nuevo. Total valores = 1.
         assert_eq!(ir.tipos.len(), 1);
         // Cada valor tiene tipo registrado.
-        for (_, t) in ir.tipos.iter() {
+        for t in ir.tipos.values() {
             assert_eq!(*t, SilType::Entero64);
         }
     }
 
     #[test]
     fn asignacion_registra_nombre_y_tipo() {
-        let ir = bajar("definir tarea f() -> Entero64:\n    let x: Entero64 = 42\n    retornar x\n");
+        let ir =
+            bajar("definir tarea f() -> Entero64:\n    let x: Entero64 = 42\n    retornar x\n");
         // Valores: const 42, asign x. Nombres: x registrado.
         assert!(ir.nombres.values().any(|n| n == "x"));
         // La variable x resuelve al valor de la asignación.
         let total_instrs = ir.num_instrs();
-        assert!(total_instrs >= 3, "const + asignar + retorno, got {total_instrs}");
+        assert!(
+            total_instrs >= 3,
+            "const + asignar + retorno, got {total_instrs}"
+        );
     }
 
     #[test]
     fn asumir_genera_invariante_asuncion() {
-        let ir = bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
+        let ir =
+            bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
         let asunciones = ir.invariantes(ClaseInvariante::Asuncion);
         assert_eq!(asunciones.len(), 1);
         // Hash de 64 bytes no nulo.
@@ -443,22 +491,28 @@ mod tests {
 
     #[test]
     fn demostrar_genera_invariante_demostracion() {
-        let ir = bajar("definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n");
+        let ir = bajar(
+            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+        );
         let demos = ir.invariantes(ClaseInvariante::Demostracion);
         assert_eq!(demos.len(), 1);
     }
 
     #[test]
     fn verificar_es_demostracion() {
-        let ir = bajar("definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n");
+        let ir = bajar(
+            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+        );
         let demos = ir.invariantes(ClaseInvariante::Demostracion);
         assert_eq!(demos.len(), 1);
     }
 
     #[test]
     fn hash_determinista_misma_formula() {
-        let ir1 = bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
-        let ir2 = bajar("definir tarea g(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
+        let ir1 =
+            bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
+        let ir2 =
+            bajar("definir tarea g(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
         let h1 = ir1.invariantes(ClaseInvariante::Asuncion)[0].hash;
         let h2 = ir2.invariantes(ClaseInvariante::Asuncion)[0].hash;
         assert_eq!(h1, h2, "misma fórmula → mismo hash (caché incremental)");
@@ -467,10 +521,7 @@ mod tests {
     #[test]
     fn tipos_colecciones() {
         let ir = bajar("definir tarea f(xs: Lista de Entero64) -> Entero64:\n    retornar 0\n");
-        assert_eq!(
-            ir.params[0].1,
-            SilType::Lista(Box::new(SilType::Entero64))
-        );
+        assert_eq!(ir.params[0].1, SilType::Lista(Box::new(SilType::Entero64)));
     }
 
     #[test]
@@ -478,15 +529,19 @@ mod tests {
         let ir = bajar("definir tarea f() -> Entero64:\n    retornar 1\n    bajo restricciones:\n        gestion_memoria: arena\n");
         assert_eq!(ir.restricciones.len(), 1);
         // La clave preserva el nombre original del token (minúsculas).
-        assert!(ir.restricciones[0].clave.contains("gestion")
-            || ir.restricciones[0].clave.contains("Gestion")
-            || !ir.restricciones[0].clave.is_empty());
+        assert!(
+            ir.restricciones[0].clave.contains("gestion")
+                || ir.restricciones[0].clave.contains("Gestion")
+                || !ir.restricciones[0].clave.is_empty()
+        );
     }
 
     #[test]
     fn variable_no_definida_error() {
         let prog = parsear(&lexear("definir tarea f() -> Entero64:\n    retornar z\n")).unwrap();
-        let A::Decl::Tarea(t) = &prog.defs[0] else { panic!() };
+        let A::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
         let r = bajar_tarea(t);
         assert!(matches!(r, Err(ErrorBajada::VariableNoDefinida(_))));
     }

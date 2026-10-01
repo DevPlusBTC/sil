@@ -42,8 +42,13 @@ fn valtype(t: &SilType) -> Result<ValType, ErrorWasm> {
         SilType::Flotante64 => Ok(ValType::F64),
         SilType::Booleano => Ok(ValType::I32),
         SilType::Texto => Ok(ValType::I32), // M6: puntero i32 a memoria lineal
-        SilType::Void => Err(ErrorWasm::TipoNoSoportado("Void como valor (solo retorno)".into())),
-        SilType::Lista(_) | SilType::Mapa(..) | SilType::Conjunto(_) | SilType::Tupla(_)
+        SilType::Void => Err(ErrorWasm::TipoNoSoportado(
+            "Void como valor (solo retorno)".into(),
+        )),
+        SilType::Lista(_)
+        | SilType::Mapa(..)
+        | SilType::Conjunto(_)
+        | SilType::Tupla(_)
         | SilType::Nominal(_) => Err(ErrorWasm::TipoNoSoportado(format!("{t:?}"))),
     }
 }
@@ -94,12 +99,23 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
     let mut types = TypeSection::new();
     types.function(params.clone(), results.clone());
     types.function([ValType::I32], []);
-    types.function([ValType::I32, ValType::I32, ValType::I32, ValType::I32], [ValType::I32]);
+    types.function(
+        [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+        [ValType::I32],
+    );
     module.section(&types);
 
     let mut imports = ImportSection::new();
-    imports.import("wasi_snapshot_preview1", "proc_exit", wasm_encoder::EntityType::Function(1));
-    imports.import("wasi_snapshot_preview1", "fd_write", wasm_encoder::EntityType::Function(2));
+    imports.import(
+        "wasi_snapshot_preview1",
+        "proc_exit",
+        wasm_encoder::EntityType::Function(1),
+    );
+    imports.import(
+        "wasi_snapshot_preview1",
+        "fd_write",
+        wasm_encoder::EntityType::Function(2),
+    );
     module.section(&imports);
 
     // FunctionSection: nuestra función usa type 0.
@@ -109,7 +125,12 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
 
     // MemorySection: 1 página inicial, sin máximo (M6).
     let mut mems = MemorySection::new();
-    mems.memory(MemoryType { minimum: 1, maximum: None, memory64: false, shared: false });
+    mems.memory(MemoryType {
+        minimum: 1,
+        maximum: None,
+        memory64: false,
+        shared: false,
+    });
     module.section(&mems);
 
     // ExportSection: memory + función.
@@ -141,9 +162,11 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
                         // Params no necesitan local extra (ya son parámetros).
                         let es_param = matches!(ins.op, Operacion::Param { .. });
                         if !es_param {
-                            orden_vals.push((v, valtype(&t).map_err(|_| {
-                                ErrorWasm::TipoNoSoportado(format!("{t:?}"))
-                            })?));
+                            orden_vals.push((
+                                v,
+                                valtype(&t)
+                                    .map_err(|_| ErrorWasm::TipoNoSoportado(format!("{t:?}")))?,
+                            ));
                         }
                     }
                 }
@@ -208,10 +231,14 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
     // Pushear valor de retorno a la pila (si no es void).
     if !results.is_empty() {
         if let Some(v) = valor_retorno {
-            let idx = locales.get(&v).ok_or_else(|| ErrorWasm::Wasm("retorno sin local".into()))?;
+            let idx = locales
+                .get(&v)
+                .ok_or_else(|| ErrorWasm::Wasm("retorno sin local".into()))?;
             f.instruction(&wasm_encoder::Instruction::LocalGet(*idx));
         } else {
-            return Err(ErrorWasm::Wasm("función con retorno declarado pero sin valor".into()));
+            return Err(ErrorWasm::Wasm(
+                "función con retorno declarado pero sin valor".into(),
+            ));
         }
     }
 
@@ -235,7 +262,10 @@ fn emitir_instr(
             .ok_or_else(|| ErrorWasm::Wasm("instr sin resultado/local".into()))
     };
     let src = |v: ValueId| -> Result<u32, ErrorWasm> {
-        locales.get(&v).copied().ok_or_else(|| ErrorWasm::Wasm("operando sin local".into()))
+        locales
+            .get(&v)
+            .copied()
+            .ok_or_else(|| ErrorWasm::Wasm("operando sin local".into()))
     };
     match &ins.op {
         Operacion::Param { .. } => {
@@ -246,8 +276,10 @@ fn emitir_instr(
                 let d = dst(Some(v))?;
                 match valor {
                     Constante::Int(n) => f.instruction(&wasm_encoder::Instruction::I64Const(*n)),
-                    Constante::Float(x) => f.instruction(&wasm_encoder::Instruction::F64Const((*x).into())),
-                    Constante::Bool(b) => f.instruction(&wasm_encoder::Instruction::I32Const(i32::from(*b))),
+                    Constante::Float(x) => f.instruction(&wasm_encoder::Instruction::F64Const(*x)),
+                    Constante::Bool(b) => {
+                        f.instruction(&wasm_encoder::Instruction::I32Const(i32::from(*b)))
+                    }
                     Constante::Texto(_) => f.instruction(&wasm_encoder::Instruction::I32Const(0)),
                 };
                 f.instruction(&wasm_encoder::Instruction::LocalSet(d));
@@ -344,7 +376,9 @@ mod tests {
 
     fn ir_de(src: &str) -> TareaIR {
         let prog = parsear(&lexear(src)).expect("parse OK");
-        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else { panic!() };
+        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
         bajar_tarea(t).expect("lower OK")
     }
 
@@ -377,14 +411,18 @@ mod tests {
                 }
             }
         }
-        assert!(exports.contains(&"mifunc".to_string()), "exports: {exports:?}");
+        assert!(
+            exports.contains(&"mifunc".to_string()),
+            "exports: {exports:?}"
+        );
         assert!(exports.contains(&"memory".to_string()));
     }
 
     #[test]
     fn aritmetica_params_valida() {
         // x + y con ambos params → local.get + add. Válido M6.
-        let ir = ir_de("definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n");
+        let ir =
+            ir_de("definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
     }
@@ -395,7 +433,9 @@ mod tests {
         // M6: `retornar x > 0` no es sintaxis CNL válida (retornar expr aritmética).
         // Usamos tarea que retorna param y tiene verificación (la verificación
         // no emite código que rompa la pila en M6 por diseño).
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+        );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
     }

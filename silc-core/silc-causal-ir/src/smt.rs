@@ -34,10 +34,7 @@ pub enum ErrorSMT {
         contraejemplo: String,
     },
     #[error("SMT no pudo decidir (timeout {timeout_ms}ms o teoria incompleta). Hash: {hash_hex}")]
-    Indecidible {
-        timeout_ms: u64,
-        hash_hex: String,
-    },
+    Indecidible { timeout_ms: u64, hash_hex: String },
     #[error("Error interno SMT: {0}")]
     Interno(String),
 }
@@ -173,7 +170,11 @@ impl CacheLemas {
                 }
             }
         }
-        Self { probados, path, dirty: false }
+        Self {
+            probados,
+            path,
+            dirty: false,
+        }
     }
 
     pub fn contiene(&self, hash: &[u8; 64]) -> bool {
@@ -209,12 +210,21 @@ impl CacheLemas {
 
     #[cfg(test)]
     pub fn en_memoria() -> Self {
-        Self { probados: HashMap::new(), path: PathBuf::from(":memory:"), dirty: false }
+        Self {
+            probados: HashMap::new(),
+            path: PathBuf::from(":memory:"),
+            dirty: false,
+        }
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.probados.len()
+    }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.probados.is_empty()
     }
 }
 
@@ -284,7 +294,10 @@ struct Intervalo {
 
 impl Intervalo {
     fn todo() -> Self {
-        Self { lo: i64::MIN, hi: i64::MAX }
+        Self {
+            lo: i64::MIN,
+            hi: i64::MAX,
+        }
     }
 }
 
@@ -322,7 +335,9 @@ impl BackendSMT for VerificadorIntervalos {
         // 2. Evaluar meta en el espacio de intervalos.
         match evaluar_meta(&ivs, meta) {
             EvalMeta::SiempreVerdadera => ResultadoVerif::Valido,
-            EvalMeta::Falsificable(ejemplo) => ResultadoVerif::Violada { contraejemplo: ejemplo },
+            EvalMeta::Falsificable(ejemplo) => ResultadoVerif::Violada {
+                contraejemplo: ejemplo,
+            },
             EvalMeta::Indecidible => ResultadoVerif::Desconocido,
         }
     }
@@ -334,8 +349,7 @@ fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica) -> bool
     // Forma: Var OP Const | Const OP Var
     if let FormulaLogica::BinOp { op, lhs, rhs } = a {
         // Caso Var OP Const
-        if let (FormulaLogica::Var(v), FormulaLogica::ConstInt(c)) = (lhs.as_ref(), rhs.as_ref())
-        {
+        if let (FormulaLogica::Var(v), FormulaLogica::ConstInt(c)) = (lhs.as_ref(), rhs.as_ref()) {
             let iv = ivs.entry(v.clone()).or_insert(Intervalo::todo());
             match op {
                 OpLogico::Gt => iv.lo = iv.lo.max(c.saturating_add(1)),
@@ -351,8 +365,7 @@ fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica) -> bool
             return iv.lo <= iv.hi;
         }
         // Caso Const OP Var (invertir operador)
-        if let (FormulaLogica::ConstInt(c), FormulaLogica::Var(v)) = (lhs.as_ref(), rhs.as_ref())
-        {
+        if let (FormulaLogica::ConstInt(c), FormulaLogica::Var(v)) = (lhs.as_ref(), rhs.as_ref()) {
             let iv = ivs.entry(v.clone()).or_insert(Intervalo::todo());
             match op {
                 OpLogico::Gt => iv.hi = iv.hi.min(c.saturating_sub(1)), // c > v ⟺ v < c
@@ -390,7 +403,12 @@ fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica) -> bool
         }
     }
     // And/Or de asunciones: aplicar cada lado.
-    if let FormulaLogica::BinOp { op: OpLogico::And, lhs, rhs } = a {
+    if let FormulaLogica::BinOp {
+        op: OpLogico::And,
+        lhs,
+        rhs,
+    } = a
+    {
         let l = aplicar_asuncion(ivs, lhs);
         let r = aplicar_asuncion(ivs, rhs);
         return l && r;
@@ -424,9 +442,12 @@ fn evaluar_meta(ivs: &Map<String, Intervalo>, meta: &FormulaLogica) -> EvalMeta 
             }
         }
         FormulaLogica::BinOp { op, lhs, rhs } => match op {
-            OpLogico::Gt | OpLogico::Ge | OpLogico::Lt | OpLogico::Le | OpLogico::Eq | OpLogico::Ne => {
-                evaluar_comparacion(ivs, *op, lhs, rhs)
-            }
+            OpLogico::Gt
+            | OpLogico::Ge
+            | OpLogico::Lt
+            | OpLogico::Le
+            | OpLogico::Eq
+            | OpLogico::Ne => evaluar_comparacion(ivs, *op, lhs, rhs),
             OpLogico::And => {
                 // A∧B válida ⟺ A válida y B válida.
                 match (evaluar_meta(ivs, lhs), evaluar_meta(ivs, rhs)) {
@@ -504,9 +525,7 @@ fn evaluar_comparacion(
             let val = if (mask >> i) & 1 == 1 { iv.hi } else { iv.lo };
             asign.insert(v.clone(), val);
         }
-        match eval_concreta(lhs, &asign)
-            .and_then(|l| eval_concreta(rhs, &asign).map(|r| (l, r)))
-        {
+        match eval_concreta(lhs, &asign).zip(eval_concreta(rhs, &asign)) {
             Some((l, r)) => {
                 let vale = match op {
                     OpLogico::Gt => l > r,
@@ -632,7 +651,7 @@ pub mod z3_backend {
             meta: &FormulaLogica,
             timeout_ms: u64,
         ) -> ResultadoVerif {
-            use z3::{Config, Context, Solver, SatResult};
+            use z3::{Config, Context, SatResult, Solver};
 
             let cfg = Config::new();
             let ctx = Context::new(&cfg);
@@ -675,8 +694,12 @@ pub mod z3_backend {
                 match f {
                     FormulaLogica::ConstBool(b) => Some(z3::ast::Bool::from_bool(ctx, *b)),
                     FormulaLogica::BinOp { op, lhs, rhs } => match op {
-                        OpLogico::Gt | OpLogico::Ge | OpLogico::Lt | OpLogico::Le
-                        | OpLogico::Eq | OpLogico::Ne => {
+                        OpLogico::Gt
+                        | OpLogico::Ge
+                        | OpLogico::Lt
+                        | OpLogico::Le
+                        | OpLogico::Eq
+                        | OpLogico::Ne => {
                             let l = trad(ctx, vars, lhs)?;
                             let r = trad(ctx, vars, rhs)?;
                             Some(match op {
@@ -811,7 +834,9 @@ mod tests {
 
     fn ir_de(src: &str) -> TareaIR {
         let prog = parsear(&lexear(src)).expect("parse OK");
-        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else { panic!() };
+        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
         bajar_tarea(t).expect("lower OK")
     }
 
@@ -872,7 +897,10 @@ mod tests {
         let e = verif_falla("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 5\n    retornar x\n");
         match e {
             ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
-                assert!(contraejemplo.contains('x'), "contraejemplo menciona x: {contraejemplo}");
+                assert!(
+                    contraejemplo.contains('x'),
+                    "contraejemplo menciona x: {contraejemplo}"
+                );
             }
             other => panic!("esperaba Violada, got {other:?}"),
         }
@@ -881,7 +909,9 @@ mod tests {
     #[test]
     fn sin_asunciones_meta_falsa() {
         // ⊢ x > 0 es falso (x=0). El intervalo por defecto es todo Z.
-        let e = verif_falla("definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n");
+        let e = verif_falla(
+            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+        );
         assert!(matches!(e, ErrorSMT::InvarianteViolada { .. }));
     }
 
@@ -889,7 +919,9 @@ mod tests {
     fn igualdad_exacta() {
         verif_ok("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
         // x == 3 ⊢ x >= 3
-        verif_ok("definir tarea g(x: Entero64) -> Entero64:\n    demostrar 3 > 2\n    retornar x\n");
+        verif_ok(
+            "definir tarea g(x: Entero64) -> Entero64:\n    demostrar 3 > 2\n    retornar x\n",
+        );
     }
 
     #[test]
@@ -904,7 +936,12 @@ mod tests {
         // aunque el backend falle: usamos backend que siempre dice Desconocido).
         struct SiempreDesconocido;
         impl BackendSMT for SiempreDesconocido {
-            fn verificar(&mut self, _: &[FormulaLogica], _: &FormulaLogica, _: u64) -> ResultadoVerif {
+            fn verificar(
+                &mut self,
+                _: &[FormulaLogica],
+                _: &FormulaLogica,
+                _: u64,
+            ) -> ResultadoVerif {
                 ResultadoVerif::Desconocido
             }
         }

@@ -56,9 +56,18 @@ pub struct Cuerpo {
 /// Sentencia CNL.
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Verificar { cond: Expr, span: Span },
-    Asumir { cond: Expr, span: Span },
-    Demostrar { cond: Expr, span: Span },
+    Verificar {
+        cond: Expr,
+        span: Span,
+    },
+    Asumir {
+        cond: Expr,
+        span: Span,
+    },
+    Demostrar {
+        cond: Expr,
+        span: Span,
+    },
     Asignar {
         nombre: Ident,
         tipo: Option<TipoDato>,
@@ -66,7 +75,10 @@ pub enum Stmt {
         mutable: bool,
         span: Span,
     },
-    Retornar { expr: Option<Expr>, span: Span },
+    Retornar {
+        expr: Option<Expr>,
+        span: Span,
+    },
     // TODO(M2): Coincidir, EfectoSecundario, Transformacion, Persistencia
 }
 
@@ -75,8 +87,17 @@ pub enum Stmt {
 pub enum Expr {
     Var(Ident),
     Lit(Literal),
-    AccesoProp { base: Box<Expr>, prop: Ident, span: Span },
-    BinOp { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr>, span: Span },
+    AccesoProp {
+        base: Box<Expr>,
+        prop: Ident,
+        span: Span,
+    },
+    BinOp {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+        span: Span,
+    },
 }
 
 /// Literal.
@@ -91,8 +112,16 @@ pub enum Literal {
 /// Operador binario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
-    Gt, Lt, Eq, Ne, Ge, Le,
-    Add, Sub, Mul, Div,
+    Gt,
+    Lt,
+    Eq,
+    Ne,
+    Ge,
+    Le,
+    Add,
+    Sub,
+    Mul,
+    Div,
 }
 
 /// Tipo de dato.
@@ -104,7 +133,8 @@ pub enum TipoDato {
     Texto,
     CapacidadHardware,
     Void,
-    USD, EUR,
+    USD,
+    EUR,
     Lista(Box<TipoDato>),
     Mapa(Box<TipoDato>, Box<TipoDato>),
     Conjunto(Box<TipoDato>),

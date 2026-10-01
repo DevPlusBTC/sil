@@ -228,7 +228,13 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
     p.expect_dedent()?;
 
     let fin = cuerpo_fin(&cuerpo);
-    Ok(TareaDecl { nombre, params, retorno, cuerpo, span: inicio..fin })
+    Ok(TareaDecl {
+        nombre,
+        params,
+        retorno,
+        cuerpo,
+        span: inicio..fin,
+    })
 }
 
 fn cuerpo_fin(c: &Cuerpo) -> usize {
@@ -255,7 +261,10 @@ fn parse_cuerpo(p: &mut P) -> Result<Cuerpo, ErrorFrontend> {
             }
         }
     }
-    Ok(Cuerpo { stmts, restricciones })
+    Ok(Cuerpo {
+        stmts,
+        restricciones,
+    })
 }
 
 // BloqueRestricciones ::= "bajo" "restricciones" ":" NL INDENT Restriccion { NL Restriccion } DEDENT
@@ -305,7 +314,11 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
                 })
             }
         };
-        out.push(Restriccion { clave: clave_nombre, valor, span: 0..0 });
+        out.push(Restriccion {
+            clave: clave_nombre,
+            valor,
+            span: 0..0,
+        });
     }
     p.expect_dedent()?;
     Ok(out)
@@ -334,9 +347,7 @@ fn parse_estructura(p: &mut P) -> Result<EstructuraDecl, ErrorFrontend> {
         }
         let n = parse_ident(p)?;
         // "como" es keyword opcional en CNL (id como Tipo | id: Tipo)
-        if p.peek_is_kw(&Token::Como) {
-            p.bump();
-        } else if p.peek_is_sym(&Token::Colon) {
+        if p.peek_is_kw(&Token::Como) || p.peek_is_sym(&Token::Colon) {
             p.bump();
         } else {
             return Err(match p.peek() {
@@ -352,7 +363,11 @@ fn parse_estructura(p: &mut P) -> Result<EstructuraDecl, ErrorFrontend> {
         campos.push(Campo { nombre: n, tipo: t });
     }
     p.expect_dedent()?;
-    Ok(EstructuraDecl { nombre, campos, span: inicio..inicio })
+    Ok(EstructuraDecl {
+        nombre,
+        campos,
+        span: inicio..inicio,
+    })
 }
 
 // Variante ::= "definir" "variante" Ident ":" NL INDENT ("opcion" Ident ["con" "datos" "(" Campos ")"] { NL ... }) DEDENT
@@ -380,7 +395,10 @@ fn parse_variante(p: &mut P) -> Result<VarianteDecl, ErrorFrontend> {
                     let fn_ = parse_ident(p)?;
                     p.expect_sym(Token::Colon)?;
                     let ft = parse_tipo(p)?;
-                    datos.push(Campo { nombre: fn_, tipo: ft });
+                    datos.push(Campo {
+                        nombre: fn_,
+                        tipo: ft,
+                    });
                     if p.peek_is_sym(&Token::Comma) {
                         p.bump();
                     } else {
@@ -393,7 +411,11 @@ fn parse_variante(p: &mut P) -> Result<VarianteDecl, ErrorFrontend> {
         casos.push(CasoVariante { nombre: cn, datos });
     }
     p.expect_dedent()?;
-    Ok(VarianteDecl { nombre, casos, span: inicio..inicio })
+    Ok(VarianteDecl {
+        nombre,
+        casos,
+        span: inicio..inicio,
+    })
 }
 
 // =============================================================================
@@ -408,19 +430,28 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                 p.bump();
                 p.expect_kw(Token::Que)?;
                 let c = parse_expr_logica(p)?;
-                Ok(Stmt::Verificar { cond: c, span: sp.start..sp.start })
+                Ok(Stmt::Verificar {
+                    cond: c,
+                    span: sp.start..sp.start,
+                })
             }
             Token::Asumir => {
                 let sp = s.span.clone();
                 p.bump();
                 let c = parse_expr_logica(p)?;
-                Ok(Stmt::Asumir { cond: c, span: sp.start..sp.start })
+                Ok(Stmt::Asumir {
+                    cond: c,
+                    span: sp.start..sp.start,
+                })
             }
             Token::Demostrar => {
                 let sp = s.span.clone();
                 p.bump();
                 let c = parse_expr_logica(p)?;
-                Ok(Stmt::Demostrar { cond: c, span: sp.start..sp.start })
+                Ok(Stmt::Demostrar {
+                    cond: c,
+                    span: sp.start..sp.start,
+                })
             }
             Token::Let => {
                 let sp = s.span.clone();
@@ -440,7 +471,13 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                 };
                 p.expect_sym(Token::Eq)?;
                 let e = parse_expr(p)?;
-                Ok(Stmt::Asignar { nombre: n, tipo, expr: e, mutable, span: sp.start..sp.start })
+                Ok(Stmt::Asignar {
+                    nombre: n,
+                    tipo,
+                    expr: e,
+                    mutable,
+                    span: sp.start..sp.start,
+                })
             }
             Token::Retornar => {
                 let sp = s.span.clone();
@@ -450,7 +487,10 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                     TokenFull::Newline { .. } | TokenFull::Dedent { .. } | TokenFull::Eof => None,
                     _ => Some(parse_expr(p)?),
                 };
-                Ok(Stmt::Retornar { expr: e, span: sp.start..sp.start })
+                Ok(Stmt::Retornar {
+                    expr: e,
+                    span: sp.start..sp.start,
+                })
             }
             _ => Err(ErrorFrontend::TokenInesperado {
                 esperado: "verificar | asumir | demostrar | let | retornar".into(),
@@ -525,7 +565,12 @@ fn parse_cmp(p: &mut P) -> Result<Expr, ErrorFrontend> {
     if let Some(op) = op {
         let rhs = parse_add(p)?;
         let span = expr_span(&lhs);
-        Ok(Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs), span })
+        Ok(Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span,
+        })
     } else {
         Ok(lhs)
     }
@@ -544,7 +589,12 @@ fn parse_add(p: &mut P) -> Result<Expr, ErrorFrontend> {
         p.bump();
         let rhs = parse_mul(p)?;
         let span = expr_span(&lhs);
-        lhs = Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs), span };
+        lhs = Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span,
+        };
     }
     Ok(lhs)
 }
@@ -562,7 +612,12 @@ fn parse_mul(p: &mut P) -> Result<Expr, ErrorFrontend> {
         p.bump();
         let rhs = parse_primary(p)?;
         let span = expr_span(&lhs);
-        lhs = Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs), span };
+        lhs = Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span,
+        };
     }
     Ok(lhs)
 }
@@ -594,11 +649,18 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
                 let sp = s.span.clone();
                 let n = nombre.clone();
                 p.bump();
-                let base = Ident { nombre: n, span: sp.clone() };
+                let base = Ident {
+                    nombre: n,
+                    span: sp.clone(),
+                };
                 if p.peek_is_sym(&Token::Dot) {
                     p.bump();
                     let prop = parse_ident(p)?;
-                    Ok(Expr::AccesoProp { base: Box::new(Expr::Var(base)), prop, span: sp })
+                    Ok(Expr::AccesoProp {
+                        base: Box::new(Expr::Var(base)),
+                        prop,
+                        span: sp,
+                    })
                 } else {
                     Ok(Expr::Var(base))
                 }
@@ -646,7 +708,10 @@ fn parse_ident(p: &mut P) -> Result<Ident, ErrorFrontend> {
                 let sp = s.span.clone();
                 let n = nombre.clone();
                 p.bump();
-                Ok(Ident { nombre: n, span: sp })
+                Ok(Ident {
+                    nombre: n,
+                    span: sp,
+                })
             }
             _ => Err(ErrorFrontend::TokenInesperado {
                 esperado: "identificador".into(),
@@ -779,7 +844,10 @@ mod tests {
 
     #[test]
     fn tarea_con_params_y_retorno() {
-        let p = parse("definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n").unwrap();
+        let p = parse(
+            "definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+        )
+        .unwrap();
         match &p.defs[0] {
             Decl::Tarea(t) => {
                 assert_eq!(t.params.len(), 2);
@@ -818,7 +886,8 @@ mod tests {
 
     #[test]
     fn estructura_basica() {
-        let p = parse("definir estructura Cliente:\n    id como Entero64\n    nombre como Texto\n").unwrap();
+        let p = parse("definir estructura Cliente:\n    id como Entero64\n    nombre como Texto\n")
+            .unwrap();
         match &p.defs[0] {
             Decl::Estructura(e) => assert_eq!(e.campos.len(), 2),
             _ => panic!("esperaba estructura"),
@@ -827,7 +896,8 @@ mod tests {
 
     #[test]
     fn variante_basica() {
-        let p = parse("definir variante R:\n    opcion Ok con datos (id: Texto)\n    opcion Err\n").unwrap();
+        let p = parse("definir variante R:\n    opcion Ok con datos (id: Texto)\n    opcion Err\n")
+            .unwrap();
         match &p.defs[0] {
             Decl::Variante(v) => {
                 assert_eq!(v.casos.len(), 2);
@@ -849,7 +919,10 @@ mod tests {
         let p = parse("definir tarea f() -> Entero64:\n    retornar 1 + 2 * 3\n").unwrap();
         match &p.defs[0] {
             Decl::Tarea(t) => match &t.cuerpo.stmts[0] {
-                Stmt::Retornar { expr: Some(Expr::BinOp { op: BinOp::Add, .. }), .. } => {}
+                Stmt::Retornar {
+                    expr: Some(Expr::BinOp { op: BinOp::Add, .. }),
+                    ..
+                } => {}
                 other => panic!("esperaba Add en raíz, got {other:?}"),
             },
             _ => panic!("esperaba tarea"),

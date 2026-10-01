@@ -22,7 +22,9 @@ impl std::str::FromStr for Target {
             "wasm" | "wasm32-wasi" => Ok(Target::Wasm),
             "c99" => Ok(Target::C99),
             "spirv" => Ok(Target::Spirv),
-            _ => Err(format!("target desconocido: {s} (válidos: native, wasm, c99, spirv)")),
+            _ => Err(format!(
+                "target desconocido: {s} (válidos: native, wasm, c99, spirv)"
+            )),
         }
     }
 }

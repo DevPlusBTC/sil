@@ -28,7 +28,10 @@ fn check_ok() {
 
 #[test]
 fn check_falla_smt() {
-    let f = ejemplo("bad", "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 1000000\n    retornar x\n");
+    let f = ejemplo(
+        "bad",
+        "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 1000000\n    retornar x\n",
+    );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
@@ -49,14 +52,24 @@ fn check_error_sintaxis() {
 
 #[test]
 fn build_c99_genera_archivo() {
-    let f = ejemplo("b", "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n");
+    let f = ejemplo(
+        "b",
+        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+    );
     let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
     // Borrar el tempfile para que silc lo cree (o sobrescriba).
     drop(out);
     Command::cargo_bin("silc")
         .unwrap()
-        .args(["build", f.path().to_str().unwrap(), "--out", &out_path, "--target", "c99"])
+        .args([
+            "build",
+            f.path().to_str().unwrap(),
+            "--out",
+            &out_path,
+            "--target",
+            "c99",
+        ])
         .assert()
         .success();
     let c = std::fs::read_to_string(&out_path).unwrap();
@@ -67,13 +80,23 @@ fn build_c99_genera_archivo() {
 
 #[test]
 fn build_wasm_genera_binario_valido() {
-    let f = ejemplo("w", "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n");
+    let f = ejemplo(
+        "w",
+        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+    );
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
     drop(out);
     Command::cargo_bin("silc")
         .unwrap()
-        .args(["build", f.path().to_str().unwrap(), "--out", &out_path, "--target", "wasm"])
+        .args([
+            "build",
+            f.path().to_str().unwrap(),
+            "--out",
+            &out_path,
+            "--target",
+            "wasm",
+        ])
         .assert()
         .success();
     let b = std::fs::read(&out_path).unwrap();

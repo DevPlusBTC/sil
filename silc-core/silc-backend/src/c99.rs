@@ -110,7 +110,12 @@ struct Emisor {
 
 impl Emisor {
     fn new() -> Self {
-        Self { vars: HashMap::new(), tipos_c: HashMap::new(), next_v: 0, usa_bool: false }
+        Self {
+            vars: HashMap::new(),
+            tipos_c: HashMap::new(),
+            next_v: 0,
+            usa_bool: false,
+        }
     }
 
     fn var(&mut self, id: ValueId) -> String {
@@ -135,8 +140,13 @@ impl Emisor {
             SilType::CapacidadHardware => Ok("SilCap_".into()),
             SilType::Void => Ok("void".into()),
             SilType::USD | SilType::EUR => Ok("long long".into()),
-            SilType::Lista(_) | SilType::Mapa(..) | SilType::Conjunto(_) | SilType::Tupla(_)
-            | SilType::Nominal(_) => Err(ErrorC99::TipoNoSoportado(format!("{t:?} (M6: fat pointers)"))),
+            SilType::Lista(_)
+            | SilType::Mapa(..)
+            | SilType::Conjunto(_)
+            | SilType::Tupla(_)
+            | SilType::Nominal(_) => Err(ErrorC99::TipoNoSoportado(format!(
+                "{t:?} (M6: fat pointers)"
+            ))),
         }
     }
 }
@@ -267,7 +277,10 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
 
 fn c_nombre_fn(nombre: &str) -> String {
     // Sanitizar para C: solo alnum + _.
-    nombre.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect()
+    nombre
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect()
 }
 
 fn nombre_val(e: &Emisor, mapa_params: &HashMap<ValueId, String>, v: ValueId) -> String {
@@ -296,7 +309,9 @@ fn emitir_instr(
                     Constante::Int(x) => format!("{x}LL"),
                     Constante::Float(f) => format!("{f}"),
                     Constante::Bool(b) => format!("{}", i64::from(*b)),
-                    Constante::Texto(s) => format!("(SilTexto_){{\"{}\", {}}}", esc(s.as_str()), s.len()),
+                    Constante::Texto(s) => {
+                        format!("(SilTexto_){{\"{}\", {}}}", esc(s.as_str()), s.len())
+                    }
                 };
                 writeln!(cuerpo, "    {n} = {lit};").unwrap();
             }
@@ -308,7 +323,12 @@ fn emitir_instr(
                 writeln!(cuerpo, "    {n} = {src}; (void)\"{nombre}\";").unwrap();
             }
         }
-        Operacion::BinOpSegura { op, lhs, rhs, sin_overflow } => {
+        Operacion::BinOpSegura {
+            op,
+            lhs,
+            rhs,
+            sin_overflow,
+        } => {
             if let Some(v) = ins.resultado {
                 let n = nombre_val(e, mapa_params, v);
                 let l = nombre_val(e, mapa_params, *lhs);
@@ -375,6 +395,7 @@ fn emitir_instr(
     Ok(())
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn formula_a_c(
     f: &silc_causal_ir::nodes::FormulaLogica,
     e: &Emisor,
@@ -411,7 +432,9 @@ fn formula_a_c(
 }
 
 fn esc(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 // =============================================================================
@@ -426,7 +449,9 @@ mod tests {
 
     fn ir_de(src: &str) -> TareaIR {
         let prog = parsear(&lexear(src)).expect("parse OK");
-        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else { panic!() };
+        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
         bajar_tarea(t).expect("lower OK")
     }
 
@@ -469,7 +494,9 @@ mod tests {
 
     #[test]
     fn verificacion_emitida_como_if_exit() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+        );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("if (!("));
         assert!(c.contains("exit(1)"));
@@ -488,7 +515,9 @@ mod tests {
 
     #[test]
     fn gcc_acepta_con_verificacion() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+        );
         let c = emitir(&ir).unwrap();
         match compila_gcc(&c) {
             Ok(()) => {}
@@ -512,6 +541,9 @@ mod tests {
     fn tipos_no_soportados_error_limpio() {
         let ir = ir_de("definir tarea f(xs: Lista de Entero64) -> Entero64:\n    retornar 0\n");
         let r = emitir(&ir);
-        assert!(r.is_err(), "Lista debe fallar en M5 con error limpio (no panic)");
+        assert!(
+            r.is_err(),
+            "Lista debe fallar en M5 con error limpio (no panic)"
+        );
     }
 }

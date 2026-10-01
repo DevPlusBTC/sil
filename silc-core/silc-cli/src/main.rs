@@ -9,7 +9,11 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 #[derive(Parser, Debug)]
-#[command(name = "silc", version, about = "Compilador SIL (Semantic Intention Language) - Fase 0")]
+#[command(
+    name = "silc",
+    version,
+    about = "Compilador SIL (Semantic Intention Language) - Fase 0"
+)]
 struct Cli {
     /// Nivel de verbosidad (-v, -vv)
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
@@ -92,32 +96,50 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     for decl in &prog.defs {
         if let silc_frontend::ast::Decl::Tarea(t) = decl {
             let ir = silc_causal_ir::lower::bajar_tarea(t).map_err(|e| {
-                miette::miette!("{}: error de lowering en tarea '{}': {e}", path.display(), t.nombre.nombre)
+                miette::miette!(
+                    "{}: error de lowering en tarea '{}': {e}",
+                    path.display(),
+                    t.nombre.nombre
+                )
             })?;
             tareas_ir.push(ir);
         }
         // M8: estructuras/variantes se registran (sin codegen aún, pero no error).
     }
     if tareas_ir.is_empty() {
-        return Err(miette::miette!("{}: sin tareas para compilar", path.display()));
+        return Err(miette::miette!(
+            "{}: sin tareas para compilar",
+            path.display()
+        ));
     }
 
     // Fase 4: SMT verify cada tarea
     for ir in &tareas_ir {
         silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
-            miette::miette!("{}: verificación SMT falló en '{}': {e}", path.display(), ir.nombre)
+            miette::miette!(
+                "{}: verificación SMT falló en '{}': {e}",
+                path.display(),
+                ir.nombre
+            )
         })?;
     }
     info!(archivo = %nombre, tareas = tareas_ir.len(), "SMT OK");
 
-    Ok(Compilado { nombre_archivo: nombre, tareas_ir })
+    Ok(Compilado {
+        nombre_archivo: nombre,
+        tareas_ir,
+    })
 }
 
 fn cmd_check(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
     let mut ok = true;
     for arch in archivos {
         match compilar_archivo(arch, smt_timeout) {
-            Ok(c) => println!("{}: OK ({} tareas verificadas)", c.nombre_archivo, c.tareas_ir.len()),
+            Ok(c) => println!(
+                "{}: OK ({} tareas verificadas)",
+                c.nombre_archivo,
+                c.tareas_ir.len()
+            ),
             Err(e) => {
                 eprintln!("{e:?}");
                 ok = false;
@@ -140,9 +162,8 @@ fn cmd_emit_smt(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
             .map_err(|e| miette::miette!("{}: {e:?}", arch.display()))?;
         for decl in &prog.defs {
             if let silc_frontend::ast::Decl::Tarea(t) = decl {
-                let ir = silc_causal_ir::lower::bajar_tarea(t).map_err(|e| {
-                    miette::miette!("lower: {e}")
-                })?;
+                let ir = silc_causal_ir::lower::bajar_tarea(t)
+                    .map_err(|e| miette::miette!("lower: {e}"))?;
                 println!(";; === {} :: {} ===", arch.display(), ir.nombre);
                 print!("{}", silc_causal_ir::smt::script_completo(&ir));
             }
@@ -152,37 +173,61 @@ fn cmd_emit_smt(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
     Ok(())
 }
 
-fn cmd_build(archivos: &[PathBuf], out: &Path, target: &str, smt_timeout: u64, cc: bool) -> Result<()> {
+fn cmd_build(
+    archivos: &[PathBuf],
+    out: &Path,
+    target: &str,
+    smt_timeout: u64,
+    cc: bool,
+) -> Result<()> {
     if archivos.len() != 1 {
-        return Err(miette::miette!("M8: un solo archivo por build (multi-archivo en Fase 1)"));
+        return Err(miette::miette!(
+            "M8: un solo archivo por build (multi-archivo en Fase 1)"
+        ));
     }
     let c = compilar_archivo(&archivos[0], smt_timeout)?;
     if c.tareas_ir.len() != 1 {
-        return Err(miette::miette!("M8: una sola tarea por archivo (multi-tarea en Fase 1)"));
+        return Err(miette::miette!(
+            "M8: una sola tarea por archivo (multi-tarea en Fase 1)"
+        ));
     }
     let ir = &c.tareas_ir[0];
 
     match target {
         "c99" => {
-            let codigo = silc_backend::c99::emitir(ir)
-                .map_err(|e| miette::miette!("backend C99: {e}"))?;
+            let codigo =
+                silc_backend::c99::emitir(ir).map_err(|e| miette::miette!("backend C99: {e}"))?;
             std::fs::write(out, &codigo)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
-            println!("{} → {} ({} bytes C99)", c.nombre_archivo, out.display(), codigo.len());
+            println!(
+                "{} → {} ({} bytes C99)",
+                c.nombre_archivo,
+                out.display(),
+                codigo.len()
+            );
             if cc {
                 compilar_c_con_cc(out)?;
             }
         }
         "wasm" => {
-            let bytes = silc_backend::wasm::emitir(ir)
-                .map_err(|e| miette::miette!("backend WASM: {e}"))?;
+            let bytes =
+                silc_backend::wasm::emitir(ir).map_err(|e| miette::miette!("backend WASM: {e}"))?;
             std::fs::write(out, &bytes)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
-            println!("{} → {} ({} bytes WASM)", c.nombre_archivo, out.display(), bytes.len());
+            println!(
+                "{} → {} ({} bytes WASM)",
+                c.nombre_archivo,
+                out.display(),
+                bytes.len()
+            );
         }
-        otro => return Err(miette::miette!("target desconocido: {otro} (válidos: c99, wasm)")),
+        otro => {
+            return Err(miette::miette!(
+                "target desconocido: {otro} (válidos: c99, wasm)"
+            ))
+        }
     }
     Ok(())
 }
@@ -213,7 +258,9 @@ fn compilar_c_con_cc(c_path: &Path) -> Result<()> {
             }
         }
     }
-    Err(miette::miette!("ningún compilador C disponible (cc/gcc/clang): {ultimo_err}"))
+    Err(miette::miette!(
+        "ningún compilador C disponible (cc/gcc/clang): {ultimo_err}"
+    ))
 }
 
 fn cmd_run(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
@@ -267,7 +314,12 @@ fn main() -> Result<()> {
         .init();
 
     match cli.cmd {
-        Comando::Build { archivos, out, target, .. } => {
+        Comando::Build {
+            archivos,
+            out,
+            target,
+            ..
+        } => {
             // M8: flag --cc eliminado del struct (simplificado); usamos env SIL_CC=1.
             let cc = std::env::var("SIL_CC").map(|v| v == "1").unwrap_or(false);
             cmd_build(&archivos, &out, &target, cli.smt_timeout, cc)
@@ -276,7 +328,9 @@ fn main() -> Result<()> {
         Comando::EmitSmt { archivos } => cmd_emit_smt(&archivos, cli.smt_timeout),
         Comando::Run { archivos } => cmd_run(&archivos, cli.smt_timeout),
         Comando::Lsp => {
-            eprintln!("silc lsp: servidor LSP completo en Fase 1 (protocolo en silc_lsp.py prototipo).");
+            eprintln!(
+                "silc lsp: servidor LSP completo en Fase 1 (protocolo en silc_lsp.py prototipo)."
+            );
             eprintln!("M8: use `silc check --verbose` para diagnósticos incrementales.");
             Ok(())
         }

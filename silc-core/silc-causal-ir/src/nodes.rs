@@ -63,7 +63,11 @@ impl CapacidadReq {
     pub const TTL_DEFECTO_NS: u64 = 500_000;
 
     pub fn red(recurso: Option<String>) -> Self {
-        Self { permiso: Permiso::Red, ttl_ns: Self::TTL_DEFECTO_NS, recurso }
+        Self {
+            permiso: Permiso::Red,
+            ttl_ns: Self::TTL_DEFECTO_NS,
+            recurso,
+        }
     }
 }
 
@@ -127,7 +131,11 @@ impl InvarianteSMT {
         let digest = h.finalize();
         let mut hash = [0u8; 64];
         hash.copy_from_slice(&digest);
-        Self { formula, hash, clase }
+        Self {
+            formula,
+            hash,
+            clase,
+        }
     }
 }
 

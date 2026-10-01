@@ -48,12 +48,24 @@ extern "C" {
 
     fn sil_sched_crear(n_hilos: c_uint) -> *mut c_void;
     fn sil_sched_destruir(s: *mut c_void);
-    fn sil_sched_spawn(s: *mut c_void, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool;
+    fn sil_sched_spawn(
+        s: *mut c_void,
+        entrada: extern "C" fn(*mut c_void),
+        arg: *mut c_void,
+    ) -> bool;
     fn sil_sched_ejecutar(s: *mut c_void);
     fn sil_fibra_yield();
 
-    fn sil_cap_validar(cap: *const SilCapacidadFFI, requerido: c_uint, ahora_ns: c_ulonglong) -> bool;
-    fn sil_cap_solicitar(recurso: *const c_char, permisos: c_uint, ttl_ns: c_ulonglong) -> SilCapacidadFFI;
+    fn sil_cap_validar(
+        cap: *const SilCapacidadFFI,
+        requerido: c_uint,
+        ahora_ns: c_ulonglong,
+    ) -> bool;
+    fn sil_cap_solicitar(
+        recurso: *const c_char,
+        permisos: c_uint,
+        ttl_ns: c_ulonglong,
+    ) -> SilCapacidadFFI;
 }
 
 /// Versión del runtime embebido.
@@ -136,7 +148,11 @@ impl Scheduler {
 
     /// Registra una fibra. `entrada` debe ser `extern "C" fn(*mut c_void)`.
     /// Retorna false si se alcanzó el límite o OOM.
-    pub fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool {
+    ///
+    /// # Safety
+    /// `arg` debe ser válido para el tiempo de vida de la fibra (o nulo).
+    /// El llamador garantiza que `entrada` no hace UB con `arg`.
+    pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool {
         unsafe { sil_sched_spawn(self.ptr, entrada, arg) }
     }
 
@@ -275,8 +291,8 @@ mod tests {
     fn scheduler_ejecuta_fibras() {
         CONTADOR.store(0, Ordering::SeqCst);
         let mut s = Scheduler::nuevo();
-        assert!(s.spawn(fibra_suma, std::ptr::null_mut()));
-        assert!(s.spawn(fibra_suma, std::ptr::null_mut()));
+        assert!(unsafe { s.spawn(fibra_suma, std::ptr::null_mut()) });
+        assert!(unsafe { s.spawn(fibra_suma, std::ptr::null_mut()) });
         s.ejecutar();
         // Cada fibra: +1 luego +10 = 11. Dos fibras = 22.
         assert_eq!(CONTADOR.load(Ordering::SeqCst), 22);
