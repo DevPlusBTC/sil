@@ -1,0 +1,13 @@
+[package]
+name = "silc-lsp"
+version = "0.1.0"
+edition = "2021"
+[workspace]
+
+[dependencies]
+silc-frontend = { path = "../silc-frontend" }
+tempfile = "3.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }

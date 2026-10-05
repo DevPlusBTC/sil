@@ -1,0 +1,74 @@
+{
+  "name": "silc-vscode",
+  "displayName": "SIL Language Support",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./out/extension.js",
+  "categories": [
+    "Programming Languages",
+    "LSP"
+  ],
+  "description": "Language support for SIL (Source-Implementation Language) - provides linting, completion, hover, and diagnostics",
+  "license": "MIT",
+  "publisher": "silc-lang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sil-lang/vscode"
+  },
+  "scripts": {
+    "lint": "echo 'No lint config'",
+    "test": "echo 'No test config'"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "silc-vscode.toggleDiagnostics",
+        "title": "Toggle SIL Diagnostics"
+      }
+    ],
+    "languageFeatures": [
+      {
+        "contributes": {
+          "diagnosticProvider": {
+            "id": "silc-vscode",
+            "fileTypes": ["sil"],
+            "onTypeFormatting": false
+          }
+        },
+        "language": "sil"
+      },
+      {
+        "contributes": {
+          "completionProvider": {
+            "triggerCharacters": ["."],
+            "resolveProvider": true
+          }
+        },
+        "language": "sil"
+      },
+      {
+        "contributes": {
+          "hoverProvider": {
+            "fileTypes": ["sil"]
+          }
+        },
+        "language": "sil"
+      }
+    ],
+    "configuration": {
+      "properties": {
+        "silc-vscode.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable SIL diagnostics"
+        }
+      }
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vscode": "^1.1.0"
+  }
+}

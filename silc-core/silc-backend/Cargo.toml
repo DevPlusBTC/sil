@@ -1,6 +1,6 @@
 [package]
 name = "silc-backend"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -13,10 +13,10 @@ wasm-encoder.workspace = true
 wasmparser.workspace = true
 thiserror.workspace = true
 miette.workspace = true
-silc-causal-ir.workspace = true
+silc-causal-ir = { workspace = true }
 
 [dev-dependencies]
-silc-frontend.workspace = true
+silc-frontend = "0.1"
 
 [features]
 default = []

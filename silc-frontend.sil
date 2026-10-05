@@ -1,0 +1,3 @@
+definir tarea main() -> Entero64:
+    asumir verdadero
+    retornar 0

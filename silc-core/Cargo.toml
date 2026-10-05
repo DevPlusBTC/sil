@@ -52,6 +52,7 @@ proptest = "1.5"
 criterion = "0.5"
 assert_cmd = "2.0"
 predicates = "3.1"
+tempfile = "3.0"
 
 # Internal crates
 silc-frontend = { path = "silc-frontend" }
