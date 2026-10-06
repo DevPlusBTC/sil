@@ -1,0 +1,10 @@
+definir tarea validar_edad(edad: Entero64) -> Entero64:
+    asumir edad >= 18
+    asumir edad <= 150
+    demostrar edad >= 18
+    retornar 1
+
+definir tarea es_mayor_18(edad: Entero64) -> Entero64:
+    asumir edad >= 18
+    asumir edad <= 150
+    retornar 1

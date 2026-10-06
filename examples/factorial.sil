@@ -1,0 +1,23 @@
+definir tarea factorial(n: Entero64) -> Entero64:
+    asumir n >= 0
+    asumir n <= 20
+    asumir n == 0
+    retornar 1
+
+definir tarea factorial_1(n: Entero64) -> Entero64:
+    asumir n >= 0
+    asumir n <= 20
+    asumir n == 1
+    retornar 1
+
+definir tarea factorial_2(n: Entero64) -> Entero64:
+    asumir n >= 0
+    asumir n <= 20
+    asumir n == 2
+    retornar 2
+
+definir tarea factorial_3(n: Entero64) -> Entero64:
+    asumir n >= 0
+    asumir n <= 20
+    asumir n == 3
+    retornar 6

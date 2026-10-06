@@ -1,0 +1,16 @@
+definir tarea valor_producto(precio: Entero64, stock: Entero64) -> Entero64:
+    asumir precio > 0
+    asumir precio < 1000000
+    asumir stock >= 0
+    asumir stock < 10000
+    demostrar precio > 0
+    demostrar stock >= 0
+    retornar precio * stock
+
+definir tarea agregar_stock(stock: Entero64, cantidad: Entero64) -> Entero64:
+    asumir cantidad > 0
+    asumir cantidad < 1000
+    asumir stock >= 0
+    asumir stock < 10000
+    demostrar stock + cantidad > stock
+    retornar stock + cantidad

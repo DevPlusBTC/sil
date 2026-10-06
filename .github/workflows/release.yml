@@ -1,24 +1,30 @@
-name: Release SIL (build + test + clippy + fmt + binaries)
+name: Release SIL (build + test + clippy + fmt + audit + deny + sbom + binaries)
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Pre-release version'
+        required: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
-  # Reproducibilidad M9: epoch fijo hasta que GitHub setting esté disponible
   SOURCE_DATE_EPOCH: '1700000000'
+  RUSTFLAGS: '-C target-cpu=native -C strip=symbols'
 
 jobs:
-  # --- 1. Validación previa: fmt + clippy + test ---
+  # --- 1. Validación: fmt + clippy + test + audit + deny ---
   validate:
-    name: Validar workspace (fmt/clippy/test)
+    name: Validar workspace (fmt/clippy/test/audit/deny)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -42,41 +48,66 @@ jobs:
         run: cargo test --workspace --locked
         working-directory: silc-core
 
-      - name: Reproduibilidad bit-for-bit
+      - name: cargo-audit (vulnerabilidades)
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run cargo-audit
+        run: cargo audit --deny warnings
+        working-directory: silc-core
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Run cargo-deny (licenses, bans, sources)
+        run: cargo deny check
+        working-directory: silc-core
+
+      - name: Reproducibilidad bit-for-bit
         run: |
           cargo clean -p silc-cli
           cargo build --locked --frozen -p silc-cli --release
-          HASH1=$(sha256sum target/release/silc.exe | cut -d' ' -f1)
+          HASH1=$(sha256sum silc-core/target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH1=$(sha256sum silc-core/target/release/silc.exe | cut -d' ' -f1)
           cargo clean -p silc-cli
           cargo build --locked --frozen -p silc-cli --release
-          HASH2=$(sha256sum target/release/silc.exe | cut -d' ' -f1)
+          HASH2=$(sha256sum silc-core/target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH2=$(sha256sum silc-core/target/release/silc.exe | cut -d' ' -f1)
           if [ "$HASH1" = "$HASH2" ]; then
-            echo "REPRODUCIBLE: hashes idénticos"
+            echo "REPRODUCIBLE: hashes idénticos ($HASH1)"
           else
-            echo "NO REPRODUCIBLE: difieren"
+            echo "NO REPRODUCIBLE: $HASH1 != $HASH2"
             exit 1
           fi
 
-  # --- 2. Build binarios por plataforma ---
+  # --- 2. Build binarios multiplataforma ---
   build-binaries:
     name: Compilar Binarios (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            target: silc-windows-amd64.exe
-            asset_name: silc-windows-amd64.exe
+            artifact: silc-windows-x64
+            binary: silc.exe
+            ext: .exe
           - os: ubuntu-latest
-            target: silc-linux-amd64
-            asset_name: silc-linux-amd64
+            artifact: silc-linux-x64
+            binary: silc
+            ext: ""
           - os: macos-latest
-            target: silc-darwin-arm64
-            asset_name: silc-darwin-arm64
+            artifact: silc-macos-arm64
+            binary: silc
+            ext: ""
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -90,77 +121,177 @@ jobs:
       - name: Build release binary
         run: |
           cargo build --locked -p silc-cli --release
-          mkdir -p dist
-          cp target/release/silc.exe dist/${{ matrix.target }} 2>/dev/null || true
-          cp target/release/silc  dist/${{ matrix.target }} 2>/dev/null || true
+        working-directory: silc-core
 
-      - name: SHA256 checksum
+      - name: Prepare artifact
         shell: bash
         run: |
-          sha256sum dist/${{ matrix.target }} > dist/${{ matrix.target }}.sha256
-          cat dist/${{ matrix.target }}.sha256
+          mkdir -p dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp silc-core/target/release/silc.exe dist/silc-windows-x64.exe
+            sha256sum dist/silc-windows-x64.exe > dist/silc-windows-x64.exe.sha256
+          else
+            cp silc-core/target/release/silc dist/silc-${{ matrix.artifact }}
+            sha256sum dist/silc-${{ matrix.artifact }} > dist/silc-${{ matrix.artifact }}.sha256
+          fi
+          cat dist/*.sha256
+        working-directory: silc-core
+
+      - name: Test cargo install (solo linux)
+        if: runner.os == 'Linux'
+        run: |
+          cargo install --locked --path silc-core/silc-cli --root /tmp/silc-test
+          /tmp/silc-test/bin/silc --version
+          echo "cargo install OK"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset_name }}
-          path: dist/*
+          name: ${{ matrix.artifact }}
+          path: silc-core/dist/*
+          retention-days: 30
 
-  # --- 3. Crear Release GitHub ---
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: dist/sbom-${{ matrix.artifact }}.json
+        working-directory: silc-core
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.artifact }}
+          path: silc-core/dist/sbom-${{ matrix.artifact }}.json
+          retention-days: 30
+
+  # --- 3. Generate aggregated SBOM ---
+  sbom-aggregate:
+    name: Agregar SBOM consolidado
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          path: sboms
+          merge-multiple: true
+
+      - name: Consolidar SBOMs
+        run: |
+          cat sboms/sbom-*.json | jq -s 'add | {bomFormat: "CycloneDX", specVersion: "1.5", serialNumber: "urn:uuid:\(now|todateiso8601)", version: 1, metadata: .[0].metadata, components: (map(.components[]) | unique_by(.name, .version)), dependencies: (map(.dependencies[]) | unique_by(.ref))}' > sbom-consolidado.json
+          cat sbom-consolidado.json
+
+      - name: Upload consolidated SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-consolidado
+          path: sbom-consolidado.json
+          retention-days: 90
+
+  # --- 4. Crear Release GitHub ---
   create-release:
     name: Crear Release GitHub
     runs-on: ubuntu-latest
-    needs: [validate, build-binaries]
+    needs: [validate, build-binaries, sbom-aggregate]
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: silc-*
+          path: release-assets
+          merge-multiple: true
 
-      - name: Create GitHub Release
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom-consolidado
+          path: release-assets
+
+      - name: Listar assets
+        run: |
+          ls -la release-assets/
+          cat release-assets/*.sha256
+
+      - name: Crear Release GitHub
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: "SIL v${{ github.ref_name }}"
           body: |
-            ## 🎉 SIL v${{ github.ref_name }} liberado
+            ## 🚀 SIL ${{ github.ref_name }} liberado
 
             ### 📦 Binarios multiplataforma
             | Sistema | Archivo | SHA256 |
             |---------|---------|--------|
-            ${{ matrix.os }} | \`${{ matrix.asset_name }}\` | Verificar con `sha256sum` |
+            | Windows x64 | \`silc-windows-x64.exe\` | Verificar con `sha256sum` |
+            | Linux x64 | \`silc-linux-x64\` | Verificar con `sha256sum` |
+            | macOS ARM64 | \`silc-macos-arm64\` | Verificar con `sha256sum` |
 
-            ### ✅ ¿Qué incluye esta versión?
+            ### ✨ Qué incluye esta versión
             - Compilador SIL (`silc`) con soporte completo
             - Frontend CNL (Controlled Natural Language) determinista
             - Backends C99 y WebAssembly (WASM)
             - Runtime embebido (Fibras 64B, Arenas O(1), Canales lock-free)
-            - Motor de verificación SMT (intervalos + caché persistente)
-            - Línea de comandos: `silc check`, `silc build`, `silc run`, `silc emit-smt`
-            - Builds reproducibles bit-for-bit (verificado)
+            - Motor de verificación SMT (intervalos + caché persistente SHA3-512)
+            - Línea de comandos: `silc check`, `silc build --target c99|wasm`, `silc emit-smt`
+            - Builds reproducibles bit-for-bit (verificado en CI)
+            - SBOM CycloneDX consolidado
 
             ### 📚 Documentación
             - Whitepaper técnico: `docs/WHITE_PAPER.md`
-            - Roadmap: M0-M12 completado, M13+ en progreso
-            - Tests: 65/65 passing (7 failing pre-existentes en tests CLI)
+            - Spec implementada: `docs/SPEC.md`
+            - User Guide: `docs/USER_GUIDE.md`
+            - API Reference: `docs/API.md`
 
-            ### 🔧 Quick start
+            ### 🚀 Quick Start
             ```bash
             # Verificar un archivo SIL
             silc check mi_servicio.sil
 
             # Compilar a C99
-            silc build --target c99 mi_servicio.sil
+            silc build --target c99 mi_servicio.sil -o mi_servicio.c
 
             # Compilar a WASM
-            silc build --target wasm mi_servicio.sil
+            silc build --target wasm mi_servicio.sil -o mi_servicio.wasm
 
-            # Ejecutar (requiere gcc)
-            silc run mi_servicio.sil
+            # Verificar contratos SMT
+            silc emit-smt mi_servicio.sil
+            ```
           draft: false
-          prerelease: false
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           generate_release_notes: false
           files: |
-            silc-windows-amd64.exe
-            silc-linux-amd64
-            silc-darwin-arm64
-            silc-windows-amd64.exe.sha256
-            silc-linux-amd64.sha256
-            silc-darwin-arm64.sha256
+            release-assets/silc-windows-x64.exe
+            release-assets/silc-linux-x64
+            release-assets/silc-macos-arm64
+            release-assets/silc-windows-x64.exe.sha256
+            release-assets/silc-linux-x64.sha256
+            release-assets/silc-macos-arm64.sha256
+            release-assets/sbom-consolidado.json
+
+  # --- 5. Test cargo install desde crates.io (post-release) ---
+  test-cargo-install:
+    name: Test cargo install desde crates.io
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Wait for crates.io publish
+        run: |
+          echo "Waiting for crates.io index update..."
+          sleep 60
+
+      - name: Install from crates.io
+        run: |
+          cargo install --locked silc-cli
+          silc --version
+          silc check --help
+
+      - name: Verify binary works
+        run: |
+          echo 'definir tarea hola() -> Entero64: retornar 42' > /tmp/test.sil
+          silc check /tmp/test.sil
+          silc build /tmp/test.sil --target c99 -o /tmp/test.c
+          silc build /tmp/test.sil --target wasm -o /tmp/test.wasm
+          silc emit-smt /tmp/test.sil

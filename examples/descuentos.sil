@@ -1,0 +1,6 @@
+definir tarea descuento_porcentaje(precio: Entero64, pct: Entero64) -> Entero64:
+    asumir precio > 0
+    asumir precio < 10000
+    asumir pct >= 0
+    asumir pct <= 50
+    retornar precio * (100 - pct) / 100

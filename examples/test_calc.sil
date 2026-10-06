@@ -1,0 +1,2 @@
+definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:
+    retornar x + y
