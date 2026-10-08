@@ -6,6 +6,7 @@ members = [
     "silc-backend",
     "silc-runtime",
     "silc-test",
+    "silc-std",
 ]
 resolver = "2"
 
@@ -59,3 +60,4 @@ silc-frontend = { path = "silc-frontend" }
 silc-causal-ir = { path = "silc-causal-ir" }
 silc-backend = { path = "silc-backend" }
 silc-runtime = { path = "silc-runtime" }
+silc-std = { path = "silc-std" }

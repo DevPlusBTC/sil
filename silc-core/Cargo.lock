@@ -1599,6 +1599,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "silc-std"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "libc",
+ "miette",
+ "predicates",
+ "silc-causal-ir",
+ "silc-runtime",
+ "tempfile",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "silc-test"
 version = "0.1.0"
 dependencies = [
