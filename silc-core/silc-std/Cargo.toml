@@ -9,8 +9,8 @@ rust-version.workspace = true
 description = "Standard library prelude for SIL language"
 
 [dependencies]
-silc-runtime = { path = "../silc-runtime" }
-silc-causal-ir = { path = "../silc-causal-ir" }
+silc-runtime = { version = "0.1", path = "../silc-runtime" }
+silc-causal-ir = { version = "0.1", path = "../silc-causal-ir" }
 libc = { workspace = true }
 thiserror = { workspace = true }
 miette = { workspace = true }
