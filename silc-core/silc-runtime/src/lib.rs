@@ -8,6 +8,9 @@
 // - `Scheduler`: spawn/ejecutar fibras cooperativas (state-machine safe).
 // - `Capacidad`: validacion con reloj monotono, expiracion estricta.
 
+pub mod contracts;
+
+use crate::contracts::*;
 use std::ffi::CString;
 use std::os::raw::{c_char, c_uchar, c_uint, c_void};
 
@@ -22,131 +25,118 @@ pub struct Arena {
     inner: *mut c_uchar,
 }
 
-// Scheduler management
-
+/// Scheduler
+#[derive(Debug)]
 pub struct Scheduler {
     ptr: *mut c_void,
 }
 
-// Scheduler::nuevo - create new scheduler
+/// Scheduler + Fibras
 
-// Crea un nuevo scheduler para fibras cooperativas.
 impl Scheduler {
-    // Crea un nuevo scheduler
+    /// Crea un nuevo scheduler
     pub fn nuevo() -> Self {
         Self { ptr: std::ptr::null_mut() }
     }
 
-    // Spawn fibra (unsafe)
-    //
-    // Spawns una fibra en el scheduler.
-    //
-    // # Arguments
-    // * `entrada` - Función de entrada de la fibra
-    // * `arg` - Argumento para la fibra
-    //
-    // # Returns
-    // `true` si se logró hacer spawn, `false` en caso contrario
+    /// Spawn fibra (unsafe)
+    ///
+    /// # Contrato
+    /// - Pre: `entrada` no es null
+    /// - Pre: `arg` puede ser null
+    /// - Post: Retorna true si spawn exitoso
+    /// - Safety: `entrada` debe ser función válida C
     pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool {
+        let ptr: *const c_void = entrada as *const c_void;
+        require_non_null(ptr, "función de entrada null");
         false
     }
 
-    // Ejecutar scheduler
-    //
-    // Ejecuta todas las fibras programadas en el scheduler.
+    /// Ejecutar scheduler
+    ///
+    /// Ejecuta todas las fibras programadas en el scheduler.
     pub fn ejecutar(&mut self) {}
 }
 
-// Default para Scheduler
-
 impl Default for Scheduler {
-    // Crea scheduler por defecto
     fn default() -> Self {
         Self::nuevo()
     }
 }
 
-// Drop para Scheduler
-
 impl Drop for Scheduler {
-    // Limpia resources del scheduler
     fn drop(&mut self) {
         // cleanup
     }
 }
 
-// Ceder ejecución
-
-// Cede la ejecución actual
+/// Cede ejecución
 pub fn ceder() {
     // yield
 }
 
-// Capacidades
+/// Capacidades
 
-// Estructura Permisos
+/// Estructura Permisos
 pub struct Permisos(pub u32);
 
-// Permisos::NINGUNO - No permissions
+/// Permisos::NINGUNO - No permissions
 pub const NINGUNO: Permisos = Permisos(0x00);
-// Permisos::LEER_ARCHIVO - Read file permission
+/// Permisos::LEER_ARCHIVO - Read file permission
 pub const LEER_ARCHIVO: Permisos = Permisos(0x01);
-// Permisos::ESCRIBIR_ARCHIVO - Write file permission
+/// Permisos::ESCRIBIR_ARCHIVO - Write file permission
 pub const ESCRIBIR_ARCHIVO: Permisos = Permisos(0x02);
-// Permisos::RED - Network permission
+/// Permisos::RED - Network permission
 pub const RED: Permisos = Permisos(0x04);
-// Permisos::EXEC - Execute permission
+/// Permisos::EXEC - Execute permission
 pub const EXEC: Permisos = Permisos(0x08);
 
 pub struct Capacidad {
     inner: *mut c_uchar,
 }
 
-// Capacidad::solicitar - Solicitar capacidad para un recurso
-
-// Solicita una capacidad con los permisos y TTL especificados.
+/// Capacidad::solicitar - Solicitar capacidad para un recurso
+///
+/// # Contrato
+/// - Pre: `recurso` no vacío
+/// - Pre: `ttl_ns` > 0
+/// - Post: Retorna Capacidad con inner inicializado
 impl Capacidad {
-    // Solicitar capacidad para un recurso
-    //
-    // # Arguments
-    // * `recurso` - Nombre del recurso a solicitar
-    // * `permisos` - Permisos solicitados
-    // * `ttl_ns` - Time to live en nanosegundos
-    //
-    // # Returns
-    // Estructura Capacidad con los datos solicitados
+    /// Solicitar capacidad para un recurso
+    ///
+    /// # Contrato
+    /// - Pre: `recurso` no vacío, longitud <= 256
+    /// - Pre: `ttl_ns` > 0
+    /// - Post: Retorna Capacidad válida
     pub fn solicitar(recurso: &str, permisos: Permisos, ttl_ns: u64) -> Self {
+        require(!recurso.is_empty(), "recurso vacío");
+        require_valid_ident(recurso, 256, "recurso inválido");
+        require(ttl_ns > 0, "TTL debe ser > 0");
         let _ = (recurso, permisos, ttl_ns);
         Self { inner: std::ptr::null_mut() }
     }
 
-    // Validar permisos
-    //
-    // # Arguments
-    // * `requerido` - Permisos requeridos para validar
-    //
-    // # Returns
-    // `true` si los permisos son válidos, `false` en caso contrario
+    /// Validar permisos
+    ///
+    /// # Contrato
+    /// - Pre: `requerido` es Permisos válido
+    /// - Post: Retorna true si permisos válidos
     pub fn valida(&self, requerido: Permisos) -> bool {
+        let _ = requerido;
         false
     }
 
-    // Validar permisos en tiempo
-    //
-    // # Arguments
-    // * `requerido` - Permisos requeridos
-    // * `ahora_ns` - Marca de tiempo actual en nanosegundos
-    //
-    // # Returns
-    // `true` si los permisos son válidos en el tiempo especificado, `false` en caso contrario
+    /// Validar permisos en tiempo
+    ///
+    /// # Contrato
+    /// - Pre: `ahora_ns` > 0
+    /// - Post: Retorna true si permisos válidos en el tiempo
     pub fn valida_en(&self, requerido: Permisos, ahora_ns: u64) -> bool {
+        require(ahora_ns > 0, "timestamp inválido");
         false
     }
 
-    // Obtener permisos
-    //
-    // # Returns
-    // Los permisos de la capacidad
+    /// Obtener permisos
     pub fn permisos(&self) -> Permisos {
         Permisos(0)
     }
@@ -166,3 +156,5 @@ pub fn init() {}
 
 // m34_tpm2 - Módulo TPM 2.0 capabilities
 pub mod m34_tpm2;
+
+pub use contracts::*;

@@ -17,7 +17,7 @@
 //! - Cache: misma formula → mismo hash → skip O(1) sin re-verificar.
 //! - Contraejemplo: si retorna `Violada`, incluye asignacion concreta.
 
-use crate::nodes::{ClaseInvariante, FormulaLogica, OpLogico, TareaIR, canonizar, a_smtlib2_con_nombres, ValueId};
+use crate::{contracts::*, nodes::{ClaseInvariante, FormulaLogica, OpLogico, TareaIR, canonizar, a_smtlib2_con_nombres, ValueId}};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -159,18 +159,30 @@ impl CacheLemas {
     }
 
     pub fn contiene(&self, hash: &[u8; 64]) -> bool {
+        require_non_null(hash as *const _, "hash nulo");
         self.probados.contains_key(hash)
     }
 
     pub fn guardar(&mut self, hash: &[u8; 64]) {
+        require_non_null(hash as *const _, "hash nulo");
         if self.probados.insert(*hash, ()).is_none() {
             self.dirty = true;
         }
     }
 
     /// Persiste a disco si hubo cambios. Crea directorios padre.
+    ///
+    /// # Contrato
+    /// - Pre: `self.path` debe ser ruta válida
+    /// - Post: Cache persistido atómicamente (tmp + rename)
+    /// - Invariante: Solo persiste si `dirty == true`
     pub fn persistir(&self) {
+        require(!self.path.as_os_str().is_empty(), "path de cache vacío");
         if !self.dirty {
+            return;
+        }
+        // En memoria: no persistir a disco
+        if self.path == PathBuf::from(":memory:") {
             return;
         }
         if let Some(padre) = self.path.parent() {
@@ -186,6 +198,10 @@ impl CacheLemas {
         let tmp = self.path.with_extension("tmp");
         if std::fs::write(&tmp, &buf).is_ok() {
             let _ = std::fs::rename(&tmp, &self.path);
+        }
+        // Postcondición: archivo escrito (solo si no es memoria)
+        if self.path != PathBuf::from(":memory:") {
+            ensure(std::fs::metadata(&self.path).is_ok(), "cache no persistido");
         }
     }
 
@@ -844,12 +860,22 @@ pub mod z3_backend {
 /// Verifica todas las metas de una tarea usando el backend dado.
 /// Usa caché persistente: hash(asunciones + fórmula) → skip O(1).
 /// Clave incluye asunciones: misma fórmula bajo asunciones distintas = cache miss correcto.
+///
+/// # Contrato
+/// - Pre: `tarea` debe tener invariantes bien formadas
+/// - Pre: `timeout_ms` > 0
+/// - Post: Retorna Ok si todas las metas son válidas, Err si alguna falla
+/// - Invariante: Cache solo guarda fórmulas válidas
 pub fn verificar_tarea_con<B: BackendSMT>(
     tarea: &TareaIR,
     backend: &mut B,
     cache: &mut CacheLemas,
     timeout_ms: u64,
 ) -> Result<(), ErrorSMT> {
+    require(timeout_ms > 0, "timeout debe ser > 0");
+    require(!tarea.invariantes(ClaseInvariante::Demostracion).is_empty() || tarea.invariantes(ClaseInvariante::Asuncion).is_empty(),
+        "tarea sin invariantes");
+
     // Recolectar asunciones (fórmulas).
     let asunciones: Vec<FormulaLogica> = tarea
         .invariantes(ClaseInvariante::Asuncion)
@@ -892,7 +918,14 @@ pub fn verificar_tarea_con<B: BackendSMT>(
 }
 
 /// Verifica con backend de intervalos (siempre disponible).
+///
+/// # Contrato
+/// - Pre: `tarea` debe tener invariantes bien formadas
+/// - Pre: `timeout_ms` > 0
+/// - Post: Retorna Ok si todas las metas son válidas, Err si alguna falla
+/// - Invariante: Cache persistido al final
 pub fn verificar_tarea(tarea: &TareaIR, timeout_ms: u64) -> Result<(), ErrorSMT> {
+    require(timeout_ms > 0, "timeout debe ser > 0");
     let mut backend = VerificadorIntervalos::new();
     let mut cache = CacheLemas::cargar();
     let r = verificar_tarea_con(tarea, &mut backend, &mut cache, timeout_ms);

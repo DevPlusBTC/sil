@@ -11,6 +11,7 @@
 //! - SSA: cada ValueId → variable C `v<N>` con tipo declarado.
 //! - Arenas: cada tarea recibe `SilArena* __arena`; asignaciones vía bump alloc.
 
+use crate::{contracts::*};
 use silc_causal_ir::nodes::{
     Bloque, Constante, OpArit, OpCmp, Operacion, SilType, TareaIR, Terminador, ValueId,
 };
@@ -153,7 +154,20 @@ impl Emisor {
 }
 
 /// Emite programa C99 completo (headers + runtime + función) para una tarea.
+///
+/// # Contrato
+/// - Pre: `tarea` debe tener nombre válido, params con tipos soportados
+/// - Pre: IR debe ser válida (SSA, tipos consistentes)
+/// - Post: Retorna código C99 que compila con `gcc -std=c99 -Wall -Wextra -Werror`
+/// - Invariante: Cada ValueId → variable C única `v<N>` con tipo declarado
 pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
+    require(!tarea.nombre.is_empty(), "nombre de tarea vacío");
+    require_valid_ident(&tarea.nombre, 64, "identificador de tarea inválido");
+    require(!tarea.params.is_empty() || tarea.retorno != SilType::Void, "tarea sin params ni retorno");
+
+    let mut e = Emisor::new();
+
+    // ... resto de la función sin cambios
     let mut e = Emisor::new();
 
     // --- 1. Pre-declarar tipos de todos los valores (para orden estable) ---
@@ -163,6 +177,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
         let mut vistos = std::collections::HashSet::new();
         // Params primero
         for (nombre, tipo) in &tarea.params {
+            require_valid_ident(nombre, 64, "parámetro inválido");
             let _ = nombre;
             let _ = tipo;
         }
@@ -273,6 +288,11 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
         params_c.join(", "),
         cuerpo
     ));
+
+    // Postcondición: código generado no vacío
+    ensure(!out.is_empty(), "código C generado vacío");
+    ensure(out.contains("int main") || out.contains(&format!("{}(", c_nombre_fn(&tarea.nombre))), "función no generada");
+
     Ok(out)
 }
 

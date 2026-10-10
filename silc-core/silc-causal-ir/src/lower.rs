@@ -10,7 +10,7 @@
 //! - `verificar`/`demostrar` generan `InvarianteSMT` clase Demostracion.
 //! - `asumir` genera `InvarianteSMT` clase Asuncion.
 
-use crate::nodes::*;
+use crate::{contracts::*, nodes::*};
 use silc_frontend::ast as A;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -228,7 +228,15 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
 
 /// Convierte Expr AST → FormulaLogica (para invariantes SMT).
 /// Usa VarId(ValueId) para vincular a SSA real.
+///
+/// # Contrato
+/// - Pre: `ctx` debe tener las variables registradas en `vars`
+/// - Pre: `e` debe ser expresión válida (solo enteros/booleanos en invariantes)
+/// - Post: Retorna FormulaLogica con VarId vinculado a SSA real
+/// - Invariante: VarId resuelto existe en ctx.vars
 fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
+    require(!ctx.vars.is_empty() || matches!(e, A::Expr::Lit(_)), "contexto sin variables para expresión no literal");
+
     match e {
         A::Expr::Var(id) => {
             let vid = ctx.vars.get(&id.nombre).copied()
@@ -372,12 +380,22 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
 // =============================================================================
 
 /// Baja una tarea AST completa a Causal-IR.
+/// 
+/// # Contrato
+/// - Pre: `tarea` debe tener al menos un nombre válido y sintaxis correcta
+/// - Post: Retorna `TareaIR` válida con SSA, tipos, y invariantes consistentes
+/// - Invariante: SSA única por ValueId, tipos registrados, invariantes hasheadas
 pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
+    // Precondición: nombre de tarea no vacío
+    require(!tarea.nombre.nombre.is_empty(), "nombre de tarea vacío");
+    require_valid_ident(&tarea.nombre.nombre, 64, "identificador de tarea inválido");
+
     let mut ctx = Ctx::new();
 
     // 1. Parámetros → nodos Param + registro en vars.
     let mut params = Vec::new();
     for p in &tarea.params {
+        require_valid_ident(&p.nombre.nombre, 64, "parámetro inválido");
         let t = bajar_tipo(&p.tipo)?;
         let id = ctx.nuevo_valor(t.clone());
         ctx.emitir(InstrCausal {
@@ -431,7 +449,7 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         tipos.insert(id, t.clone());
     }
 
-    Ok(TareaIR {
+    let ir = TareaIR {
         nombre: tarea.nombre.nombre.clone(),
         params,
         retorno,
@@ -442,7 +460,21 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         arenas: ctx.arenas,
         arena_local: ctx.arena_local,
         restricciones,
-    })
+    };
+
+    // Postcondición: IR válida
+    ensure(!ir.nombre.is_empty(), "IR nombre vacío");
+    ensure(ir.entrada != BlockId::default() || ir.bloques.is_empty(), "entrada inválida");
+    // Tipos >= nombres (todos los nombres tienen tipo, pero no todos los tipos tienen nombre)
+    ensure(ir.tipos.len() >= ir.nombres.len(), "tipos < nombres: inconsistentes");
+
+    // Invariante: SSA única
+    for (id, _) in &ir.tipos {
+        invariant(ir.bloques.values().flat_map(|b| &b.instrs).filter(|i| i.resultado == Some(*id)).count() <= 1,
+            "ValueId duplicado en SSA");
+    }
+
+    Ok(ir)
 }
 
 // =============================================================================
