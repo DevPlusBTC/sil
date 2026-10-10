@@ -5,7 +5,6 @@ fn main() {
     build
         .files([
             "../sil-rt/src/arena.c",
-            "../sil-rt/src/fiber.c",
             "../sil-rt/src/cap.c",
         ])
         .include("../sil-rt/include")

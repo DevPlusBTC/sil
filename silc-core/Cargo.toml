@@ -25,7 +25,7 @@ miette = { version = "7.0", features = ["fancy"] }
 thiserror = "2.0"
 
 # Causal-IR + SMT
-z3 = "0.12"
+z3 = "0.21"
 sha3 = "0.10"
 blake3 = "1.5"
 petgraph = "0.6"

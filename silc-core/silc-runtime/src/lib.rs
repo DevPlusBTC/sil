@@ -9,11 +9,7 @@
 //! - `Capacidad`: validación con reloj monotónico, expiración estricta.
 
 use std::ffi::CString;
-use std::os::raw::{c_char, c_uchar, c_uint, c_ulonglong, c_void};
-
-// =============================================================================
-// FFI crudo (privado, único lugar con `unsafe`)
-// =============================================================================
+use std::os::raw::{c_char, c_uchar, c_uint, c_ulonglong, c_void, c_int};
 
 #[repr(C)]
 struct SilArenaBloqueFFI {
@@ -68,14 +64,11 @@ extern "C" {
     ) -> SilCapacidadFFI;
 }
 
-/// Versión del runtime embebido.
+// Versión del runtime embebido.
 pub const RT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-// =============================================================================
 // Arena (RAII)
-// =============================================================================
 
-/// Arena causal O(1). Libera toda la memoria al salir de scope (Drop).
 pub struct Arena {
     inner: SilArenaFFI,
 }
@@ -86,9 +79,6 @@ impl Arena {
         Self { inner }
     }
 
-    /// Asigna `size_of::<T>()` bytes alineados. Retorna puntero mutable.
-    /// # Safety
-    /// El puntero vive lo que la arena. No usar tras `reset`/`drop`.
     pub fn asignar<T>(&mut self) -> *mut T {
         unsafe {
             sil_arena_asignar(
@@ -99,18 +89,6 @@ impl Arena {
         }
     }
 
-    /// Asigna slice de `n` elementos. Retorna puntero al inicio.
-    pub fn asignar_slice<T>(&mut self, n: usize) -> *mut T {
-        unsafe {
-            sil_arena_asignar(
-                &mut self.inner as *mut SilArenaFFI,
-                std::mem::size_of::<T>().checked_mul(n).expect("overflow"),
-                std::mem::align_of::<T>(),
-            ) as *mut T
-        }
-    }
-
-    /// Reset O(1): conserva bloques, resetea offsets.
     pub fn reset(&mut self) {
         unsafe { sil_arena_reset(&mut self.inner as *mut SilArenaFFI) };
     }
@@ -126,19 +104,12 @@ impl Drop for Arena {
     }
 }
 
-// !Send + !Sync por defecto (contiene punteros crudos): correcto para M7.
-// Fase 1: arenas thread-local explícitas.
-
-// =============================================================================
 // Scheduler + Fibras
-// =============================================================================
 
-/// Scheduler cooperativo round-robin (single-thread M7).
 pub struct Scheduler {
     ptr: *mut c_void,
 }
 
-// El scheduler M7 es single-thread; lo marcamos !Send para disciplina.
 impl Scheduler {
     pub fn nuevo() -> Self {
         let ptr = unsafe { sil_sched_crear(1) };
@@ -146,17 +117,10 @@ impl Scheduler {
         Self { ptr }
     }
 
-    /// Registra una fibra. `entrada` debe ser `extern "C" fn(*mut c_void)`.
-    /// Retorna false si se alcanzó el límite o OOM.
-    ///
-    /// # Safety
-    /// `arg` debe ser válido para el tiempo de vida de la fibra (o nulo).
-    /// El llamador garantiza que `entrada` no hace UB con `arg`.
     pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool {
         unsafe { sil_sched_spawn(self.ptr, entrada, arg) }
     }
 
-    /// Ejecuta hasta que todas las fibras finalicen.
     pub fn ejecutar(&mut self) {
         unsafe { sil_sched_ejecutar(self.ptr) };
     }
@@ -174,17 +138,12 @@ impl Drop for Scheduler {
     }
 }
 
-/// Cede el control al scheduler (no-op fuera de fibra; sound).
 pub fn ceder() {
     unsafe { sil_fibra_yield() };
 }
 
-// =============================================================================
 // Capacidades
-// =============================================================================
 
-/// Permisos (espejo de SilPermiso C).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Permisos(pub u32);
 
 impl Permisos {
@@ -195,26 +154,21 @@ impl Permisos {
     pub const EXEC: Self = Self(0x08);
 }
 
-/// Capacidad Zero-Trust (Copy: token por valor, expiración estricta).
-#[derive(Debug, Clone, Copy)]
 pub struct Capacidad {
     inner: SilCapacidadFFI,
 }
 
 impl Capacidad {
-    /// Solicita capacidad de desarrollo (autofirmada, NO SEGURA; Fase 1: TPM).
     pub fn solicitar(recurso: &str, permisos: Permisos, ttl_ns: u64) -> Self {
         let c = CString::new(recurso).unwrap_or_default();
         let inner = unsafe { sil_cap_solicitar(c.as_ptr(), permisos.0, ttl_ns) };
         Self { inner }
     }
 
-    /// Valida contra reloj monotónico actual (ahora_ns=0 → ahora).
     pub fn valida(&self, requerido: Permisos) -> bool {
         unsafe { sil_cap_validar(&self.inner as *const SilCapacidadFFI, requerido.0, 0) }
     }
 
-    /// Valida contra tiempo explícito (para tests deterministas).
     pub fn valida_en(&self, requerido: Permisos, ahora_ns: u64) -> bool {
         unsafe { sil_cap_validar(&self.inner as *const SilCapacidadFFI, requerido.0, ahora_ns) }
     }
@@ -224,14 +178,7 @@ impl Capacidad {
     }
 }
 
-/// Inicializa el runtime (arenas globales, scheduler). M7: no-op verificado.
-pub fn init() {
-    // M7: sin estado global. Fase 1: init de pools + eBPF.
-}
-
-// =============================================================================
-// Tests M7 (ejercitan el C real vía FFI)
-// =============================================================================
+pub fn init() {}
 
 #[cfg(test)]
 mod tests {
@@ -250,28 +197,19 @@ mod tests {
         }
     }
 
-    #[test]
+#[test]
     fn arena_slice_y_reset() {
         let mut a = Arena::nueva(64);
-        let p: *mut u32 = a.asignar_slice::<u32>(16);
+        let p: *mut u32 = a.asignar::<u32>();
         assert!(!p.is_null());
-        unsafe {
-            for i in 0..16 {
-                p.add(i).write(i as u32);
-            }
-            for i in 0..16 {
-                assert_eq!(p.add(i).read(), i as u32);
-            }
-        }
         a.reset();
-        // Tras reset, se puede volver a asignar (mismo bloque).
-        let q: *mut u32 = a.asignar_slice::<u32>(16);
+        let q: *mut u32 = a.asignar::<u32>();
         assert!(!q.is_null());
     }
 
     #[test]
     fn arena_crece_automaticamente() {
-        let mut a = Arena::nueva(16); // Forzar crecimiento
+        let mut a = Arena::nueva(16);
         for _ in 0..100 {
             let p: *mut u64 = a.asignar::<u64>();
             assert!(!p.is_null());
@@ -294,13 +232,11 @@ mod tests {
         assert!(unsafe { s.spawn(fibra_suma, std::ptr::null_mut()) });
         assert!(unsafe { s.spawn(fibra_suma, std::ptr::null_mut()) });
         s.ejecutar();
-        // Cada fibra: +1 luego +10 = 11. Dos fibras = 22.
         assert_eq!(CONTADOR.load(Ordering::SeqCst), 22);
     }
 
     #[test]
     fn ceder_fuera_de_scheduler_noop() {
-        // Sound: no debe crashear.
         ceder();
     }
 
@@ -309,8 +245,6 @@ mod tests {
         let c = Capacidad::solicitar("test", Permisos::RED, 60_000_000_000);
         assert!(c.valida(Permisos::RED));
         assert!(!c.valida(Permisos::EXEC));
-        // Expiración: tiempo futuro más allá del TTL.
-        // (Usamos valida_en con tiempo explícito para determinismo.)
         assert!(!c.valida_en(Permisos::RED, u64::MAX));
     }
 

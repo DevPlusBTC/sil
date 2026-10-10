@@ -51,8 +51,38 @@ void sil_arena_reset(SilArena *arena) {
 }
 
 void sil_arena_promover(SilArena *origen, SilArena *destino, void *ptr, size_t tamanio) {
-    /* M0: copia (Fase 1: transferencia zero-copy de bloques). */
-    (void)origen;
-    void *nuevo = sil_arena_asignar(destino, tamanio, 8);
-    memcpy(nuevo, ptr, tamanio);
+    /* M1: zero-copy block transfer (Fase 1: reencadenamiento de bloques). */
+    (void)ptr;
+    (void)tamanio;
+    /* Transferir todos los bloques de origen a destino enlazando listas. */
+    if (origen->inicio) {
+        if (destino->actual) {
+            destino->actual->siguiente = origen->inicio;
+        } else {
+            destino->inicio = origen->inicio;
+        }
+        destino->actual = origen->actual;
+        destino->asignado_total += origen->asignado_total;
+    }
+    /* Reset origen a estado vacío. */
+    origen->inicio = NULL;
+    origen->actual = NULL;
+    origen->asignado_total = 0;
+}
+
+/* Funciones de callbak para integración con Rust */
+typedef void (*sil_arena_assign_fn)(SilArena *arena, size_t tamanio, size_t alineacion);
+typedef void (*sil_arena_reset_fn)(SilArena *arena);
+typedef void (*sil_arena_promote_fn)(SilArena *origen, SilArena *destino, void *ptr, size_t tamanio);
+
+void sil_arena_register_callbacks(sil_arena_assign_fn assign_fn, sil_arena_reset_fn reset_fn, sil_arena_promote_fn promote_fn) {
+    (void)assign_fn;
+    (void)reset_fn;
+    (void)promote_fn;
+}
+
+void sil_arena_migrar_cero_costo(SilArena *origen, SilArena *destino) {
+    /* M1: migración zero-cost de esquemas (Fase 1: transferencia de bloques). */
+    /* Transferir todos los bloques del origen al destino sin copiar elementos. */
+    sil_arena_promover(origen, destino, NULL, 0);
 }

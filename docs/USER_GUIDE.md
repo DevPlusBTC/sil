@@ -1,36 +1,31 @@
-# SIL User Guide v0.1.0
+# SIL User Guide
 
-**Instalación → Primer programa → Contratos → Build C99/WASM → LSP + VS Code**
+## Tabla de Contenidos
 
----
-
-## 1. Instalación Rápida
-
-### Opción A: Desde crates.io (recomendado)
-```bash
-cargo install silc-cli
-```
-Verifica:
-```bash
-silc --help
-# silc 0.1.0
-# USAGE: silc <COMMAND>
-# Commands: check, build, emit-smt
-```
-
-### Opción B: Desde fuente (desarrollo)
-```bash
-git clone https://github.com/DevPlusBTC/sil
-cd sil/silc-core
-cargo build --release -p silc-cli
-# Binary en: target/release/silc
-```
+1. [Introducción](#introducción)
+2. [Sintaxis Básica](#sintaxis-básica)
+3. [Tipos de Datos](#tipos-de-datos)
+4. [Contratos: asumir y demostrar](#contratos-asumir-y-demostrar)
+5. [Gestión de Memoria](#gestión-de-memoria)
+6. [Capacidades](#capacidades)
+7. [Ejemplos](#ejemplos)
+8. [Errores Comunes](#errores-comunes)
 
 ---
 
-## 2. Primer Programa: Hello SIL
+## Introducción
 
-Crear `hola.sil`:
+SIL (Source Implementation Language) es un lenguaje de programación de sistemas diseñado para eliminar categorías fundamentales de errores de software directamente durante la compilación.
+
+### Filosofía
+
+- **Sin comportamiento implícito:** Todo debe ser explícito
+- **Verificación en compilación:** No en runtime
+- **Cero sobrecoste:** La seguridad no cuesta tiempo de ejecución
+- **Determinismo:** Gestión de recursos predecible
+
+### Primer Programa
+
 ```sil
 definir tarea saludar(nombre: Texto) -> Texto:
     asumir nombre.len > 0
@@ -40,227 +35,211 @@ definir tarea saludar(nombre: Texto) -> Texto:
 
 Verificar:
 ```bash
-silc check hola.sil
-# hola.sil: OK (1 tareas verificadas)
+silc check saludar.sil
+# saludar.sil: OK (1 tareas verificadas)
 ```
 
 ---
 
-## 3. Contratos: `asumir` / `demostrar`
+## Sintaxis Básica
 
-El poder de SIL: **verificación formal en compilación**.
+### Estructura de un Programa
 
-### 3.1 Precondiciones (`asumir`)
+Un programa SIL consiste en una o más definiciones de tareas:
+
 ```sil
-definir tarea raiz(x: Flotante64) -> Flotante64:
-    asumir x >= 0.0        // Precondición: dominio válido
-    // ... cálculo ...
-    demostrar resultado >= 0.0
-    retornar resultado
+definir tarea nombre(parametro: Tipo) -> TipoRetorno:
+    asumir condicion
+    demostrar condicion
+    expresion
 ```
 
-### 3.2 Postcondiciones (`demostrar`)
-```sil
-definir tarea descuento(precio: Entero64, pct: Entero64) -> Entero64:
-    asumir precio > 0
-    asumir pct >= 0
-    asumir pct <= 50       // Máximo 50%
-    let final = precio * (100 - pct) / 100
-    demostrar final <= precio      // Nunca sube
-    demostrar final >= precio / 2  // Máx 50% off
-    retornar final
-```
+### Indentación
 
-### 3.3 Error de SMT (compilación falla)
+SIL usa **4 espacios** por nivel de indentación. No se usan tabs ni llaves.
+
 ```sil
-definir tarea malo(x: Entero64) -> Entero64:
+definir tarea ejemplo(x: Entero64) -> Entero64:
     asumir x > 0
-    demostrar x > 100    // FALSO si x=5
+    demostrar x > 0
+    retornar x + 1
+```
+
+### Comentarios
+
+```sil
+# Esto es un comentario de línea
+
+# Los comentarios no afectan la verificación
+definir tarea sin_comentarios() -> Entero64:
+    retornar 42
+```
+
+---
+
+## Tipos de Datos
+
+### Tipos Primitivos
+
+| Tipo | Descripción | Ejemplo |
+|------|-------------|---------|
+| `Entero64` | Entero de 64 bits | `42`, `-7` |
+| `Flotante64` | Punto flotante 64 bits | `3.14`, `-0.5` |
+| `Booleano` | Valor booleano | `verdadero`, `falso` |
+| `Texto` | Cadena UTF-8 | `"hola"` |
+| `Byte` | Byte (8 bits) | `0xFF` |
+| `Void` | Sin valor | - |
+
+### Literales
+
+```sil
+definir tarea literales() -> Entero64:
+    retornar 42
+```
+
+### Operadores Aritméticos
+
+| Operador | Descripción | Ejemplo |
+|----------|-------------|---------|
+| `+` | Suma | `a + b` |
+| `-` | Resta | `a - b` |
+| `*` | Multiplicación | `a * b` |
+| `/` | División | `a / b` |
+
+### Operadores Relacionales
+
+| Operador | Descripción | Ejemplo |
+|----------|-------------|---------|
+| `>` | Mayor que | `x > 0` |
+| `<` | Menor que | `x < 100` |
+| `>=` | Mayor o igual | `x >= 0` |
+| `<=` | Menor o igual | `x <= 100` |
+| `==` | Igual | `x == 0` |
+| `!=` | Diferente | `x != 0` |
+
+---
+
+## Contratos: asumir y demostrar
+
+El corazón de SIL son los **contratos**: precondiciones (`asumir`) y postcondiciones (`demostrar`).
+
+### `asumir` (Precondición)
+
+Declara qué debe ser verdadero antes de que la tarea se ejecute.
+
+```sil
+definir tarea dividir(a: Entero64, b: Entero64) -> Entero64:
+    asumir b != 0
+    retornar a / b
+```
+
+### `demostrar` (Postcondición)
+
+Declara qué debe ser verdadero después de que la tarea se ejecute.
+
+```sil
+definir tarea absoluto(x: Entero64) -> Entero64:
+    demostrar resultado >= 0
+    si x < 0:
+        retornar -x
     retornar x
 ```
-```
-silc check malo.sil
-Error: SMT SAT - contraejemplo: x=5 rompe x > 100
-```
 
----
+### Múltiples Contratos
 
-## 4. Build: C99 y WASM
-
-### 4.1 Target C99
-```bash
-silc build hola.sil --target c99 -o hola.c
-# hola.sil → hola.c (2385 bytes C99)
-```
-
-**Contenido generado** (`hola.c`):
-```c
-#include <stdio.h>
-#include <stdlib.h>
-/* Runtime SIL embebido: arena O(1), tipos, capacidades */
-typedef struct SilArena_ { ... } SilArena_;
-long long saludar(SilArena_* __arena, long long nombre) { ... }
-```
-
-**Compilar y ejecutar:**
-```bash
-gcc -std=c99 -O2 hola.c -o hola
-./hola
-```
-
-### 4.2 Target WASM
-```bash
-silc build hola.sil --target wasm -o hola.wasm
-# hola.sil → hola.wasm (158 bytes, magic \0asm)
-```
-
-**Validar WASM:**
-```bash
-wasmparser validate hola.wasm  # o usar wasmparser CLI
-```
-
----
-
-## 5. Verificación SMT Standalone
-
-```bash
-silc emit-smt hola.sil
-```
-
-Salida SMT-LIB2 (QF_LIA):
-```smt
-(set-logic QF_LIA)
-(declare-fun nombre () Int)
-(assert (> nombre 0))
-(push)
-(assert (not (> nombre 0)))
-(check-sat)
-(pop)
-```
-Útil para: depurar contratos, integrar con Z3/CVC5 directamente, auditoría formal.
-
----
-
-## 6. Ejemplos Completos
-
-### 6.1 Calculadora Segura
 ```sil
-definir tarea sumar(a: Entero64, b: Entero64) -> Entero64:
-    asumir a > -1000000
-    asumir b > -1000000
-    asumir a < 1000000
-    asumir b < 1000000
-    demostrar a + b > -2000000
-    demostrar a + b < 2000000
-    retornar a + b
-
-definir tarea dividir(dividendo: Entero64, divisor: Entero64) -> Entero64:
-    asumir divisor != 0
-    demostrar dividendo / divisor * divisor == dividendo
-    retornar dividendo / divisor
+definir tarea transferir(saldo: Entero64, monto: Entero64) -> Entero64:
+    asumir saldo > 0
+    asumir monto > 0
+    asumir monto <= saldo
+    demostrar saldo - monto >= 0
+    retornar saldo - monto
 ```
 
-### 6.2 Validación de Entrada
+---
+
+## Gestión de Memoria
+
+### Arenas O(1)
+
+SIL gestiona la memoria con **Arenas** que asignan y liberan en tiempo constante.
+
+```sil
+definir tarea procesar(datos: Texto) -> Entero64:
+    asumir datos.len > 0
+    # La memoria se asigna en la arena de la tarea
+    # y se libera automáticamente al retornar
+    retornar datos.len
+```
+
+### Sin Garbage Collector
+
+SIL no tiene recolector de basura. La memoria se libera determinísticamente.
+
+---
+
+## Ejemplos
+
+### Ejemplo 1: Función Simple
+
+```sil
+definir tarea cuadrado(x: Entero64) -> Entero64:
+    asumir x >= 0
+    asumir x <= 46340
+    demostrar x * x >= 0
+    retornar x * x
+```
+
+### Ejemplo 2: Validación
+
 ```sil
 definir tarea validar_edad(edad: Entero64) -> Booleano:
     asumir edad >= 0
     asumir edad <= 150
-    demostrar edad >= 18 == (edad >= 18)
     retornar edad >= 18
 ```
 
-### 6.3 Factorial Acotado
+### Ejemplo 3: Múltiples Tareas
+
 ```sil
-definir tarea factorial(n: Entero64) -> Entero64:
-    asumir n >= 0
-    asumir n <= 20        // Límite overflow 64-bit
-    si n == 0:
-        retornar 1
+definir tarea sumar(a: Entero64, b: Entero64) -> Entero64:
+    retornar a + b
+
+definir tarea restar(a: Entero64, b: Entero64) -> Entero64:
+    retornar a - b
+
+definir tarea calcular(x: Entero64, y: Entero64) -> Entero64:
+    retornar sumar(x, y)
+```
+
+### Ejemplo 4: Control de Flujo
+
+```sil
+definir tarea clasificar(nota: Entero64) -> Texto:
+    asumir nota >= 0
+    asumir nota <= 100
+    si nota >= 90:
+        retornar "A"
+    sino si nota >= 80:
+        retornar "B"
+    sino si nota >= 70:
+        retornar "C"
     sino:
-        demostrar n > 0
-        demostrar n <= 20
-        retornar n * factorial(n - 1)
+        retornar "F"
 ```
 
 ---
 
-## 7. LSP + VS Code
+## Pruebas
 
-### 7.1 Instalar Extensión
+Ejecutar las pruebas del proyecto:
+
 ```bash
-# Desde .vsix generado
-code --install-extension silc-vscode-0.1.0.vsix
-```
-
-### 7.2 Features Activas
-| Feature | Trigger | Qué ves |
-|---------|---------|---------|
-| Diagnostics | Auto (escribir) | Subrayado rojo/amarillo + mensaje humano |
-| Completion | Escribir `.` | Variables, tareas, tipos en scope |
-| Hover | Mouse sobre identificador | Tipo inferido + contratos |
-| Toggle Diagnostics | Ctrl+Shift+P → "SIL: Toggle Diagnostics" | On/Off |
-
-### 7.3 Diagnósticos en Lenguaje Natural
-```
-[ERROR] Contradicción de Restricción SMT
-Ubicación: tarea dividir (Línea 12)
-Análisis: divisor puede ser 0 → división por cero
-Solución: Agregar `asumir divisor != 0` antes de dividir
+cargo test --workspace
 ```
 
 ---
 
-## 8. Flujo de Trabajo Recomendado
+## Licencia
 
-```mermaid
-graph LR
-    A[Editar .sil en VS Code] --> B[silc check - verificación instantánea]
-    B --> C{¿OK?}
-    C -->|No| A
-    C -->|Sí| D[silc build --target c99|wasm]
-    D --> E[Compilar C / Ejecutar WASM]
-    E --> F[Test / Deploy]
-```
-
-### 8.1 Iteración Rápida
-```bash
-# Terminal 1: Watch mode (si configuras)
-watchexec -e sil "silc check *.sil"
-
-# Terminal 2: VS Code con LSP activo
-code .
-```
-
----
-
-## 9. Solución de Problemas
-
-| Error | Causa | Solución |
-|-------|-------|----------|
-| `TokenInesperado` | Sintaxis CNL inválida | Revisar indentación (4 espacios), palabras clave |
-| `SMT SAT` | Contrato imposible | Revisar `asumir`/`demostrar`; simplificar |
-| `SMT timeout` | Postcondición compleja | Dividir en tareas menores; simplificar `demostrar` |
-| `build: una sola tarea` | Múltiples `definir tarea` | 1 archivo = 1 tarea para `build` |
-| `silc not found` | PATH | `cargo install silc-cli` o `export PATH+=target/release` |
-
----
-
-## 10. Próximos Pasos
-
-- **Stdlib:** Importar `silc-std` (próximamente v0.2.0)
-- **Testing:** `silc test` (integración con `silc-test` crate)
-- **Package Manager:** `silpm init / add / build` (v0.3.0)
-- **Formateador:** `silfmt archivo.sil` (v0.2.0)
-
----
-
-## 11. Recursos
-
-- **Espec completa:** [SPEC.md](SPEC.md)
-- **Whitepaper (aspiracional):** [WHITE_PAPER.md](WHITE_PAPER.md)
-- **Issues/Contrib:** https://github.com/DevPlusBTC/sil
-- **Crates.io:** `silc-frontend`, `silc-causal-ir`, `silc-backend`, `silc-runtime`
-
----
-
-*Sil v0.1.0 - Lenguaje de Intención Semántica - Beta Funcional*
+MIT
