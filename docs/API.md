@@ -1,200 +1,177 @@
-# SIL API Reference (v0.1.0)
+# SIL API Reference
 
-Auto-generado con `cargo doc --no-deps --workspace`.
+## Module: `silc-std`
 
----
+### Memory Management
 
-## Crates Publicadas
+```sil
+tarea alloc<T>(size: Entero64) -> Puntero<T>
+tarea free<T>(ptr: Puntero<T>) -> Void
+tarea realloc<T>(ptr: Puntero<T>, new_size: Entero64) -> Puntero<T>
+```
 
-| Crate | Versión | Descripción |
-|-------|---------|-------------|
-| `silc-frontend` | 0.1.0 | Lexer, Parser CNL, AST |
-| `silc-causal-ir` | 0.1.0 | Causal-IR, SMT encoding, Z3 bridge |
-| `silc-backend` | 0.1.0 | Codegen C99, WASM, LLVM IR |
-| `silc-runtime` | 0.1.0 | Arena O(1), tipos FFI, capacidades |
+### Collections
 
----
+```sil
+// Array dinámico
+tarea vec_new<T>(capacity: Entero64) -> Vec<T>
+tarea vec_push<T>(v: Vec<T>, item: T) -> Void
+tarea vec_get<T>(v: Vec<T>, index: Entero64) -> Option<T>
+tarea vec_len<T>(v: Vec<T>) -> Entero64
 
-## silc-frontend
+// Hash map
+tarea map_new<K, V>(capacity: Entero64) -> Map<K, V>
+tarea map_insert<K, V>(m: Map<K, V>, key: K, value: V) -> Void
+tarea map_get<K, V>(m: Map<K, V>, key: K) -> Option<V>
 
-### Módulos Principales
+// Set
+tarea set_new<T>(capacity: Entero64) -> Set<T>
+tarea set_insert<T>(s: Set<T>, item: T) -> Booleano
+tarea set_contains<T>(s: Set<T>, item: T) -> Booleano
+```
+
+### I/O
+
+```sil
+// File operations
+tarea read_file(path: Texto) -> Result<Texto, ErrorIo>
+tarea write_file(path: Texto, content: Texto) -> Result<Void, ErrorIo>
+tarea append_file(path: Texto, content: Texto) -> Result<Void, ErrorIo>
+
+// Standard I/O
+tarea print(msg: Texto) -> Void
+tarea println(msg: Texto) -> Void
+tarea read_line() -> Texto
+```
+
+### Capabilities
+
+```sil
+// Network capabilities
+definir capacidad NetworkAccess:
+    permitir connect_a "host" puerto Entero64
+    limite_ancho_banda: Texto
+
+tarea open_connection(cap: NetworkAccess, host: Texto, port: Entero64) -> Socket
+
+// File system capabilities
+definir capacidad FileAccess:
+    permitir read "ruta"
+    permitir write "ruta"
+    permitir delete "ruta"
+
+tarea open_file(cap: FileAccess, path: Texto, mode: ModoArchivo) -> Result<Archivo, ErrorIo>
+```
+
+### Concurrency
+
+```sil
+// Channels
+tarea channel_new<T>(capacity: Entero64) -> (Sender<T>, Receiver<T>)
+tarea send<T>(tx: Sender<T>, value: T) -> Result<Void, ErrorSend>
+tarea recv<T>(rx: Receiver<T>) -> Result<T, ErrorRecv>
+
+// Tasks
+tarea spawn<T>(f: fn() -> T) -> JoinHandle<T>
+tarea await<T>(handle: JoinHandle<T>) -> T
+```
+
+## Types
+
+### Primitives
+
+| Type | Size | Range |
+|------|------|-------|
+| `Entero64` | 8 bytes | -2^63 to 2^63-1 |
+| `Flotante64` | 8 bytes | IEEE 754 double |
+| `Booleano` | 1 byte | `verdadero` / `falso` |
+| `Texto` | variable | UTF-8 string |
+| `Void` | 0 bytes | - |
+
+### Composite
+
+```sil
+// Tuple
+tupla(Entero64, Texto, Booleano)
+
+// Result
+variante Result<T, E>:
+    ok(valor: T)
+    error(e: E)
+
+// Option
+variante Option[T]:
+    some(valor: T)
+    none
+```
+
+## Contracts
+
+### Preconditions (`asumir`)
+
+```sil
+tarea sqrt(x: Flotante64) -> Flotante64:
+    asumir x >= 0.0
+    ...
+```
+
+### Postconditions (`demostrar`)
+
+```sil
+tarea abs(x: Entero64) -> Entero64:
+    demostrar resultado >= 0
+    ...
+```
+
+## Error Handling
+
+```sil
+// Result type
+tarea divide(a: Flotante64, b: Flotante64) -> Result<Flotante64, ErrorDivPorCero>
+
+// Match
+match divide(10.0, 0.0):
+    ok(valor) -> print(valor)
+    error(e) -> print("Error: división por cero")
+
+// Unwrap with default
+let valor = divide(10.0, 2.0) o 0.0
+```
+
+## Lifetimes
+
+```sil
+// Explicit lifetime
+tarea borrow<'a>(x: &'a Texto) -> &'a Texto
+
+// Reference counting
+let rc = Rc::new(value)
+let weak = Rc::downgrade(rc)
+```
+
+## Module System
 
 ```rust
-use silc_frontend::{lexer, parser, ast};
+// Import
+importar std::io::{read_file, write_file}
+importar std::collections::Map
 
-/// Lexer: tokeniza CNL determinista (sin backtracking)
-pub fn tokenize(input: &str) -> Result<Vec<Token>, LexError>;
-
-/// Parser: genera AST desde tokens
-pub fn parse(tokens: Vec<Token>) -> Result<Ast, ParseError>;
-
-/// AST Nodos principales
-pub enum Stmt {
-    Assume(Expr),      // asumir
-    Prove(Expr),       // demostrar
-    Return(Expr),      // retornar
-    Let { name, ty, value }, // let x: T = e
-}
+// Export
+exportar tarea public_function(x: Entero64) -> Entero64
+exportar type PublicType
+exportar capacidad PublicCapability
 ```
 
-### Uso Básico
-```rust
-let tokens = silc_frontend::lexer::tokenize(source)?;
-let ast = silc_frontend::parser::parse(tokens)?;
+## Standard Library Organization
+
 ```
-
----
-
-## silc-causal-ir
-
-### Causal-IR (SSA Causal)
-
-```rust
-use silc_causal_ir::{CausalIr, InstrCausal, FormulaLogica};
-
-/// Genera Causal-IR desde AST
-pub fn lower_to_causal_ir(ast: &Ast) -> Result<CausalIr, LowerError>;
-
-/// Nodo canónico: ⟨ID_SSA, Operación, Capacidad, Invariante⟩
-pub struct InstrCausal {
-    pub id: SSAId,
-    pub op: OpCausal,
-    pub cap: Option<CapToken>,
-    pub inv: FormulaLogica,
-}
+std/
+├── io/          # File and network I/O
+├── collections/ # Vec, Map, Set, etc.
+├── sync/        # Channels, locks, atomics
+├── fs/          # File system operations
+├── net/         # Network protocols
+├── time/        # Duration, Instant
+├── process/     # Process management
+└── prelude      # Common imports
 ```
-
-### SMT Encoding (Z3/CVC5)
-
-```rust
-use silc_causal_ir::smt::{SmtContext, prove, check_sat};
-
-/// Codifica invariantes a SMT-LIB2 QF_LIA
-pub fn encode_to_smt(ir: &CausalIr) -> String;
-
-/// Prueba incremental con caché SHA3-512
-pub async fn prove_incremental(ctx: &SmtContext, inv: &FormulaLogica) -> SmtResult;
-```
-
----
-
-## silc-backend
-
-### Codegen Targets
-
-```rust
-use silc_backend::{Codegen, Target};
-
-/// Emite C99 portable
-pub fn emit_c99(ir: &CausalIr) -> Result<String, CodegenError>;
-
-/// Emite WASM (magic \0asm)
-pub fn emit_wasm(ir: &CausalIr) -> Result<Vec<u8>, CodegenError>;
-
-/// Emite LLVM IR
-pub fn emit_llvm(ir: &CausalIr) -> Result<String, CodegenError>;
-```
-
-### Runtime Embedded (C99)
-```c
-/* Generado automáticamente en cada .c */
-typedef struct SilArena_ { ... } SilArena_;
-static void *sil_arena_asignar_(SilArena_*, size_t, size_t);
-static void sil_arena_destruir_(SilArena_*);
-
-/* Tipos SIL → C */
-typedef int64_t Entero64;
-typedef struct { const char* ptr; int64_t len; } SilTexto_;
-```
-
----
-
-## silc-runtime
-
-### Arena O(1)
-
-```rust
-use silc_runtime::arena::{SilArena, SilArenaBloque};
-
-/// Arena principal de tarea
-pub struct SilArena {
-    pub inicio: *mut SilArenaBloque,
-    pub actual: *mut SilArenaBloque,
-    pub asignado_total: usize,
-}
-
-/// Sub-arena cíclica O(1) reset
-pub fn sil_arena_asignar(arena: &mut SilArena, size: usize, align: usize) -> *mut u8;
-pub fn sil_arena_reset(arena: &mut SilArena);
-```
-
-### Capacidades Hardware
-
-```rust
-use silc_runtime::cap::{SilCap, CapToken};
-
-/// Capacidad firmada TPM 2.0 (32 bytes)
-#[repr(C)]
-pub struct SilCap {
-    pub id: u64,
-    pub perms: u32,
-    pub exp_ns: u64,
-    pub firma: [u8; 32],
-}
-
-/// Validador micro-temporal (< 500ns)
-pub fn validar_cap(cap: &SilCap, ahora_ns: u64) -> bool;
-```
-
----
-
-## CLI (`silc`)
-
-```bash
-silc check <file.sil>              # Verifica sintaxis + SMT
-silc build <file.sil> --target c99|wasm -o <out>
-silc emit-smt <file.sil>           # Emite SMT-LIB2 QF_LIA
-```
-
-**Exit codes:** 0=OK, 1=Error, 2=I/O
-
----
-
-## LSP Server (`silc-lsp`)
-
-```bash
-silc-lsp  # JSON-RPC 3.17 sobre stdio
-```
-
-**Capabilities:**
-- `textDocument/didOpen` `didChange` → Diagnostics (2ms)
-- `textDocument/completion` → trigger `.`
-- `textDocument/hover` → Tipo + contratos
-- `textDocument/publishDiagnostics` → Errores en lenguaje natural
-- Time-Travel Debugger (core): Navegación SCG
-
----
-
-## VS Code Extension (`silc-vscode`)
-
-```json
-{
-  "silc.diagnostics.enabled": true
-}
-```
-
-**Comandos:** `SIL: Toggle Diagnostics` (Ctrl+Shift+P)
-
----
-
-## Testing
-
-```bash
-cargo test -p silc-cli          # 7/7 tests integración
-cargo test -p silc-test         # Tests unitarios
-cargo test --workspace          # Full suite
-```
-
----
-
-*Generado: `cargo doc --no-deps --workspace --open`*
