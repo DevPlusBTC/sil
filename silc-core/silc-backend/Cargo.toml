@@ -16,7 +16,7 @@ miette.workspace = true
 silc-causal-ir = { workspace = true }
 
 [dev-dependencies]
-silc-frontend = "0.1"
+silc-frontend = { workspace = true }
 
 [features]
 default = []

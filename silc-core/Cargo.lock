@@ -1525,7 +1525,7 @@ dependencies = [
  "inkwell",
  "miette",
  "silc-causal-ir",
- "silc-frontend 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "silc-frontend",
  "thiserror 2.0.21",
  "wasm-encoder",
  "wasmparser",
@@ -1540,7 +1540,7 @@ dependencies = [
  "petgraph",
  "rustc-hash 2.1.3",
  "sha3",
- "silc-frontend 0.1.0",
+ "silc-frontend",
  "slotmap",
  "thiserror 2.0.21",
  "z3",
@@ -1558,7 +1558,7 @@ dependencies = [
  "proptest",
  "silc-backend",
  "silc-causal-ir",
- "silc-frontend 0.1.0",
+ "silc-frontend",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
@@ -1578,38 +1578,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "silc-frontend"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c7b587efb30ac410fb5aa0a91e6f8449678ac16ff7a4462a4456ab9753e31b"
-dependencies = [
- "chumsky",
- "logos",
- "miette",
- "rustc-hash 2.1.3",
- "thiserror 2.0.21",
-]
-
-[[package]]
 name = "silc-runtime"
 version = "0.1.0"
 dependencies = [
  "cc",
  "libc",
-]
-
-[[package]]
-name = "silc-std"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "libc",
- "miette",
- "predicates",
- "silc-causal-ir",
- "silc-runtime",
- "tempfile",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1623,7 +1596,7 @@ dependencies = [
  "proptest",
  "silc-backend",
  "silc-causal-ir",
- "silc-frontend 0.1.0",
+ "silc-frontend",
  "tempfile",
  "wasmparser",
 ]
