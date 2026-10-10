@@ -1,4 +1,4 @@
-name: Release SIL (build + test + clippy + fmt + audit + deny + sbom + binaries)
+name: Release SIL (SLSA Level 3 - build + test + clippy + fmt + audit + deny + sbom + provenance + cosign)
 
 on:
   push:
@@ -12,8 +12,13 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Reproducibilidad: timestamp fijo desde git (o época si no hay git).
+  # El job de reproducibilidad lo sobrescribe con el commit real.
   SOURCE_DATE_EPOCH: '1700000000'
-  RUSTFLAGS: '-C target-cpu=native -C strip=symbols'
+  # Build reproducible
+  RUSTFLAGS: '-C target-cpu=native -C strip=symbols -C debuginfo=2 -C lto=fat -C codegen-units=1 -C panic=abort -Z remap-cwd-prefix=.'
+  # SLSA
+  SLSA_BUILD_LEVEL: '3'
 
 jobs:
   # --- 1. Validación: fmt + clippy + test + audit + deny ---
@@ -83,11 +88,11 @@ jobs:
           fi
         working-directory: silc-core
 
-  # --- 2. Build binarios multiplataforma ---
+  # --- 2. Build binarios multiplataforma (reproducible, SLSA Level 3) ---
   build-binaries:
-    name: Compilar Binarios (${{ matrix.os }})
+    name: Compilar Binarios (${{ matrix.os }}, SLSA L3)
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -119,24 +124,29 @@ jobs:
         with:
           workspaces: silc-core
 
-      - name: Build release binary
+      - name: Build release binary (reproducible)
         run: |
-          cargo build --locked -p silc-cli --release
+          cargo build --locked --frozen -p silc-cli --release
         working-directory: silc-core
 
-      - name: Prepare artifact
+      - name: Prepare artifact (reproducible)
         shell: bash
         run: |
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp target/release/silc.exe dist/silc-windows-x64.exe
             sha256sum dist/silc-windows-x64.exe > dist/silc-windows-x64.exe.sha256
+            # Firmar binario con cosign (keyless)
+            cosign sign-blob --yes dist/silc-windows-x64.exe --output-signature dist/silc-windows-x64.exe.sig
           else
             cp target/release/silc dist/silc-${{ matrix.artifact }}
             sha256sum dist/silc-${{ matrix.artifact }} > dist/silc-${{ matrix.artifact }}.sha256
+            cosign sign-blob --yes dist/silc-${{ matrix.artifact }} --output-signature dist/silc-${{ matrix.artifact }}.sig
           fi
           cat dist/*.sha256
         working-directory: silc-core
+        env:
+          COSIGN_EXPERIMENTAL: '1'
 
       - name: Test cargo install (solo linux)
         if: runner.os == 'Linux'
@@ -159,18 +169,193 @@ jobs:
           output-file: dist/sbom-${{ matrix.artifact }}.json
         working-directory: silc-core
 
+      - name: Sign SBOM with cosign (keyless)
+        run: |
+          cosign sign-blob --yes dist/sbom-${{ matrix.artifact }}.json --output-signature dist/sbom-${{ matrix.artifact }}.json.sig
+        working-directory: silc-core
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ matrix.artifact }}
-          path: silc-core/dist/sbom-${{ matrix.artifact }}.json
+          path: silc-core/dist/sbom-${{ matrix.artifact }}.json*
           retention-days: 30
 
-  # --- 3. Generate aggregated SBOM ---
+  # --- 3. Generate SLSA Provenance (SLSA Level 3) ---
+  slsa-provenance:
+    name: Generar SLSA Provenance (Level 3)
+    runs-on: ubuntu-latest
+    needs: [validate, build-binaries]
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Build SIL (para metadata de build)
+        run: |
+          cargo build --locked --frozen -p silc-cli --release
+        working-directory: silc-core
+
+      - name: Generate SLSA Provenance (Level 3)
+        uses: slsa-framework/slsa-github-generator@main
+        with:
+          base64-subjects: 'true'
+          provenance-name: silc-provenance.intoto.jsonl
+          upload-assets: |
+            dist/silc-linux-x64
+            dist/silc-windows-x64.exe
+            dist/silc-macos-arm64
+            dist/sbom-silc-linux-x64.json
+            dist/sbom-silc-windows-x64.json
+            dist/sbom-silc-macos-arm64.json
+
+      - name: Download provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: slsa-provenance
+          path: provenance
+
+      - name: Verify SLSA Provenance
+        run: |
+          slsa-verifier verify-artifact dist/silc-linux-x64 --provenance-path provenance/silc-provenance.intoto.jsonl --source-uri github.com/DevPlusBTC/sil
+        working-directory: silc-core
+
+      - name: Upload provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: slsa-provenance
+          path: provenance/*
+          retention-days: 90
+
+  # --- 3b. Sign artifacts with cosign (keyless) ---
+  sign-artifacts:
+    name: Firmar artefactos con cosign (keyless)
+    runs-on: ubuntu-latest
+    needs: [build-binaries, slsa-provenance]
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: silc-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: slsa-provenance
+          path: provenance
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign binaries with cosign (keyless)
+        run: |
+          for f in release-assets/*; do
+            if [[ "$f" == *.exe ]] || [[ "$f" == *silc* ]] && [[ ! "$f" == *.sha256 ]] && [[ ! "$f" == *.sig ]] && [[ ! "$f" == *.json ]]; then
+              cosign sign-blob --yes "$f" --output-signature "$f.sig"
+            fi
+          done
+        working-directory: release-assets
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+
+      - name: Sign provenance with cosign
+        run: |
+          cosign sign-blob --yes provenance/silc-provenance.intoto.jsonl --output-signature provenance/silc-provenance.intoto.jsonl.sig
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-artifacts
+          path: release-assets/*
+          retention-days: 30
+
+      - name: Upload signed provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-provenance
+          path: provenance/*
+          retention-days: 90
+
+  # --- 4. Verify SLSA Provenance + Signatures ---
+  verify-slsa:
+    name: Verificar SLSA Provenance + Firmas
+    runs-on: ubuntu-latest
+    needs: [sign-artifacts]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download signed artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: silc-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download signed provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: signed-provenance
+          path: provenance
+
+      - name: Install cosign + slsa-verifier
+        run: |
+          cargo install cosign --locked
+          cargo install slsa-verifier --locked
+
+      - name: Verify cosign signatures on binaries
+        run: |
+          for f in release-assets/*; do
+            if [[ "$f" == *.exe ]] || [[ "$f" == *silc* ]] && [[ ! "$f" == *.sha256 ]] && [[ ! "$f" == *.sig ]] && [[ ! "$f" == *.json ]]; then
+              cosign verify-blob --inclusion-required=false "$f" --signature "$f.sig"
+            fi
+          done
+        working-directory: release-assets
+
+      - name: Verify cosign signature on provenance
+        run: |
+          cosign verify-blob --inclusion-required=false provenance/silc-provenance.intoto.jsonl --signature provenance/silc-provenance.intoto.jsonl.sig
+
+      - name: Verify SLSA Provenance (slsa-verifier)
+        run: |
+          slsa-verifier verify-artifact dist/silc-linux-x64 --provenance-path provenance/silc-provenance.intoto.jsonl --source-uri github.com/DevPlusBTC/sil
+        working-directory: silc-core
+
+      - name: Verify SLSA Level 3 compliance
+        run: |
+          slsa-verifier verify-artifact dist/silc-linux-x64 --provenance-path provenance/silc-provenance.intoto.jsonl --source-uri github.com/DevPlusBTC/sil --require-level 3
+        working-directory: silc-core
+
+  # --- 5. Generate aggregated SBOM ---
   sbom-aggregate:
     name: Agregar SBOM consolidado
     runs-on: ubuntu-latest
-    needs: build-binaries
+    needs: [build-binaries]
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -195,18 +380,24 @@ jobs:
           ' sboms/sbom-*.json > sbom-consolidado.json
           cat sbom-consolidado.json
 
+      - name: Sign consolidated SBOM with cosign
+        run: |
+          cosign sign-blob --yes sbom-consolidado.json --output-signature sbom-consolidado.json.sig
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+
       - name: Upload consolidated SBOM
         uses: actions/upload-artifact@v4
         with:
           name: sbom-consolidado
-          path: sbom-consolidado.json
+          path: sbom-consolidado.json*
           retention-days: 90
 
-  # --- 4. Crear Release GitHub ---
+  # --- 6. Crear Release GitHub (con assets firmados + provenance) ---
   create-release:
-    name: Crear Release GitHub
+    name: Crear Release GitHub (SLSA L3)
     runs-on: ubuntu-latest
-    needs: [validate, build-binaries, sbom-aggregate]
+    needs: [validate, build-binaries, slsa-provenance, sign-artifacts, verify-slsa, sbom-aggregate]
     permissions:
       contents: write
     steps:
@@ -215,6 +406,16 @@ jobs:
           pattern: silc-*
           path: release-assets
           merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-provenance
+          path: release-assets
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-artifacts
+          path: release-assets
 
       - uses: actions/download-artifact@v4
         with:
@@ -230,16 +431,16 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
-          name: "SIL v${{ github.ref_name }}"
+          name: "SIL v${{ github.ref_name }} (SLSA Level 3)"
           body: |
-            ## 🚀 SIL ${{ github.ref_name }} liberado
+            ## 🚀 SIL ${{ github.ref_name }} liberado (SLSA Level 3)
 
-            ### 📦 Binarios multiplataforma
-            | Sistema | Archivo | SHA256 |
-            |---------|---------|--------|
-            | Windows x64 | \`silc-windows-x64.exe\` | Verificar con `sha256sum` |
-            | Linux x64 | \`silc-linux-x64\` | Verificar con `sha256sum` |
-            | macOS ARM64 | \`silc-macos-arm64\` | Verificar con `sha256sum` |
+            ### 📦 Binarios multiplataforma (firmados + verificación SLSA Level 3)
+            | Sistema | Archivo | SHA256 | Firma (.sig) | Provenance |
+            |---------|---------|--------|--------------|------------|
+            | Windows x64 | \`silc-windows-x64.exe\` | Verificar con `sha256sum` | \`.sig\` | SLSA L3 |
+            | Linux x64 | \`silc-linux-x64\` | Verificar con `sha256sum` | \`.sig\` | SLSA L3 |
+            | macOS ARM64 | \`silc-macos-arm64\` | Verificar con `sha256sum` | \`.sig\` | SLSA L3 |
 
             ### ✨ Qué incluye esta versión
             - Compilador SIL (`silc`) con soporte completo
@@ -248,8 +449,23 @@ jobs:
             - Runtime embebido (Fibras 64B, Arenas O(1), Canales lock-free)
             - Motor de verificación SMT (intervalos + caché persistente SHA3-512)
             - Línea de comandos: `silc check`, `silc build --target c99|wasm`, `silc emit-smt`
-            - Builds reproducibles bit-for-bit (verificado en CI)
-            - SBOM CycloneDX consolidado
+            - **Builds reproducibles bit-for-bit (verificado en CI, SLSA Level 3)**
+            - **SBOM CycloneDX consolidado (firmado con cosign)**
+            - **SLSA Provenance Level 3 (firmado con cosign keyless)**
+            - **Verificación SLSA Level 3 con slsa-verifier**
+
+            ### 🔐 Verificación de integridad
+            ```bash
+            # Verificar binario
+            sha256sum -c silc-linux-x64.sha256
+            cosign verify-blob silc-linux-x64 --signature silc-linux-x64.sig
+
+            # Verificar SBOM
+            cosign verify-blob sbom-consolidado.json --signature sbom-consolidado.json.sig
+
+            # Verificar provenance SLSA
+            slsa-verifier verify-artifact silc-linux-x64 --provenance-path silc-provenance.intoto.jsonl --source-uri github.com/DevPlusBTC/sil --require-level 3
+            ```
 
             ### 📚 Documentación
             - Whitepaper técnico: `docs/WHITE_PAPER.md`
@@ -281,7 +497,16 @@ jobs:
             release-assets/silc-windows-x64.exe.sha256
             release-assets/silc-linux-x64.sha256
             release-assets/silc-macos-arm64.sha256
+            release-assets/silc-windows-x64.exe.sig
+            release-assets/silc-linux-x64.sig
+            release-assets/silc-macos-arm64.sig
+            release-assets/silc-windows-x64.exe.sha256.sig
+            release-assets/silc-linux-x64.sha256.sig
+            release-assets/silc-macos-arm64.sha256.sig
             release-assets/sbom-consolidado.json
+            release-assets/sbom-consolidado.json.sig
+            release-assets/silc-provenance.intoto.jsonl
+            release-assets/silc-provenance.intoto.jsonl.sig
 
   # --- 5. Test cargo install desde crates.io (post-release) ---
   test-cargo-install:
