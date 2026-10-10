@@ -53,6 +53,118 @@ fn valtype(t: &SilType) -> Result<ValType, ErrorWasm> {
     }
 }
 
+/// Emite instrucciones WASM que evalúan una fórmula SMT y dejan el resultado (i32: 0/1) en la pila.
+/// Usa los locales ya asignados (locales: ValueId -> u32).
+#[allow(clippy::only_used_in_recursion)]
+fn emitir_formula_wasm(
+    f: &mut wasm_encoder::Function,
+    locales: &HashMap<ValueId, u32>,
+    formula: &silc_causal_ir::nodes::FormulaLogica,
+) -> Result<(), ErrorWasm> {
+    use silc_causal_ir::nodes::{FormulaLogica, OpLogico};
+    let src = |v: ValueId| -> Result<u32, ErrorWasm> {
+        locales
+            .get(&v)
+            .copied()
+            .ok_or_else(|| ErrorWasm::Wasm("operando sin local".into()))
+    };
+    match formula {
+        FormulaLogica::Var(_) => {
+            // Var(String) no debería aparecer en fórmulas con VarId; fallback a 0
+            f.instruction(&wasm_encoder::Instruction::I32Const(0));
+        }
+        FormulaLogica::VarId(v) => {
+            let idx = src(*v)?;
+            f.instruction(&wasm_encoder::Instruction::LocalGet(idx));
+        }
+        FormulaLogica::ConstInt(n) => {
+            f.instruction(&wasm_encoder::Instruction::I64Const(*n));
+            // Para uso en comparaciones, necesitamos i32; asumimos que la fórmula maneja tipos
+            // En M6, las fórmulas SMT son enteros; para booleanos usamos 0/1
+        }
+        FormulaLogica::ConstBool(b) => {
+            f.instruction(&wasm_encoder::Instruction::I32Const(i32::from(*b)));
+        }
+        FormulaLogica::BinOp { op, lhs, rhs } => {
+            match op {
+                OpLogico::Gt
+                | OpLogico::Lt
+                | OpLogico::Eq
+                | OpLogico::Ne
+                | OpLogico::Ge
+                | OpLogico::Le => {
+                    // Comparación: evalúa lhs, rhs, luego instrucción de comparación → i32
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    let instr = match op {
+                        OpLogico::Gt => wasm_encoder::Instruction::I64GtS,
+                        OpLogico::Lt => wasm_encoder::Instruction::I64LtS,
+                        OpLogico::Eq => wasm_encoder::Instruction::I64Eq,
+                        OpLogico::Ne => wasm_encoder::Instruction::I64Ne,
+                        OpLogico::Ge => wasm_encoder::Instruction::I64GeS,
+                        OpLogico::Le => wasm_encoder::Instruction::I64LeS,
+                        _ => unreachable!(),
+                    };
+                    f.instruction(&instr);
+                }
+                OpLogico::And => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    // Ambos ya son i32 (0/1); AND lógico = multiplicación o and
+                    f.instruction(&wasm_encoder::Instruction::I32And);
+                }
+                OpLogico::Or => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    f.instruction(&wasm_encoder::Instruction::I32Or);
+                }
+                OpLogico::Add => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    f.instruction(&wasm_encoder::Instruction::I64Add);
+                }
+                OpLogico::Sub => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    f.instruction(&wasm_encoder::Instruction::I64Sub);
+                }
+                OpLogico::Mul => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    f.instruction(&wasm_encoder::Instruction::I64Mul);
+                }
+                OpLogico::Div => {
+                    emitir_formula_wasm(f, locales, lhs)?;
+                    emitir_formula_wasm(f, locales, rhs)?;
+                    f.instruction(&wasm_encoder::Instruction::I64DivS);
+                }
+            }
+        }
+        FormulaLogica::No(x) => {
+            emitir_formula_wasm(f, locales, x)?;
+            f.instruction(&wasm_encoder::Instruction::I32Const(1));
+            f.instruction(&wasm_encoder::Instruction::I32Xor); // not = xor 1
+        }
+    }
+    Ok(())
+}
+
+/// Emite trap condicional: si la fórmula evalúa a 0 (falso), emite `unreachable`.
+fn emitir_trap_si_falso(
+    f: &mut wasm_encoder::Function,
+    locales: &HashMap<ValueId, u32>,
+    formula: &silc_causal_ir::nodes::FormulaLogica,
+) -> Result<(), ErrorWasm> {
+    // Evalúa fórmula → deja i32 en pila
+    emitir_formula_wasm(f, locales, formula)?;
+    // if (top == 0) { unreachable }
+    f.instruction(&wasm_encoder::Instruction::I32Eqz); // 1 si era 0, 0 si era 1
+    f.instruction(&wasm_encoder::Instruction::If(wasm_encoder::BlockType::Empty));
+    f.instruction(&wasm_encoder::Instruction::Unreachable);
+    f.instruction(&wasm_encoder::Instruction::End);
+    Ok(())
+}
+
 /// Emite módulo WASM binario para una tarea.
 pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
     let mut module = Module::new();
@@ -359,8 +471,13 @@ fn emitir_instr(
             return Err(ErrorWasm::Wasm("op avanzada no soportada en M6".into()));
         }
     }
-    // Invariantes: verificadas por SMT en M4; en WASM M6 no emitimos traps
-    // (documentado) para preservar disciplina de pila. El C99 sí hace check.
+    // Invariantes: emitir trap condicional para Demostracion (verificación SMT en runtime).
+    if let Some(inv) = &ins.invariante {
+        use silc_causal_ir::nodes::ClaseInvariante;
+        if inv.clase == ClaseInvariante::Demostracion {
+            emitir_trap_si_falso(f, locales, &inv.formula)?;
+        }
+    }
     Ok(())
 }
 

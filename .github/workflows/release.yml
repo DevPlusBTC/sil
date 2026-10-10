@@ -71,16 +71,17 @@ jobs:
         run: |
           cargo clean -p silc-cli
           cargo build --locked --frozen -p silc-cli --release
-          HASH1=$(sha256sum silc-core/target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH1=$(sha256sum silc-core/target/release/silc.exe | cut -d' ' -f1)
+          HASH1=$(sha256sum target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH1=$(sha256sum target/release/silc.exe | cut -d' ' -f1)
           cargo clean -p silc-cli
           cargo build --locked --frozen -p silc-cli --release
-          HASH2=$(sha256sum silc-core/target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH2=$(sha256sum silc-core/target/release/silc.exe | cut -d' ' -f1)
+          HASH2=$(sha256sum target/release/silc 2>/dev/null | cut -d' ' -f1) || HASH2=$(sha256sum target/release/silc.exe | cut -d' ' -f1)
           if [ "$HASH1" = "$HASH2" ]; then
             echo "REPRODUCIBLE: hashes idénticos ($HASH1)"
           else
             echo "NO REPRODUCIBLE: $HASH1 != $HASH2"
             exit 1
           fi
+        working-directory: silc-core
 
   # --- 2. Build binarios multiplataforma ---
   build-binaries:
@@ -128,10 +129,10 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            cp silc-core/target/release/silc.exe dist/silc-windows-x64.exe
+            cp target/release/silc.exe dist/silc-windows-x64.exe
             sha256sum dist/silc-windows-x64.exe > dist/silc-windows-x64.exe.sha256
           else
-            cp silc-core/target/release/silc dist/silc-${{ matrix.artifact }}
+            cp target/release/silc dist/silc-${{ matrix.artifact }}
             sha256sum dist/silc-${{ matrix.artifact }} > dist/silc-${{ matrix.artifact }}.sha256
           fi
           cat dist/*.sha256
@@ -179,7 +180,19 @@ jobs:
 
       - name: Consolidar SBOMs
         run: |
-          cat sboms/sbom-*.json | jq -s 'add | {bomFormat: "CycloneDX", specVersion: "1.5", serialNumber: "urn:uuid:\(now|todateiso8601)", version: 1, metadata: .[0].metadata, components: (map(.components[]) | unique_by(.name, .version)), dependencies: (map(.dependencies[]) | unique_by(.ref))}' > sbom-consolidado.json
+          # Merge components and dependencies from all SBOMs, keep metadata from first
+          jq -s '
+            .[0] as $first |
+            {
+              bomFormat: $first.bomFormat,
+              specVersion: $first.specVersion,
+              serialNumber: "urn:uuid:\(now|todateiso8601)",
+              version: 1,
+              metadata: $first.metadata,
+              components: (map(.components[]) | unique_by(.name, .version)),
+              dependencies: (map(.dependencies[]) | unique_by(.ref))
+            }
+          ' sboms/sbom-*.json > sbom-consolidado.json
           cat sbom-consolidado.json
 
       - name: Upload consolidated SBOM

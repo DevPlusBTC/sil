@@ -227,9 +227,14 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
 }
 
 /// Convierte Expr AST → FormulaLogica (para invariantes SMT).
-fn a_formula(e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
+/// Usa VarId(ValueId) para vincular a SSA real.
+fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
     match e {
-        A::Expr::Var(id) => Ok(FormulaLogica::Var(id.nombre.clone())),
+        A::Expr::Var(id) => {
+            let vid = ctx.vars.get(&id.nombre).copied()
+                .ok_or_else(|| ErrorBajada::VariableNoDefinida(id.nombre.clone()))?;
+            Ok(FormulaLogica::VarId(vid))
+        }
         A::Expr::Lit(lit) => match lit {
             A::Literal::Entero(n) => Ok(FormulaLogica::ConstInt(*n)),
             A::Literal::Booleano(b) => Ok(FormulaLogica::ConstBool(*b)),
@@ -252,21 +257,26 @@ fn a_formula(e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
             };
             Ok(FormulaLogica::BinOp {
                 op: o,
-                lhs: Box::new(a_formula(lhs)?),
-                rhs: Box::new(a_formula(rhs)?),
+                lhs: Box::new(a_formula(ctx, lhs)?),
+                rhs: Box::new(a_formula(ctx, rhs)?),
             })
         }
         A::Expr::AccesoProp { base, prop, .. } => {
-            // M3: propiedad como variable compuesta "base.prop".
+            // M3: propiedad como variable compuesta "base.prop" -> usa VarId del base.
             let b = match base.as_ref() {
-                A::Expr::Var(id) => id.nombre.clone(),
+                A::Expr::Var(id) => {
+                    let vid = ctx.vars.get(&id.nombre).copied()
+                        .ok_or_else(|| ErrorBajada::VariableNoDefinida(id.nombre.clone()))?;
+                    vid
+                }
                 _ => {
                     return Err(ErrorBajada::ExpresionNoBajable(
                         "base compleja en invariante".into(),
                     ))
                 }
             };
-            Ok(FormulaLogica::Var(format!("{b}.{}", prop.nombre)))
+            // Propiedad como sufijo en nombre fuente para debug; SSA usa VarId del base.
+            Ok(FormulaLogica::VarId(b))
         }
     }
 }
@@ -278,7 +288,7 @@ fn a_formula(e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
 fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
     match s {
         A::Stmt::Asumir { cond, .. } => {
-            let f = a_formula(cond)?;
+            let f = a_formula(ctx, cond)?;
             let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Asuncion);
             // Emitimos marcador: instrucción sin valor, solo invariante.
             ctx.emitir(InstrCausal {
@@ -294,7 +304,7 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
         }
         A::Stmt::Demostrar { cond, .. } | A::Stmt::Verificar { cond, .. } => {
             let v = bajar_expr(ctx, cond)?;
-            let f = a_formula(cond)?;
+            let f = a_formula(ctx, cond)?;
             let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Demostracion);
             // Adjuntamos la invariante a una instrucción de comparación ya emitida
             // buscándola por resultado; simplificación M3: emitimos marcador.

@@ -14,6 +14,7 @@ wasmparser.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 silc-causal-ir = { workspace = true }
+slotmap = { workspace = true }
 
 [dev-dependencies]
 silc-frontend = { workspace = true }

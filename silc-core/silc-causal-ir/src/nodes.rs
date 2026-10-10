@@ -3,7 +3,7 @@
 //! M3: definicion completa — tipos, operaciones, bloques, arenas.
 //! Corresponde a Whitepaper §7.2.
 
-use slotmap::{new_key_type, SlotMap};
+use slotmap::{new_key_type, SlotMap, Key};
 use std::collections::HashMap;
 
 new_key_type! {
@@ -86,6 +86,7 @@ pub enum ClaseInvariante {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FormulaLogica {
     Var(String),
+    VarId(ValueId),
     ConstInt(i64),
     ConstBool(bool),
     BinOp {
@@ -140,15 +141,52 @@ impl InvarianteSMT {
 }
 
 /// Serializacion canonica para hashing estable.
-fn canonizar(f: &FormulaLogica) -> String {
+/// Usa ValueId directamente para VarId (unico y estable).
+pub fn canonizar(f: &FormulaLogica) -> String {
     match f {
         FormulaLogica::Var(v) => format!("V:{v}"),
+        FormulaLogica::VarId(v) => format!("V#{}", v.data().as_ffi()), // ValueId interno
         FormulaLogica::ConstInt(n) => format!("I:{n}"),
         FormulaLogica::ConstBool(b) => format!("B:{b}"),
         FormulaLogica::BinOp { op, lhs, rhs } => {
             format!("({:?} {} {})", op, canonizar(lhs), canonizar(rhs))
         }
         FormulaLogica::No(x) => format!("(No {})", canonizar(x)),
+    }
+}
+
+/// Convierte formula a SMT-LIB2 con nombres fuente (para debug/auditoria).
+/// Requiere mapa ValueId -> nombre fuente.
+pub fn a_smtlib2_con_nombres(f: &FormulaLogica, nombres: &std::collections::HashMap<ValueId, String>) -> String {
+    match f {
+        FormulaLogica::Var(v) => v.clone(),
+        FormulaLogica::VarId(v) => nombres.get(v).cloned().unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
+        FormulaLogica::ConstInt(n) => {
+            if *n < 0 {
+                format!("(- {})", n.abs())
+            } else {
+                format!("{n}")
+            }
+        }
+        FormulaLogica::ConstBool(b) => format!("{b}"),
+        FormulaLogica::BinOp { op, lhs, rhs } => {
+            let o = match op {
+                OpLogico::Gt => ">",
+                OpLogico::Lt => "<",
+                OpLogico::Eq => "=",
+                OpLogico::Ne => "distinct",
+                OpLogico::Ge => ">=",
+                OpLogico::Le => "<=",
+                OpLogico::Add => "+",
+                OpLogico::Sub => "-",
+                OpLogico::Mul => "*",
+                OpLogico::Div => "div",
+                OpLogico::And => "and",
+                OpLogico::Or => "or",
+            };
+            format!("({o} {} {})", a_smtlib2_con_nombres(lhs, nombres), a_smtlib2_con_nombres(rhs, nombres))
+        }
+        FormulaLogica::No(x) => format!("(not {})", a_smtlib2_con_nombres(x, nombres)),
     }
 }
 

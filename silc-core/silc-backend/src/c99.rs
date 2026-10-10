@@ -14,6 +14,7 @@
 use silc_causal_ir::nodes::{
     Bloque, Constante, OpArit, OpCmp, Operacion, SilType, TareaIR, Terminador, ValueId,
 };
+use slotmap::Key;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use thiserror::Error;
@@ -401,9 +402,10 @@ fn formula_a_c(
     e: &Emisor,
     mapa_params: &HashMap<ValueId, String>,
 ) -> String {
-    use silc_causal_ir::nodes::{FormulaLogica, OpLogico};
+    use silc_causal_ir::nodes::{FormulaLogica, OpLogico, ValueId};
     match f {
         FormulaLogica::Var(v) => v.clone(),
+        FormulaLogica::VarId(v) => mapa_params.get(v).cloned().unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
         FormulaLogica::ConstInt(n) => format!("{n}LL"),
         FormulaLogica::ConstBool(b) => format!("{}", i64::from(*b)),
         FormulaLogica::BinOp { op, lhs, rhs } => {

@@ -13,3 +13,7 @@ chumsky.workspace = true
 miette.workspace = true
 thiserror.workspace = true
 rustc-hash.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true }
+arbitrary = "1.3"

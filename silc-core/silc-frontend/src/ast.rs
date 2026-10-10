@@ -83,7 +83,7 @@ pub enum Stmt {
 }
 
 /// Expresión.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Var(Ident),
     Lit(Literal),
@@ -101,7 +101,7 @@ pub enum Expr {
 }
 
 /// Literal.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Entero(i64),
     Flotante(f64),
