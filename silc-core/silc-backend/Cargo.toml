@@ -15,6 +15,7 @@ thiserror.workspace = true
 miette.workspace = true
 silc-causal-ir = { workspace = true }
 slotmap = { workspace = true }
+silc-contracts = { workspace = true }
 
 [dev-dependencies]
 silc-frontend = { workspace = true }

@@ -1,7 +1,8 @@
-//! Runtime Contracts - Pre/Post conditions e invariantes que funcionan en release.
+//! silc-contracts - Runtime Contracts compartidos para todo el workspace SIL.
 //!
-//! A diferencia de `debug_assert!`, estos contratos se ejecutan SIEMPRE (release + debug).
-//! Fallo = panic con mensaje descriptivo (fail-fast, estilo militar).
+//! Contratos de precondición, postcondición, invariantes y aritmética verificada.
+//! Ejecutan SIEMPRE (release + debug). Fail-fast con panic descriptivo.
+//! Diseño: zero-cost en éxito, panic informativo en fallo.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -169,7 +170,7 @@ where
 #[macro_export]
 macro_rules! contract_pre {
     ($cond:expr, $($arg:tt)*) => {
-        $crate::contracts::require($cond, &format!($($arg)*))
+        $crate::require($cond, &format!($($arg)*))
     };
 }
 
@@ -177,7 +178,7 @@ macro_rules! contract_pre {
 #[macro_export]
 macro_rules! contract_post {
     ($cond:expr, $($arg:tt)*) => {
-        $crate::contracts::ensure($cond, &format!($($arg)*))
+        $crate::ensure($cond, &format!($($arg)*))
     };
 }
 
@@ -185,7 +186,7 @@ macro_rules! contract_post {
 #[macro_export]
 macro_rules! contract_invariant {
     ($cond:expr, $($arg:tt)*) => {
-        $crate::contracts::invariant($cond, &format!($($arg)*))
+        $crate::invariant($cond, &format!($($arg)*))
     };
 }
 
@@ -193,7 +194,7 @@ macro_rules! contract_invariant {
 #[macro_export]
 macro_rules! contract {
     ($pre:expr, $f:expr, $post:expr) => {
-        $crate::contracts::contract(
+        $crate::contract(
             || $pre,
             $f,
             |r| $post

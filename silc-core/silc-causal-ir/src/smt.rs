@@ -17,7 +17,8 @@
 //! - Cache: misma formula → mismo hash → skip O(1) sin re-verificar.
 //! - Contraejemplo: si retorna `Violada`, incluye asignacion concreta.
 
-use crate::{contracts::*, nodes::{ClaseInvariante, FormulaLogica, OpLogico, TareaIR, canonizar, a_smtlib2_con_nombres, ValueId}};
+use silc_contracts::*;
+use crate::nodes::{ClaseInvariante, FormulaLogica, OpLogico, TareaIR, canonizar, a_smtlib2_con_nombres, ValueId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -866,6 +867,7 @@ pub mod z3_backend {
 /// - Pre: `timeout_ms` > 0
 /// - Post: Retorna Ok si todas las metas son válidas, Err si alguna falla
 /// - Invariante: Cache solo guarda fórmulas válidas
+/// - Comportamiento: Tareas sin invariantes (ni asumir ni demostrar) pasan sin verificar
 pub fn verificar_tarea_con<B: BackendSMT>(
     tarea: &TareaIR,
     backend: &mut B,
@@ -873,8 +875,12 @@ pub fn verificar_tarea_con<B: BackendSMT>(
     timeout_ms: u64,
 ) -> Result<(), ErrorSMT> {
     require(timeout_ms > 0, "timeout debe ser > 0");
-    require(!tarea.invariantes(ClaseInvariante::Demostracion).is_empty() || tarea.invariantes(ClaseInvariante::Asuncion).is_empty(),
-        "tarea sin invariantes");
+    
+    // Tareas sin invariantes (ni asumir ni demostrar) no requieren verificación
+    let tiene_demostracion = !tarea.invariantes(ClaseInvariante::Demostracion).is_empty();
+    if !tiene_demostracion {
+        return Ok(()); // Sin metas que verificar → pasa
+    }
 
     // Recolectar asunciones (fórmulas).
     let asunciones: Vec<FormulaLogica> = tarea

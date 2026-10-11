@@ -1,6 +1,8 @@
 // M34: TPM 2.0 capabilities and root of trust
 // Safe Rust API for TPM 2.0 operations.
-// Real hardware implementation requires platform-specific TPM drivers.
+// NOTA: Esta es una API stub. La implementación real requiere drivers TPM específicos de plataforma
+// y enlace FFI a tss2 (IBM TSS, Microsoft TBS, etc.). Las funciones devuelven NotImplemented
+// hasta que se integre un backend real.
 
 // M34: TPM 2.0 Types
 
@@ -19,10 +21,30 @@ pub enum Tpm2Status {
 
 // M34: TPM 2.0 Error
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tpm2ErrorCode {
+    NotImplemented,
+    NotFound,
+    Unavailable,
+    AuthError,
+    BadParameter,
+    ResourceExhausted,
+    CommunicationError,
+}
+
 #[derive(Debug, Clone)]
 pub struct Tpm2Error {
-    pub code: c_uint,
+    pub code: Tpm2ErrorCode,
     pub message: &'static str,
+}
+
+impl Tpm2Error {
+    pub fn not_implemented(msg: &'static str) -> Self {
+        Self {
+            code: Tpm2ErrorCode::NotImplemented,
+            message: msg,
+        }
+    }
 }
 
 // M34: TPM 2B Name (64 bytes max)
@@ -152,117 +174,99 @@ pub struct Tpm2BPublicKey {
 
 // M34: Core Functions (safe wrappers - FFI-ready)
 
+/// Error común para funciones no implementadas
+fn not_impl(_op: &str) -> Tpm2Error {
+    Tpm2Error::not_implemented(
+        "TPM 2.0 operation not implemented: requires platform-specific TPM driver (tss2/tbs)"
+    )
+}
+
 // M34: Discover and initialize TPM 2.0 hardware
 
 pub fn tpm2_discover() -> Result<Tpm2Status, Tpm2Error> {
-    Ok(Tpm2Status::Ok)
+    Err(not_impl("tpm2_discover"))
 }
 
 // M34: Shutdown TPM 2.0 API
 
 pub fn tpm2_shutdown_api() -> Result<Tpm2Status, Tpm2Error> {
-    Ok(Tpm2Status::Ok)
+    Err(not_impl("tpm2_shutdown_api"))
 }
 
 // M34: Get EK (Endorsement Key) name
 
 pub fn tpm2_ek_get() -> Result<Tpm2BName, Tpm2Error> {
-    let name_buf = [0u8; 64];
-    Ok(Tpm2BName {
-        size: 32,
-        buffer: name_buf,
-    })
+    Err(not_impl("tpm2_ek_get"))
 }
 
 // M34: Get capability
 
 pub fn tpm2_get_capability(_cap: Tpm2Cap, _property: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
-    let out_data = [0u8; 512];
-    Ok(Tpm2BMaxBuffer {
-        size: 0,
-        data: out_data,
-    })
+    Err(not_impl("tpm2_get_capability"))
 }
 
 // M34: Get test result
 
 pub fn tpm2_get_test_result() -> Result<Tpm2BDigest, Tpm2Error> {
-    let digest_buf = [0u8; 32];
-    Ok(Tpm2BDigest {
-        size: 32,
-        buffer: digest_buf,
-    })
+    Err(not_impl("tpm2_get_test_result"))
 }
 
 // M34: Get attributes
 
 pub fn tpm2_get_attributes(_class: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
-    let out_data = [0u8; 512];
-    Ok(Tpm2BMaxBuffer {
-        size: 0,
-        data: out_data,
-    })
+    Err(not_impl("tpm2_get_attributes"))
 }
 
 // M34: Hash data
 
 pub fn tpm2_hash_get(_hash: c_uint, _data: &[u8]) -> Result<Tpm2BDigest, Tpm2Error> {
-    let digest_buf = [0u8; 32];
-    Ok(Tpm2BDigest {
-        size: 32,
-        buffer: digest_buf,
-    })
+    Err(not_impl("tpm2_hash_get"))
 }
 
 // M34: Generate attestation quote
 
 pub fn tpm2_attest(_qualified_signers: &[Tpm2BPublicKey]) -> Result<Tpm2BAttestation, Tpm2Error> {
-    let att_data = [0u8; 256];
-    Ok(Tpm2BAttestation {
-        size: 0,
-        data: att_data,
-    })
+    Err(not_impl("tpm2_attest"))
 }
 
-// M34: Policy evaluation (framework)
+// M34: Policy evaluation (stub)
 
 pub fn tpm2_policy_evaluate(_cap: Tpm2Cap, _property: c_uint, _authorization: Tpm2Permissions) -> bool {
-    false
+    false // No implementado
 }
 
 // M34: Hierarchy control
 
 pub fn tpm2_hierarchy_control(_startup_type: c_uint, _authorization_policy: Tpm2Permissions) -> bool {
-    false
+    false // No implementado
 }
 
 // M34: Set authorization for handles
 
 pub fn tpm2_set_authorization(_handles: &[c_uint], _auth: &Tpm2Permissions) -> bool {
-    false
+    false // No implementado
 }
 
 // M34: NV write (persistent storage)
 
-pub fn tpm2_nv_write(_nv_index: c_uint, _offset: c_uint, data: &[u8]) -> bool {
-    if data.len() > 512 { return false; }
-    true
+pub fn tpm2_nv_write(_nv_index: c_uint, _offset: c_uint, _data: &[u8]) -> bool {
+    false // No implementado
 }
 
 // M34: NV read (persistent storage)
 
 pub fn tpm2_nv_read(_nv_index: c_uint, _offset: c_uint, _data_len: usize) -> Result<Vec<u8>, Tpm2Error> {
-    Ok(Vec::new())
+    Err(not_impl("tpm2_nv_read"))
 }
 
 // M34: Session management
 
 pub fn tpm2_session_create(_hierarchy: c_uint, _session_type: c_uint) -> bool {
-    false
+    false // No implementado
 }
 
 // M34: Close session
 
 pub fn tpm2_session_close(_handle: c_uint) -> bool {
-    true
+    false // No implementado
 }

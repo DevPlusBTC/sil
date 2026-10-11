@@ -113,7 +113,7 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
         ));
     }
 
-    // Fase 4: SMT verify cada tarea
+    // Fase 4: SMT verify cada tarea (intervalos - Z3 feature needs fixes)
     for ir in &tareas_ir {
         silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
             miette::miette!(

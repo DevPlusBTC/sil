@@ -2,8 +2,10 @@
  *
  * M7: validación userspace real con reloj monotónico + integridad estructural.
  * - sil_cap_validar(): O(1), sin syscalls salvo clock_gettime (vDSO, ~20ns).
- * - sil_cap_solicitar(): token de DESARROLLO (autofirmado, NO SEGURO).
- *   Fase 1: firma HMAC-SHA256 con clave en TPM 2.0 + attestation eBPF.
+ * - sil_cap_solicitar(): IMPLEMENTACIÓN DE DESARROLLO (DEV-ONLY).
+ *   Firma XOR simple (NO CRIPTOGRÁFICA). Parámetro `recurso` ignorado.
+ *   Para producción: HMAC-SHA256 con clave en TPM 2.0 + attestation eBPF.
+ *   Retorna SIL_CAP_NOT_IMPLEMENTED hasta integración backend real.
  *
  * Disciplina: todos los punteros se validan; tiempos en ns monotónicos;
  * expiración estricta (ahora > expiración ⟹ inválido).
@@ -40,24 +42,37 @@ static unsigned long long ahora_monotonico_ns(void) {
 #endif
 }
 
-bool sil_cap_validar(const SilCapacidad *cap, SilPermiso requerido, unsigned long long ahora_ns) {
-    if (!cap) return false;
-    if (!cap->valida) return false;
-    if (((unsigned)cap->permisos & (unsigned)requerido) != (unsigned)requerido) return false;
+SilCapError sil_cap_validar(const SilCapacidad *cap, SilPermiso requerido, uint64_t ahora_ns) {
+    if (!cap) return SIL_CAP_INVALID_PARAM;
+    if (!cap->valida) return SIL_CAP_ERROR;
+    if (((unsigned)cap->permisos & (unsigned)requerido) != (unsigned)requerido) return SIL_CAP_ERROR;
     if (ahora_ns == 0) ahora_ns = ahora_monotonico_ns();
-    if (ahora_ns > cap->expiracion_ns) return false;
-    return true;
+    if (ahora_ns > cap->expiracion_ns) return SIL_CAP_ERROR;
+    return SIL_CAP_OK;
 }
 
-SilCapacidad sil_cap_solicitar(const char *recurso, unsigned int permisos, unsigned long long ttl_ns) {
-    (void)recurso; /* M7: sin binding a recurso (Fase 1: dominio/path en firma). */
+SilCapError sil_cap_solicitar(const char *recurso, uint32_t permisos, uint64_t ttl_ns, SilCapacidad *out_cap) {
+    (void)recurso; /* DEV-ONLY: sin binding a recurso (Fase 1: dominio/path en firma). */
+    if (!out_cap) return SIL_CAP_INVALID_PARAM;
+
+    /* NOTA: Implementación DEV-ONLY. No criptográficamente segura.
+     * Para producción: requiere HMAC-SHA256 con clave en TPM 2.0 + attestation. */
+    return SIL_CAP_NOT_IMPLEMENTED;
+}
+
+#if 0
+/* Implementación DEV-ONLY comentada para referencia:
+SilCapacidad sil_cap_solicitar_dev(const char *recurso, uint32_t permisos, uint64_t ttl_ns) {
+    (void)recurso;
     SilCapacidad c;
     memset(&c, 0, sizeof(c));
     c.id = SIL_CAP_MAGIC;
     c.permisos = permisos;
     c.expiracion_ns = ahora_monotonico_ns() + (ttl_ns ? ttl_ns : 500000ull);
-    /* Firma de desarrollo: XOR simple (NO CRIPTOGRÁFICO). Fase 1: HMAC-TPM. */
+    // Firma de desarrollo: XOR simple (NO CRIPTOGRÁFICO).
     for (int i = 0; i < 32; i++) c.firma[i] = (unsigned char)((c.id >> (i % 8)) ^ 0xA5u);
     c.valida = true;
     return c;
 }
+*/
+#endif

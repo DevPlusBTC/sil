@@ -11,7 +11,7 @@
 //! - SSA: cada ValueId → variable C `v<N>` con tipo declarado.
 //! - Arenas: cada tarea recibe `SilArena* __arena`; asignaciones vía bump alloc.
 
-use crate::{contracts::*};
+use silc_contracts::*;
 use silc_causal_ir::nodes::{
     Bloque, Constante, OpArit, OpCmp, Operacion, SilType, TareaIR, Terminador, ValueId,
 };

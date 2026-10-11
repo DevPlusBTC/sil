@@ -110,7 +110,6 @@ fn restriccion_valor_strategy() -> impl Strategy<Value = String> {
         ident_strategy(),
         prop::num::u64::ANY.prop_map(|n| n.to_string()),
         prop::sample::select(vec![
-            "true".to_string(), "false".to_string(), "null".to_string(),
             "verdadero".to_string(), "falso".to_string(), "nulo".to_string(),
         ]),
     ].prop_filter("no A keyword", |s| s != "A")

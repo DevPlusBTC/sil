@@ -17,6 +17,7 @@ rustc-hash.workspace = true
 thiserror.workspace = true
 miette.workspace = true
 silc-frontend.workspace = true
+silc-contracts.workspace = true
 
 [features]
 default = []

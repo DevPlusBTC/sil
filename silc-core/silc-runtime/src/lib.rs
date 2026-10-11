@@ -8,9 +8,7 @@
 // - `Scheduler`: spawn/ejecutar fibras cooperativas (state-machine safe).
 // - `Capacidad`: validacion con reloj monotono, expiracion estricta.
 
-pub mod contracts;
-
-use crate::contracts::*;
+use silc_contracts::*;
 use std::os::raw::{c_uchar, c_void};
 
 // M34: TPM 2.0 capabilities module loaded (ver m34_tpm2.rs)
@@ -30,7 +28,7 @@ pub struct Scheduler {
     ptr: *mut c_void,
 }
 
-/// Scheduler + Fibras
+/// Scheduler + Fibras (DEV-ONLY stub)
 
 impl Scheduler {
     /// Crea un nuevo scheduler
@@ -38,23 +36,24 @@ impl Scheduler {
         Self { ptr: std::ptr::null_mut() }
     }
 
-    /// Spawn fibra (unsafe)
+    /// Spawn fibra (DEV-ONLY stub)
     ///
     /// # Contrato
     /// - Pre: `entrada` no es null
     /// - Pre: `arg` puede ser null
-    /// - Post: Retorna true si spawn exitoso
-    /// - Safety: `entrada` debe ser función válida C
-    pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), _arg: *mut c_void) -> bool {
-        let ptr: *const c_void = entrada as *const c_void;
-        require_non_null(ptr, "función de entrada null");
-        false
+    /// - Post: Retorna Err("not implemented") - scheduler no implementado
+    /// - NOTA: Implementación real requiere state-machine cooperativo en C (sil-rt/fiber.c)
+    pub unsafe fn spawn(&mut self, _entrada: extern "C" fn(*mut c_void), _arg: *mut c_void) -> Result<(), &'static str> {
+        Err("Scheduler::spawn: DEV-ONLY - scheduler de fibras no implementado (requiere sil-rt/fiber.c real)")
     }
 
-    /// Ejecutar scheduler
+    /// Ejecutar scheduler (DEV-ONLY stub)
     ///
-    /// Ejecuta todas las fibras programadas en el scheduler.
-    pub fn ejecutar(&mut self) {}
+    /// # Contrato
+    /// - Post: Retorna Err("not implemented") - scheduler no implementado
+    pub fn ejecutar(&mut self) -> Result<(), &'static str> {
+        Err("Scheduler::ejecutar: DEV-ONLY - scheduler de fibras no implementado")
+    }
 }
 
 impl Default for Scheduler {
@@ -69,9 +68,9 @@ impl Drop for Scheduler {
     }
 }
 
-/// Cede ejecución
-pub fn ceder() {
-    // yield
+/// Cede ejecución (DEV-ONLY stub)
+pub fn ceder() -> Result<(), &'static str> {
+    Err("ceder: DEV-ONLY - scheduler de fibras no implementado")
 }
 
 /// Capacidades
@@ -94,25 +93,28 @@ pub struct Capacidad {
     inner: *mut c_uchar,
 }
 
-/// Capacidad::solicitar - Solicitar capacidad para un recurso
+/// Capacidad::solicitar - Solicitar capacidad para un recurso (DEV-ONLY)
 ///
 /// # Contrato
 /// - Pre: `recurso` no vacío
 /// - Pre: `ttl_ns` > 0
-/// - Post: Retorna Capacidad con inner inicializado
+/// - Post: Retorna Result con Capacidad o error
+/// - NOTA: Implementación DEV-ONLY. Firma XOR simple (NO CRIPTOGRÁFICA).
+///   Para producción: HMAC-SHA256 con clave en TPM 2.0.
 impl Capacidad {
-    /// Solicitar capacidad para un recurso
+    /// Solicitar capacidad para un recurso (DEV-ONLY)
     ///
     /// # Contrato
     /// - Pre: `recurso` no vacío, longitud <= 256
     /// - Pre: `ttl_ns` > 0
-    /// - Post: Retorna Capacidad válida
-    pub fn solicitar(recurso: &str, permisos: Permisos, ttl_ns: u64) -> Self {
+    /// - Post: Retorna Result<Capacidad, Error>
+    /// - Comportamiento: Devuelve error NotImplemented hasta backend real
+    pub fn solicitar(recurso: &str, permisos: Permisos, ttl_ns: u64) -> Result<Self, &'static str> {
         require(!recurso.is_empty(), "recurso vacío");
         require_valid_ident(recurso, 256, "recurso inválido");
         require(ttl_ns > 0, "TTL debe ser > 0");
         let _ = (recurso, permisos, ttl_ns);
-        Self { inner: std::ptr::null_mut() }
+        Err("Capacidad::solicitar: DEV-ONLY - requiere backend criptográfico real (TPM 2.0 / HMAC-SHA256)")
     }
 
     /// Validar permisos
@@ -155,5 +157,3 @@ pub fn init() {}
 
 // m34_tpm2 - Módulo TPM 2.0 capabilities
 pub mod m34_tpm2;
-
-pub use contracts::*;

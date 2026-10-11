@@ -1441,6 +1441,7 @@ dependencies = [
  "inkwell",
  "miette",
  "silc-causal-ir",
+ "silc-contracts",
  "silc-frontend",
  "slotmap",
  "thiserror 2.0.21",
@@ -1457,6 +1458,7 @@ dependencies = [
  "petgraph",
  "rustc-hash",
  "sha3",
+ "silc-contracts",
  "silc-frontend",
  "slotmap",
  "thiserror 2.0.21",
@@ -1484,6 +1486,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "silc-contracts"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "silc-frontend"
 version = "0.1.0"
 dependencies = [
@@ -1502,6 +1511,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "libc",
+ "silc-contracts",
 ]
 
 [[package]]

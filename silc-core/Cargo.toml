@@ -6,6 +6,7 @@ members = [
     "silc-backend",
     "silc-runtime",
     "silc-test",
+    "silc-contracts",
 ]
 exclude = [
     "silc-frontend/fuzz",
@@ -62,3 +63,4 @@ silc-frontend = { path = "silc-frontend" }
 silc-causal-ir = { path = "silc-causal-ir" }
 silc-backend = { path = "silc-backend" }
 silc-runtime = { path = "silc-runtime" }
+silc-contracts = { path = "silc-contracts" }

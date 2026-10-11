@@ -10,7 +10,8 @@
 //! - `verificar`/`demostrar` generan `InvarianteSMT` clase Demostracion.
 //! - `asumir` genera `InvarianteSMT` clase Asuncion.
 
-use crate::{contracts::*, nodes::*};
+use silc_contracts::*;
+use crate::nodes::*;
 use silc_frontend::ast as A;
 use std::collections::HashMap;
 use thiserror::Error;

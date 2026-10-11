@@ -2,10 +2,9 @@
 //!
 //! M0: esqueletos que compilan. Implementación completa en M5 (C99) y M6 (LLVM).
 
-pub mod contracts;
 pub mod c99;
 pub mod llvm;
 pub mod targets;
 pub mod wasm;
 
-pub use contracts::*;
+pub use silc_contracts::*;

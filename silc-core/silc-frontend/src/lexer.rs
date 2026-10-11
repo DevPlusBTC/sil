@@ -198,10 +198,8 @@ pub enum Token {
     #[token("mut")]
     Mut,
     #[token("verdadero")]
-    #[token("true")]
     Verdadero,
     #[token("falso")]
-    #[token("false")]
     Falso,
     #[token("nulo")]
     Nulo,
