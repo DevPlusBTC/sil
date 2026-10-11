@@ -11,8 +11,7 @@
 pub mod contracts;
 
 use crate::contracts::*;
-use std::ffi::CString;
-use std::os::raw::{c_char, c_uchar, c_uint, c_void};
+use std::os::raw::{c_uchar, c_void};
 
 // M34: TPM 2.0 capabilities module loaded (ver m34_tpm2.rs)
 
@@ -46,7 +45,7 @@ impl Scheduler {
     /// - Pre: `arg` puede ser null
     /// - Post: Retorna true si spawn exitoso
     /// - Safety: `entrada` debe ser función válida C
-    pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), arg: *mut c_void) -> bool {
+    pub unsafe fn spawn(&mut self, entrada: extern "C" fn(*mut c_void), _arg: *mut c_void) -> bool {
         let ptr: *const c_void = entrada as *const c_void;
         require_non_null(ptr, "función de entrada null");
         false
@@ -131,7 +130,7 @@ impl Capacidad {
     /// # Contrato
     /// - Pre: `ahora_ns` > 0
     /// - Post: Retorna true si permisos válidos en el tiempo
-    pub fn valida_en(&self, requerido: Permisos, ahora_ns: u64) -> bool {
+    pub fn valida_en(&self, _requerido: Permisos, ahora_ns: u64) -> bool {
         require(ahora_ns > 0, "timestamp inválido");
         false
     }

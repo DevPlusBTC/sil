@@ -269,7 +269,7 @@ fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
                 rhs: Box::new(a_formula(ctx, rhs)?),
             })
         }
-        A::Expr::AccesoProp { base, prop, .. } => {
+        A::Expr::AccesoProp { base, prop: _, .. } => {
             // M3: propiedad como variable compuesta "base.prop" -> usa VarId del base.
             let b = match base.as_ref() {
                 A::Expr::Var(id) => {

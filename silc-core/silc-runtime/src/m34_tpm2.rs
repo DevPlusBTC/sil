@@ -167,7 +167,7 @@ pub fn tpm2_shutdown_api() -> Result<Tpm2Status, Tpm2Error> {
 // M34: Get EK (Endorsement Key) name
 
 pub fn tpm2_ek_get() -> Result<Tpm2BName, Tpm2Error> {
-    let mut name_buf = [0u8; 64];
+    let name_buf = [0u8; 64];
     Ok(Tpm2BName {
         size: 32,
         buffer: name_buf,
@@ -176,8 +176,8 @@ pub fn tpm2_ek_get() -> Result<Tpm2BName, Tpm2Error> {
 
 // M34: Get capability
 
-pub fn tpm2_get_capability(cap: Tpm2Cap, property: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
-    let mut out_data = [0u8; 512];
+pub fn tpm2_get_capability(_cap: Tpm2Cap, _property: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
+    let out_data = [0u8; 512];
     Ok(Tpm2BMaxBuffer {
         size: 0,
         data: out_data,
@@ -187,7 +187,7 @@ pub fn tpm2_get_capability(cap: Tpm2Cap, property: c_uint) -> Result<Tpm2BMaxBuf
 // M34: Get test result
 
 pub fn tpm2_get_test_result() -> Result<Tpm2BDigest, Tpm2Error> {
-    let mut digest_buf = [0u8; 32];
+    let digest_buf = [0u8; 32];
     Ok(Tpm2BDigest {
         size: 32,
         buffer: digest_buf,
@@ -196,8 +196,8 @@ pub fn tpm2_get_test_result() -> Result<Tpm2BDigest, Tpm2Error> {
 
 // M34: Get attributes
 
-pub fn tpm2_get_attributes(class: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
-    let mut out_data = [0u8; 512];
+pub fn tpm2_get_attributes(_class: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
+    let out_data = [0u8; 512];
     Ok(Tpm2BMaxBuffer {
         size: 0,
         data: out_data,
@@ -206,8 +206,8 @@ pub fn tpm2_get_attributes(class: c_uint) -> Result<Tpm2BMaxBuffer, Tpm2Error> {
 
 // M34: Hash data
 
-pub fn tpm2_hash_get(hash: c_uint, data: &[u8]) -> Result<Tpm2BDigest, Tpm2Error> {
-    let mut digest_buf = [0u8; 32];
+pub fn tpm2_hash_get(_hash: c_uint, _data: &[u8]) -> Result<Tpm2BDigest, Tpm2Error> {
+    let digest_buf = [0u8; 32];
     Ok(Tpm2BDigest {
         size: 32,
         buffer: digest_buf,
@@ -216,8 +216,8 @@ pub fn tpm2_hash_get(hash: c_uint, data: &[u8]) -> Result<Tpm2BDigest, Tpm2Error
 
 // M34: Generate attestation quote
 
-pub fn tpm2_attest(qualified_signers: &[Tpm2BPublicKey]) -> Result<Tpm2BAttestation, Tpm2Error> {
-    let mut att_data = [0u8; 256];
+pub fn tpm2_attest(_qualified_signers: &[Tpm2BPublicKey]) -> Result<Tpm2BAttestation, Tpm2Error> {
+    let att_data = [0u8; 256];
     Ok(Tpm2BAttestation {
         size: 0,
         data: att_data,
@@ -226,43 +226,43 @@ pub fn tpm2_attest(qualified_signers: &[Tpm2BPublicKey]) -> Result<Tpm2BAttestat
 
 // M34: Policy evaluation (framework)
 
-pub fn tpm2_policy_evaluate(cap: Tpm2Cap, property: c_uint, authorization: Tpm2Permissions) -> bool {
+pub fn tpm2_policy_evaluate(_cap: Tpm2Cap, _property: c_uint, _authorization: Tpm2Permissions) -> bool {
     false
 }
 
 // M34: Hierarchy control
 
-pub fn tpm2_hierarchy_control(startup_type: c_uint, authorization_policy: Tpm2Permissions) -> bool {
+pub fn tpm2_hierarchy_control(_startup_type: c_uint, _authorization_policy: Tpm2Permissions) -> bool {
     false
 }
 
 // M34: Set authorization for handles
 
-pub fn tpm2_set_authorization(handles: &[c_uint], auth: &Tpm2Permissions) -> bool {
+pub fn tpm2_set_authorization(_handles: &[c_uint], _auth: &Tpm2Permissions) -> bool {
     false
 }
 
 // M34: NV write (persistent storage)
 
-pub fn tpm2_nv_write(nv_index: c_uint, offset: c_uint, data: &[u8]) -> bool {
+pub fn tpm2_nv_write(_nv_index: c_uint, _offset: c_uint, data: &[u8]) -> bool {
     if data.len() > 512 { return false; }
     true
 }
 
 // M34: NV read (persistent storage)
 
-pub fn tpm2_nv_read(nv_index: c_uint, offset: c_uint, data_len: usize) -> Result<Vec<u8>, Tpm2Error> {
+pub fn tpm2_nv_read(_nv_index: c_uint, _offset: c_uint, _data_len: usize) -> Result<Vec<u8>, Tpm2Error> {
     Ok(Vec::new())
 }
 
 // M34: Session management
 
-pub fn tpm2_session_create(hierarchy: c_uint, session_type: c_uint) -> bool {
+pub fn tpm2_session_create(_hierarchy: c_uint, _session_type: c_uint) -> bool {
     false
 }
 
 // M34: Close session
 
-pub fn tpm2_session_close(handle: c_uint) -> bool {
+pub fn tpm2_session_close(_handle: c_uint) -> bool {
     true
 }

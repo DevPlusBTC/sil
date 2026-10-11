@@ -165,7 +165,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
     require_valid_ident(&tarea.nombre, 64, "identificador de tarea inválido");
     require(!tarea.params.is_empty() || tarea.retorno != SilType::Void, "tarea sin params ni retorno");
 
-    let mut e = Emisor::new();
+    let _e = Emisor::new();
 
     // ... resto de la función sin cambios
     let mut e = Emisor::new();
@@ -422,7 +422,7 @@ fn formula_a_c(
     e: &Emisor,
     mapa_params: &HashMap<ValueId, String>,
 ) -> String {
-    use silc_causal_ir::nodes::{FormulaLogica, OpLogico, ValueId};
+    use silc_causal_ir::nodes::{FormulaLogica, OpLogico};
     match f {
         FormulaLogica::Var(v) => v.clone(),
         FormulaLogica::VarId(v) => mapa_params.get(v).cloned().unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
