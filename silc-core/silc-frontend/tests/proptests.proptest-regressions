@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 8a3f0693aecd7b333572a57af08738b6e51b58df49b6a2fd218342a06efa24f5 # shrinks to ast = Program { defs: [Tarea(TareaDecl { nombre: Ident { nombre: "a", span: 0..0 }, params: [], retorno: None, cuerpo: Cuerpo { stmts: [], restricciones: [] }, span: 0..0 })] }
+cc 9ce2883bfc5f93513e2249e3e3d49ec54e179096b4807e8168587ba0cc7203ce # shrinks to ast = Program { defs: [Tarea(TareaDecl { nombre: Ident { nombre: "_", span: 0..0 }, params: [], retorno: None, cuerpo: Cuerpo { stmts: [Verificar { cond: Lit(Texto("\\")), span: 0..0 }], restricciones: [] }, span: 0..0 })] }

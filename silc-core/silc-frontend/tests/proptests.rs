@@ -324,7 +324,11 @@ fn literal_a_source(lit: &Literal) -> String {
     match lit {
         Literal::Entero(n) => n.to_string(),
         Literal::Flotante(f) => f.to_string(),
-        Literal::Texto(s) => format!("\"{}\"", s),
+        Literal::Texto(s) => {
+            // Escapar para el lexer: \ -> \\, " -> \"
+            let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+            format!("\"{}\"", escaped)
+        }
         Literal::Booleano(b) => b.to_string(),
     }
 }

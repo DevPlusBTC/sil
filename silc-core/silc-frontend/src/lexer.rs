@@ -5,6 +5,35 @@
 
 use logos::Logos;
 
+/// Procesa secuencias de escape en string literals: \\ -> \, \" -> ", \n -> newline, etc.
+fn unescape_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('\\') => result.push('\\'),
+                Some('"') => result.push('"'),
+                Some('n') => result.push('\n'),
+                Some('t') => result.push('\t'),
+                Some('r') => result.push('\r'),
+                Some(other) => {
+                    // Escape desconocido: mantener ambos caracteres
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => {
+                    // Backslash al final
+                    result.push('\\');
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct IndentState {
     pub stack: Vec<usize>,
@@ -169,8 +198,10 @@ pub enum Token {
     #[token("mut")]
     Mut,
     #[token("verdadero")]
+    #[token("true")]
     Verdadero,
     #[token("falso")]
+    #[token("false")]
     Falso,
     #[token("nulo")]
     Nulo,
@@ -216,7 +247,9 @@ pub enum Token {
     Entero(i64),
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
         let s = lex.slice();
-        Some(s[1..s.len()-1].to_string())
+        // Quitar comillas y procesar escapes: \\ -> \, \" -> "
+        let inner = &s[1..s.len()-1];
+        Some(unescape_string(inner))
     })]
     Texto(String),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_\-]*", |lex| lex.slice().to_string())]
@@ -470,6 +503,43 @@ mod tests {
             .collect();
         assert_eq!(strs.len(), 1);
         assert!(strs[0].contains("{nombre}"));
+    }
+
+    #[test]
+    fn string_escape_backslash() {
+        // String con backslash escapado: "\\" -> un backslash
+        let t = toks(r#"definir tarea f(): verificar que "\\""#);
+        let textos: Vec<_> = t
+            .iter()
+            .filter_map(|x| match x {
+                TokenFull::Tok(s) => match &s.tok {
+                    Token::Texto(st) => Some(st.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(textos.len(), 1);
+        assert_eq!(textos[0], "\\"); // Un backslash
+    }
+
+    #[test]
+    fn string_escape_quote() {
+        // String con comilla escapada: "\"" -> una comilla
+        // En Rust raw string: r#"...""# = contenido: definir tarea f(): verificar que "\""
+        let t = toks(r#"definir tarea f(): verificar que "\"""#);
+        let textos: Vec<_> = t
+            .iter()
+            .filter_map(|x| match x {
+                TokenFull::Tok(s) => match &s.tok {
+                    Token::Texto(st) => Some(st.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(textos.len(), 1);
+        assert_eq!(textos[0], "\""); // Una comilla
     }
 
     #[test]

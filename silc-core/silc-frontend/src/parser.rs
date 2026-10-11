@@ -243,10 +243,11 @@ fn cuerpo_fin(c: &Cuerpo) -> usize {
     0
 }
 
-// Cuerpo ::= Sentencia { NL Sentencia } [ NL BloqueRestricciones ]
+// Cuerpo ::= [Sentencia { NL Sentencia }] [ NL BloqueRestricciones ]
 fn parse_cuerpo(p: &mut P) -> Result<Cuerpo, ErrorFrontend> {
     let mut stmts = Vec::new();
     let mut restricciones = Vec::new();
+    let mut saw_stmt = false;
     loop {
         p.skip_newlines();
         match p.peek() {
@@ -258,8 +259,13 @@ fn parse_cuerpo(p: &mut P) -> Result<Cuerpo, ErrorFrontend> {
             }
             _ => {
                 stmts.push(parse_sentencia(p)?);
+                saw_stmt = true;
             }
         }
+    }
+    // Permitir cuerpo vacío (0 statements) si no hay restricciones
+    if !saw_stmt && restricciones.is_empty() {
+        // Cuerpo vacío válido - solo INDENT/DEDENT
     }
     Ok(Cuerpo {
         stmts,
@@ -625,6 +631,18 @@ fn parse_mul(p: &mut P) -> Result<Expr, ErrorFrontend> {
 fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
     match p.peek().clone() {
         TokenFull::Tok(s) => match s.tok {
+            Token::Minus => {
+                // Unary minus: -expr
+                p.bump();
+                let rhs = parse_primary(p)?;
+                let span = expr_span(&rhs);
+                Ok(Expr::BinOp {
+                    op: BinOp::Sub,
+                    lhs: Box::new(Expr::Lit(Literal::Entero(0))),
+                    rhs: Box::new(rhs),
+                    span,
+                })
+            }
             Token::Entero(n) => {
                 p.bump();
                 Ok(Expr::Lit(Literal::Entero(n)))
@@ -782,7 +800,10 @@ fn parse_tipo(p: &mut P) -> Result<TipoDato, ErrorFrontend> {
             }
             Token::TTupla => {
                 p.bump();
-                p.expect_kw(Token::De)?;
+                // "de" es opcional antes de Tupla (CNL: "Tupla(...)" o "de Tupla(...)")
+                if p.peek_is_kw(&Token::De) {
+                    p.bump();
+                }
                 p.expect_sym(Token::LParen)?;
                 let mut xs = Vec::new();
                 if !p.peek_is_sym(&Token::RParen) {
