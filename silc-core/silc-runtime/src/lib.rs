@@ -82,29 +82,6 @@ extern "C" {
     pub fn sil_aio_cancelar(ctx: *mut SilAioCtx, req: *mut SilAioReq) -> bool;
     pub fn sil_aio_tiene_pendientes(ctx: *mut SilAioCtx) -> bool;
 
-    // NVM Persistent Arenas
-    pub fn sil_nvm_arena_crear(config: *const SilNvmConfig, error: *mut c_int) -> *mut SilNvmArena;
-    pub fn sil_nvm_arena_abrir(ruta: *const c_char, error: *mut c_int) -> *mut SilNvmArena;
-    pub fn sil_nvm_arena_cerrar(arena: *mut SilNvmArena);
-    pub fn sil_nvm_asignar(
-        arena: *mut SilNvmArena,
-        tamanio: size_t,
-        alineacion: size_t,
-    ) -> *mut c_void;
-    pub fn sil_nvm_liberar(arena: *mut SilNvmArena, ptr: *mut c_void, tamanio: size_t);
-    pub fn sil_nvm_checkpoint(arena: *mut SilNvmArena) -> c_int;
-    pub fn sil_nvm_reset(arena: *mut SilNvmArena);
-    pub fn sil_nvm_migrar_desde_volatile(
-        arena: *mut SilNvmArena,
-        volatile_arena: *mut SilArena,
-    ) -> c_int;
-    pub fn sil_nvm_base(arena: *mut SilNvmArena) -> *mut c_void;
-    pub fn sil_nvm_usado(arena: *mut SilNvmArena) -> size_t;
-    pub fn sil_nvm_tamano(arena: *mut SilNvmArena) -> size_t;
-    pub fn sil_nvm_verificar_integridad(arena: *mut SilNvmArena) -> bool;
-    pub fn sil_nvm_recuperar(arena: *mut SilNvmArena) -> c_int;
-    pub fn sil_nvm_sync(arena: *mut SilNvmArena) -> c_int;
-
     // eBPF Kernel Integration
     pub fn sil_ebpf_ctx_crear() -> *mut SilEbpfContext;
     pub fn sil_ebpf_ctx_destruir(ctx: *mut SilEbpfContext);
@@ -179,32 +156,6 @@ pub type SilChannel = c_void;
 pub type SilChannelMPSC = c_void;
 
 pub type SilAioCtx = c_void;
-
-pub type SilNvmArena = c_void;
-
-#[repr(C)]
-pub struct SilNvmConfig {
-    pub ruta_archivo: *const c_char,
-    pub tamano_inicial: size_t,
-    pub tamano_maximo: size_t,
-    pub flags: u32,
-    pub version_esquema: u32,
-}
-
-/// Flags para SilNvmConfig
-pub const SIL_NVM_FLAG_CREAR: u32 = 0x0001;
-pub const SIL_NVM_FLAG_SOLO_LECTURA: u32 = 0x0002;
-pub const SIL_NVM_FLAG_SYNC: u32 = 0x0004;
-pub const SIL_NVM_FLAG_PMEM: u32 = 0x0008;
-pub const SIL_NVM_FLAG_WAL: u32 = 0x0010;
-
-/// Códigos de error NVM
-pub const SIL_NVM_OK: c_int = 0;
-pub const SIL_NVM_ERROR: c_int = -1;
-pub const SIL_NVM_NO_MEM: c_int = -2;
-pub const SIL_NVM_CORRUPTO: c_int = -3;
-pub const SIL_NVM_VERSION: c_int = -4;
-pub const SIL_NVM_PERMISOS: c_int = -5;
 
 #[repr(C)]
 pub struct SilAioReq {
@@ -639,139 +590,6 @@ impl AioRequest {
 
     fn as_mut_ptr(&mut self) -> *mut SilAioReq {
         &mut self.inner
-    }
-}
-
-/// NVM Persistent Arena (RAII wrapper)
-pub struct NvmArena {
-    inner: *mut SilNvmArena,
-}
-
-impl NvmArena {
-    /// Crear/abrir arena NVM persistente
-    ///
-    /// # Contrato
-    /// - Pre: `ruta_archivo` no nulo
-    /// - Post: Retorna NvmArena inicializada
-    pub fn nueva(
-        ruta_archivo: &str,
-        tamano_inicial: usize,
-        flags: u32,
-    ) -> Result<Self, &'static str> {
-        require(!ruta_archivo.is_empty(), "ruta vacía");
-        let c_ruta = std::ffi::CString::new(ruta_archivo).map_err(|_| "ruta inválida")?;
-
-        let config = SilNvmConfig {
-            ruta_archivo: c_ruta.as_ptr(),
-            tamano_inicial,
-            tamano_maximo: 0,
-            flags,
-            version_esquema: 1,
-        };
-
-        let mut error: c_int = 0;
-        let ptr = unsafe { sil_nvm_arena_crear(&config, &mut error) };
-        if error != SIL_NVM_OK || ptr.is_null() {
-            return Err("sil_nvm_arena_crear falló");
-        }
-        Ok(Self { inner: ptr })
-    }
-
-    /// Abrir arena NVM existente (solo lectura)
-    pub fn abrir(ruta_archivo: &str) -> Result<Self, &'static str> {
-        require(!ruta_archivo.is_empty(), "ruta vacía");
-        let c_ruta = std::ffi::CString::new(ruta_archivo).map_err(|_| "ruta inválida")?;
-
-        let mut error: c_int = 0;
-        let ptr = unsafe { sil_nvm_arena_abrir(c_ruta.as_ptr(), &mut error) };
-        if error != SIL_NVM_OK || ptr.is_null() {
-            return Err("sil_nvm_arena_abrir falló");
-        }
-        Ok(Self { inner: ptr })
-    }
-
-    /// Asignar memoria persistente
-    ///
-    /// # Contrato
-    /// - Pre: `tamanio` > 0
-    /// - Post: Retorna puntero a memoria persistente
-    pub fn asignar(&self, tamanio: usize, alineacion: usize) -> Result<*mut u8, &'static str> {
-        require(tamanio > 0, "tamaño debe ser > 0");
-        let ptr = unsafe { sil_nvm_asignar(self.inner, tamanio, alineacion) };
-        if ptr.is_null() {
-            return Err("sil_nvm_asignar falló");
-        }
-        Ok(ptr as *mut u8)
-    }
-
-    /// Checkpoint: persistir cambios a disco
-    pub fn checkpoint(&self) -> Result<(), &'static str> {
-        let ret = unsafe { sil_nvm_checkpoint(self.inner) };
-        if ret != SIL_NVM_OK {
-            return Err("checkpoint falló");
-        }
-        Ok(())
-    }
-
-    /// Reset arena al último checkpoint
-    pub fn reset(&self) {
-        unsafe { sil_nvm_reset(self.inner) }
-    }
-
-    /// Migrar arena volátil a persistente
-    pub fn migrar_desde_volatile(&self, volatile: &mut Arena) -> Result<(), &'static str> {
-        let ret = unsafe { sil_nvm_migrar_desde_volatile(self.inner, volatile.as_ptr()) };
-        if ret != SIL_NVM_OK {
-            return Err("migración falló");
-        }
-        Ok(())
-    }
-
-    /// Verificar integridad
-    pub fn verificar_integridad(&self) -> bool {
-        unsafe { sil_nvm_verificar_integridad(self.inner) }
-    }
-
-    /// Recuperación tras crash
-    pub fn recuperar(&self) -> Result<(), &'static str> {
-        let ret = unsafe { sil_nvm_recuperar(self.inner) };
-        if ret != SIL_NVM_OK {
-            return Err("recuperación falló");
-        }
-        Ok(())
-    }
-
-    /// Forzar sync a disco
-    pub fn sync(&self) -> Result<(), &'static str> {
-        let ret = unsafe { sil_nvm_sync(self.inner) };
-        if ret != SIL_NVM_OK {
-            return Err("sync falló");
-        }
-        Ok(())
-    }
-
-    /// Obtener tamaño usado
-    pub fn usado(&self) -> usize {
-        unsafe { sil_nvm_usado(self.inner) }
-    }
-
-    /// Obtener tamaño total mapeado
-    pub fn tamano(&self) -> usize {
-        unsafe { sil_nvm_tamano(self.inner) }
-    }
-
-    /// Obtener puntero base
-    pub fn base(&self) -> *mut u8 {
-        unsafe { sil_nvm_base(self.inner) as *mut u8 }
-    }
-}
-
-impl Drop for NvmArena {
-    fn drop(&mut self) {
-        if !self.inner.is_null() {
-            unsafe { sil_nvm_arena_cerrar(self.inner) };
-            self.inner = std::ptr::null_mut();
-        }
     }
 }
 

@@ -280,7 +280,7 @@ class Parser:
         elif kind_token.value == "variante":
             return self._parse_variant_decl()
         else:
-            raise NotImplementedError(f"Definición de tipo '{kind_token.value}' no soportada aún en el Parser base.")
+            raise SyntaxError(f"Definición de tipo '{kind_token.value}' no soportada aún en el Parser base.")
 
     def _parse_function_decl(self) -> FunctionDeclNode:
         name_token = self._expect(TokenType.IDENTIFIER)
