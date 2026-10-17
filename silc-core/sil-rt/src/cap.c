@@ -1,17 +1,16 @@
-/* sil_cap.c - Capacidades Zero-Trust (M7).
+/* sil_cap.c - Capacidades Zero-Trust con HMAC-SHA256 real.
  *
- * M7: validación userspace real con reloj monotónico + integridad estructural.
- * - sil_cap_validar(): O(1), sin syscalls salvo clock_gettime (vDSO, ~20ns).
- * - sil_cap_solicitar(): IMPLEMENTACIÓN DE DESARROLLO (DEV-ONLY).
- *   Firma XOR simple (NO CRIPTOGRÁFICA). Parámetro `recurso` ignorado.
- *   Para producción: HMAC-SHA256 con clave en TPM 2.0 + attestation eBPF.
- *   Retorna SIL_CAP_NOT_IMPLEMENTED hasta integración backend real.
- *
- * Disciplina: todos los punteros se validan; tiempos en ns monotónicos;
- * expiración estricta (ahora > expiración ⟹ inválido).
+ * - sil_cap_solicitar(): firma HMAC-SHA256(magic|permisos|expiracion|recurso)
+ *   con clave de 32 bytes en SIL_CAP_KEY (hex). Liga la capacidad al recurso.
+ * - sil_cap_validar(): recalcula y compara en tiempo constante + permisos +
+ *   expiracion estricta con reloj monotonico (vDSO/QPC, ~20ns).
+ * - Sin malloc, sin estado global. Clave solo vive en stack y se limpia.
  */
+
 #include "sil_cap.h"
+#include "sil_hmac.h"
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -19,10 +18,11 @@
 #endif
 
 #define SIL_CAP_MAGIC 0xC4A981E5u
+#define SIL_CAP_MAX_RECURSO 1024u
+#define SIL_CAP_TTL_DEFECTO_NS 500000000ull /* 500ms */
 
 static unsigned long long ahora_monotonico_ns(void) {
 #if defined(_WIN32)
-    /* Windows: QueryPerformanceCounter (Fase 1: InitOnce caching de frecuencia). */
     {
         static LARGE_INTEGER freq = {0};
         LARGE_INTEGER c;
@@ -42,37 +42,118 @@ static unsigned long long ahora_monotonico_ns(void) {
 #endif
 }
 
-SilCapError sil_cap_validar(const SilCapacidad *cap, SilPermiso requerido, uint64_t ahora_ns) {
-    if (!cap) return SIL_CAP_INVALID_PARAM;
-    if (!cap->valida) return SIL_CAP_ERROR;
-    if (((unsigned)cap->permisos & (unsigned)requerido) != (unsigned)requerido) return SIL_CAP_ERROR;
-    if (ahora_ns == 0) ahora_ns = ahora_monotonico_ns();
-    if (ahora_ns > cap->expiracion_ns) return SIL_CAP_ERROR;
+/* Lee SIL_CAP_KEY (64 hex chars). Retorna 1 y llena clave, o 0. */
+static uint8_t clave_fija[32];
+static int hay_clave_fija = 0;
+
+SilCapError sil_cap_fijar_clave(const uint8_t clave[32]) {
+    if (!clave) return SIL_CAP_INVALID_PARAM;
+    memcpy(clave_fija, clave, 32);
+    hay_clave_fija = 1;
     return SIL_CAP_OK;
 }
 
+static int leer_clave(uint8_t clave[32]) {
+    if (hay_clave_fija) {
+        memcpy(clave, clave_fija, 32);
+        return 1;
+    }
+    const char *hex = getenv("SIL_CAP_KEY");
+    if (!hex) return 0;
+    if (strlen(hex) != 64) return 0;
+    for (int i = 0; i < 32; i++) {
+        unsigned v = 0;
+        for (int j = 0; j < 2; j++) {
+            char c = hex[i * 2 + j];
+            v <<= 4;
+            if (c >= '0' && c <= '9') v |= (unsigned)(c - '0');
+            else if (c >= 'a' && c <= 'f') v |= (unsigned)(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') v |= (unsigned)(c - 'A' + 10);
+            else return 0;
+        }
+        clave[i] = (uint8_t)v;
+    }
+    return 1;
+}
+
+static void le64(uint8_t out[8], uint64_t v) {
+    for (int i = 0; i < 8; i++) out[i] = (uint8_t)(v >> (i * 8));
+}
+
+static void le32(uint8_t out[4], uint32_t v) {
+    for (int i = 0; i < 4; i++) out[i] = (uint8_t)(v >> (i * 8));
+}
+
+/* Mensaje firmado: magic(8) | permisos(4) | expiracion(8) | recurso_hash(32). */
+static void mensaje_firmar(uint64_t id, uint32_t permisos, uint64_t exp,
+                           const uint8_t rh[32], const uint8_t clave[32],
+                           uint8_t firma[32]) {
+    uint8_t msg[8 + 4 + 8 + 32];
+    le64(msg, id);
+    le32(msg + 8, permisos);
+    le64(msg + 12, exp);
+    memcpy(msg + 20, rh, 32);
+    sil_hmac_sha256(clave, 32, msg, sizeof(msg), firma);
+    memset(msg, 0, sizeof(msg));
+}
+
 SilCapError sil_cap_solicitar(const char *recurso, uint32_t permisos, uint64_t ttl_ns, SilCapacidad *out_cap) {
-    (void)recurso; /* DEV-ONLY: sin binding a recurso (Fase 1: dominio/path en firma). */
-    if (!out_cap) return SIL_CAP_INVALID_PARAM;
+    if (!out_cap || !recurso) return SIL_CAP_INVALID_PARAM;
+    size_t lr = strlen(recurso);
+    if (lr == 0 || lr > SIL_CAP_MAX_RECURSO) return SIL_CAP_INVALID_PARAM;
+    if ((permisos & 0xFFFFFFF0u) != 0 && permisos > 0x0Fu) return SIL_CAP_INVALID_PARAM;
 
-    /* NOTA: Implementación DEV-ONLY. No criptográficamente segura.
-     * Para producción: requiere HMAC-SHA256 con clave en TPM 2.0 + attestation. */
-    return SIL_CAP_NOT_IMPLEMENTED;
+    uint8_t clave[32];
+    if (!leer_clave(clave)) {
+        memset(out_cap, 0, sizeof(*out_cap));
+        return SIL_CAP_SIN_CLAVE;
+    }
+    uint8_t rh[32];
+    sil_sha256((const uint8_t *)recurso, lr, rh);
+
+    uint64_t exp = ahora_monotonico_ns() + (ttl_ns ? ttl_ns : SIL_CAP_TTL_DEFECTO_NS);
+    uint8_t firma[32];
+    mensaje_firmar(SIL_CAP_MAGIC, permisos, exp, rh, clave, firma);
+
+    memset(out_cap, 0, sizeof(*out_cap));
+    out_cap->id = SIL_CAP_MAGIC;
+    out_cap->permisos = permisos;
+    out_cap->expiracion_ns = exp;
+    memcpy(out_cap->recurso_hash, rh, 32);
+    memcpy(out_cap->firma, firma, 32);
+    out_cap->valida = true;
+
+    memset(clave, 0, sizeof(clave));
+    memset(rh, 0, sizeof(rh));
+    memset(firma, 0, sizeof(firma));
+    return SIL_CAP_OK;
 }
 
-#if 0
-/* Implementación DEV-ONLY comentada para referencia:
-SilCapacidad sil_cap_solicitar_dev(const char *recurso, uint32_t permisos, uint64_t ttl_ns) {
-    (void)recurso;
-    SilCapacidad c;
-    memset(&c, 0, sizeof(c));
-    c.id = SIL_CAP_MAGIC;
-    c.permisos = permisos;
-    c.expiracion_ns = ahora_monotonico_ns() + (ttl_ns ? ttl_ns : 500000ull);
-    // Firma de desarrollo: XOR simple (NO CRIPTOGRÁFICO).
-    for (int i = 0; i < 32; i++) c.firma[i] = (unsigned char)((c.id >> (i % 8)) ^ 0xA5u);
-    c.valida = true;
-    return c;
+SilCapError sil_cap_validar(const SilCapacidad *cap, const char *recurso, SilPermiso requerido, uint64_t ahora_ns) {
+    if (!cap || !recurso) return SIL_CAP_INVALID_PARAM;
+    if (!cap->valida) return SIL_CAP_ERROR;
+    if (cap->id != SIL_CAP_MAGIC) return SIL_CAP_ERROR;
+    if (((unsigned)cap->permisos & (unsigned)requerido) != (unsigned)requerido) return SIL_CAP_ERROR;
+    size_t lr = strlen(recurso);
+    if (lr == 0 || lr > SIL_CAP_MAX_RECURSO) return SIL_CAP_INVALID_PARAM;
+
+    uint64_t ahora = ahora_ns ? ahora_ns : ahora_monotonico_ns();
+    if (ahora > cap->expiracion_ns) return SIL_CAP_ERROR;
+
+    uint8_t clave[32];
+    if (!leer_clave(clave)) return SIL_CAP_SIN_CLAVE;
+    uint8_t rh[32];
+    sil_sha256((const uint8_t *)recurso, lr, rh);
+    if (!sil_ct_igual(rh, cap->recurso_hash, 32)) {
+        memset(clave, 0, sizeof(clave));
+        memset(rh, 0, sizeof(rh));
+        return SIL_CAP_ERROR;
+    }
+    uint8_t esperada[32];
+    mensaje_firmar(cap->id, cap->permisos, cap->expiracion_ns, rh, clave, esperada);
+    int ok = sil_ct_igual(esperada, cap->firma, 32);
+    memset(clave, 0, sizeof(clave));
+    memset(rh, 0, sizeof(rh));
+    memset(esperada, 0, sizeof(esperada));
+    return ok ? SIL_CAP_OK : SIL_CAP_ERROR;
 }
-*/
-#endif

@@ -10,10 +10,7 @@ use predicates::prelude::*;
 use std::io::Write;
 
 fn sil_tempfile(contenido: &str) -> tempfile::NamedTempFile {
-    let mut f = tempfile::Builder::new()
-        .suffix(".sil")
-        .tempfile()
-        .unwrap();
+    let mut f = tempfile::Builder::new().suffix(".sil").tempfile().unwrap();
     f.write_all(contenido.as_bytes()).unwrap();
     f
 }
@@ -210,7 +207,14 @@ fn bootstrap_pipeline_completo() {
     drop(out_c);
     Command::cargo_bin("silc")
         .unwrap()
-        .args(["build", f.path().to_str().unwrap(), "--target", "c99", "--out", &out_c_path])
+        .args([
+            "build",
+            f.path().to_str().unwrap(),
+            "--target",
+            "c99",
+            "--out",
+            &out_c_path,
+        ])
         .assert()
         .success();
     let c = std::fs::read_to_string(&out_c_path).unwrap();
@@ -222,7 +226,14 @@ fn bootstrap_pipeline_completo() {
     drop(out_wasm);
     Command::cargo_bin("silc")
         .unwrap()
-        .args(["build", f.path().to_str().unwrap(), "--target", "wasm", "--out", &out_wasm_path])
+        .args([
+            "build",
+            f.path().to_str().unwrap(),
+            "--target",
+            "wasm",
+            "--out",
+            &out_wasm_path,
+        ])
         .assert()
         .success();
     let _ = std::fs::remove_file(&out_wasm_path);

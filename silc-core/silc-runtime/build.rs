@@ -6,6 +6,12 @@ fn main() {
         .files([
             "../sil-rt/src/arena.c",
             "../sil-rt/src/cap.c",
+            "../sil-rt/src/channel.c",
+            "../sil-rt/src/fiber.c",
+            "../sil-rt/src/aio.c",
+            "../sil-rt/src/nvm.c",
+            "../sil-rt/src/ebpf.c",
+            "../sil-rt/src/sil_hmac.c",
         ])
         .include("../sil-rt/include")
         .warnings(false);

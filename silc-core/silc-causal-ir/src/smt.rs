@@ -17,8 +17,10 @@
 //! - Cache: misma formula → mismo hash → skip O(1) sin re-verificar.
 //! - Contraejemplo: si retorna `Violada`, incluye asignacion concreta.
 
+use crate::nodes::{
+    a_smtlib2_con_nombres, canonizar, ClaseInvariante, FormulaLogica, OpLogico, TareaIR, ValueId,
+};
 use silc_contracts::*;
-use crate::nodes::{ClaseInvariante, FormulaLogica, OpLogico, TareaIR, canonizar, a_smtlib2_con_nombres, ValueId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -102,7 +104,10 @@ pub fn script_completo(tarea: &TareaIR) -> String {
         out.push_str(&format!("(declare-fun {v} () Int)\n"));
     }
     for inv in tarea.invariantes(ClaseInvariante::Asuncion) {
-        out.push_str(&format!("(assert {})\n", a_smtlib2_con_nombres(&inv.formula, &tarea.nombres)));
+        out.push_str(&format!(
+            "(assert {})\n",
+            a_smtlib2_con_nombres(&inv.formula, &tarea.nombres)
+        ));
     }
     for inv in tarea.invariantes(ClaseInvariante::Demostracion) {
         out.push_str(&format!(
@@ -183,7 +188,7 @@ impl CacheLemas {
             return;
         }
         // En memoria: no persistir a disco
-        if self.path == PathBuf::from(":memory:") {
+        if self.path.as_os_str() == ":memory:" {
             return;
         }
         if let Some(padre) = self.path.parent() {
@@ -201,7 +206,7 @@ impl CacheLemas {
             let _ = std::fs::rename(&tmp, &self.path);
         }
         // Postcondición: archivo escrito (solo si no es memoria)
-        if self.path != PathBuf::from(":memory:") {
+        if self.path.as_os_str() != ":memory:" {
             ensure(std::fs::metadata(&self.path).is_ok(), "cache no persistido");
         }
     }
@@ -374,7 +379,11 @@ impl BackendSMT for VerificadorIntervalos {
 
 /// Intenta extraer cota `x OP const` y estrechar intervalo. Retorna false si
 /// la asunción no es de esa forma (se ignora de forma sound).
-fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica, nombres: &std::collections::HashMap<ValueId, String>) -> bool {
+fn aplicar_asuncion(
+    ivs: &mut Map<String, Intervalo>,
+    a: &FormulaLogica,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> bool {
     // Forma: Var OP Const | Const OP Var
     if let FormulaLogica::BinOp { op, lhs, rhs } = a {
         // Caso Var OP Const
@@ -394,7 +403,8 @@ fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica, nombres
             return iv.lo <= iv.hi;
         }
         // Caso VarId OP Const
-        if let (FormulaLogica::VarId(v), FormulaLogica::ConstInt(c)) = (lhs.as_ref(), rhs.as_ref()) {
+        if let (FormulaLogica::VarId(v), FormulaLogica::ConstInt(c)) = (lhs.as_ref(), rhs.as_ref())
+        {
             if let Some(nombre) = nombres.get(v) {
                 let iv = ivs.entry(nombre.clone()).or_insert(Intervalo::todo());
                 match op {
@@ -429,7 +439,8 @@ fn aplicar_asuncion(ivs: &mut Map<String, Intervalo>, a: &FormulaLogica, nombres
             return iv.lo <= iv.hi;
         }
         // Caso Const OP VarId
-        if let (FormulaLogica::ConstInt(c), FormulaLogica::VarId(v)) = (lhs.as_ref(), rhs.as_ref()) {
+        if let (FormulaLogica::ConstInt(c), FormulaLogica::VarId(v)) = (lhs.as_ref(), rhs.as_ref())
+        {
             if let Some(nombre) = nombres.get(v) {
                 let iv = ivs.entry(nombre.clone()).or_insert(Intervalo::todo());
                 match op {
@@ -491,7 +502,11 @@ enum EvalMeta {
 
 /// Evalúa si la meta es verdadera en TODO el espacio de intervalos.
 /// Si encuentra un punto que la falsifica, retorna contraejemplo concreto.
-fn evaluar_meta(ivs: &Map<String, Intervalo>, meta: &FormulaLogica, nombres: &std::collections::HashMap<ValueId, String>) -> EvalMeta {
+fn evaluar_meta(
+    ivs: &Map<String, Intervalo>,
+    meta: &FormulaLogica,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> EvalMeta {
     // Contexto UNSAT → meta vacuamente válida.
     if let Some(iv) = ivs.get("\u{0}UNSAT") {
         if iv.lo > iv.hi {
@@ -517,7 +532,10 @@ fn evaluar_meta(ivs: &Map<String, Intervalo>, meta: &FormulaLogica, nombres: &st
             | OpLogico::Ne => evaluar_comparacion(ivs, *op, lhs, rhs, nombres),
             OpLogico::And => {
                 // A∧B válida ⟺ A válida y B válida.
-                match (evaluar_meta(ivs, lhs, nombres), evaluar_meta(ivs, rhs, nombres)) {
+                match (
+                    evaluar_meta(ivs, lhs, nombres),
+                    evaluar_meta(ivs, rhs, nombres),
+                ) {
                     (EvalMeta::SiempreVerdadera, EvalMeta::SiempreVerdadera) => {
                         EvalMeta::SiempreVerdadera
                     }
@@ -546,7 +564,11 @@ fn evaluar_comparacion(
 ) -> EvalMeta {
     // Recolectar variables (resuelve VarId a nombre fuente via nombres).
     let mut vars: Vec<String> = Vec::new();
-    fn rec(f: &FormulaLogica, vars: &mut Vec<String>, nombres: &std::collections::HashMap<ValueId, String>) {
+    fn rec(
+        f: &FormulaLogica,
+        vars: &mut Vec<String>,
+        nombres: &std::collections::HashMap<ValueId, String>,
+    ) {
         let mut stack = vec![f];
         while let Some(x) = stack.pop() {
             match x {
@@ -662,7 +684,11 @@ fn contiene_mul_div(f: &FormulaLogica) -> bool {
 
 /// Evaluación concreta con aritmética saturante (None si overflow/div-cero).
 /// Resuelve VarId a nombre fuente via nombres para lookup en asign.
-fn eval_concreta(f: &FormulaLogica, asign: &HashMap<String, i64>, nombres: &std::collections::HashMap<ValueId, String>) -> Option<i64> {
+fn eval_concreta(
+    f: &FormulaLogica,
+    asign: &HashMap<String, i64>,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> Option<i64> {
     match f {
         FormulaLogica::Var(v) => asign.get(v).copied(),
         FormulaLogica::VarId(v) => {
@@ -707,6 +733,12 @@ fn eval_concreta(f: &FormulaLogica, asign: &HashMap<String, i64>, nombres: &std:
 #[cfg(feature = "smt")]
 pub mod z3_backend {
     use super::*;
+    use slotmap::Key;
+    use std::collections::HashMap;
+    use z3::{
+        ast::{Bool, Int},
+        with_z3_config, Config, SatResult, Solver,
+    };
 
     pub struct VerificadorZ3 {
         _priv: (),
@@ -732,127 +764,137 @@ pub mod z3_backend {
             timeout_ms: u64,
             nombres: &std::collections::HashMap<ValueId, String>,
         ) -> ResultadoVerif {
-            use z3::{Config, Context, SatResult, Solver};
+            let mut cfg = Config::new();
+            cfg.set_timeout_msec(timeout_ms);
 
-            let cfg = Config::new();
-            let ctx = Context::new(&cfg);
-            let solver = Solver::new(&ctx);
-            solver.set_param("timeout", &timeout_ms.to_string());
+            // Usar with_z3_config para crear contexto con timeout
+            with_z3_config(&cfg, || {
+                // Caché de variables Int
+                let mut vars: HashMap<String, Int> = HashMap::new();
 
-            // Traducir asunciones y meta a AST Z3.
-            // M4: traducción completa QF_LIA con Ints.
-            fn trad(
-                ctx: &z3::Context,
-                vars: &mut HashMap<String, z3::ast::Int>,
-                nombres: &std::collections::HashMap<ValueId, String>,
-                f: &FormulaLogica,
-            ) -> Option<z3::ast::Int> {
-                match f {
-                    FormulaLogica::Var(v) => Some(
-                        vars.entry(v.clone())
-                            .or_insert_with(|| z3::ast::Int::new_const(ctx, v.as_str()))
-                            .clone(),
-                    ),
-                    FormulaLogica::VarId(v) => {
-                        let nombre = nombres.get(v).unwrap_or(&format!("v{}", v.data().as_ffi()));
-                        Some(
-                            vars.entry(nombre.clone())
-                                .or_insert_with(|| z3::ast::Int::new_const(ctx, nombre.as_str()))
+                // Función para traducir expresión a Int Z3
+                fn trad(
+                    vars: &mut HashMap<String, Int>,
+                    nombres: &std::collections::HashMap<ValueId, String>,
+                    f: &FormulaLogica,
+                ) -> Option<Int> {
+                    match f {
+                        FormulaLogica::Var(v) => Some(
+                            vars.entry(v.clone())
+                                .or_insert_with(|| Int::new_const(v.as_str()))
                                 .clone(),
-                        )
-                    }
-                    FormulaLogica::ConstInt(n) => Some(z3::ast::Int::from_i64(ctx, *n)),
-                    FormulaLogica::BinOp { op, lhs, rhs } => {
-                        let l = trad(ctx, vars, nombres, lhs)?;
-                        let r = trad(ctx, vars, nombres, rhs)?;
-                        match op {
-                            OpLogico::Add => Some(l + r),
-                            OpLogico::Sub => Some(l - r),
-                            OpLogico::Mul => Some(l * r),
-                            _ => None, // Comparaciones se manejan en nivel Bool
+                        ),
+                        FormulaLogica::VarId(v) => {
+                            let ffi = v.data().as_ffi();
+                            let nombre_owned = nombres
+                                .get(v)
+                                .cloned()
+                                .unwrap_or_else(|| format!("v{}", ffi));
+                            Some(
+                                vars.entry(nombre_owned.clone())
+                                    .or_insert_with(|| Int::new_const(nombre_owned.as_str()))
+                                    .clone(),
+                            )
                         }
-                    }
-                    _ => None,
-                }
-            }
-
-            fn trad_bool(
-                ctx: &z3::Context,
-                vars: &mut HashMap<String, z3::ast::Int>,
-                nombres: &std::collections::HashMap<ValueId, String>,
-                f: &FormulaLogica,
-            ) -> Option<z3::ast::Bool> {
-                match f {
-                    FormulaLogica::ConstBool(b) => Some(z3::ast::Bool::from_bool(ctx, *b)),
-                    FormulaLogica::BinOp { op, lhs, rhs } => match op {
-                        OpLogico::Gt
-                        | OpLogico::Ge
-                        | OpLogico::Lt
-                        | OpLogico::Le
-                        | OpLogico::Eq
-                        | OpLogico::Ne => {
-                            let l = trad(ctx, vars, nombres, lhs)?;
-                            let r = trad(ctx, vars, nombres, rhs)?;
-                            Some(match op {
-                                OpLogico::Gt => l.gt(&r),
-                                OpLogico::Ge => l.ge(&r),
-                                OpLogico::Lt => l.lt(&r),
-                                OpLogico::Le => l.le(&r),
-                                OpLogico::Eq => l._eq(&r),
-                                _ => l._eq(&r).not(),
-                            })
-                        }
-                        OpLogico::And => {
-                            let l = trad_bool(ctx, vars, nombres, lhs)?;
-                            let r = trad_bool(ctx, vars, nombres, rhs)?;
-                            Some(z3::ast::Bool::and(ctx, &[&l, &r]))
-                        }
-                        OpLogico::Or => {
-                            let l = trad_bool(ctx, vars, nombres, lhs)?;
-                            let r = trad_bool(ctx, vars, nombres, rhs)?;
-                            Some(z3::ast::Bool::or(ctx, &[&l, &r]))
-                        }
-                        _ => None,
-                    },
-                    FormulaLogica::No(x) => trad_bool(ctx, vars, nombres, x).map(|b| b.not()),
-                    _ => None,
-                }
-            }
-
-            let mut vars: HashMap<String, z3::ast::Int> = HashMap::new();
-            for a in asunciones {
-                if let Some(b) = trad_bool(&ctx, &mut vars, nombres, a) {
-                    solver.assert(&b);
-                } else {
-                    return ResultadoVerif::Desconocido;
-                }
-            }
-            let q = match trad_bool(&ctx, &mut vars, nombres, meta) {
-                Some(b) => b,
-                None => return ResultadoVerif::Desconocido,
-            };
-            solver.push();
-            solver.assert(&q.not());
-            let r = match solver.check() {
-                SatResult::Unsat => ResultadoVerif::Valido,
-                SatResult::Sat => {
-                    let mut ce = HashMap::new();
-                    if let Some(m) = solver.get_model() {
-                        for (nombre, ast) in vars.iter() {
-                            if let Some(v) = m.eval(ast, true).and_then(|x| x.as_i64()) {
-                                ce.insert(nombre.clone(), v);
+                        FormulaLogica::ConstInt(n) => Some(Int::from_i64(*n)),
+                        FormulaLogica::BinOp { op, lhs, rhs } => {
+                            let l = trad(vars, nombres, lhs)?;
+                            let r = trad(vars, nombres, rhs)?;
+                            match op {
+                                OpLogico::Add => Some(l + r),
+                                OpLogico::Sub => Some(l - r),
+                                OpLogico::Mul => Some(l * r),
+                                OpLogico::Div => Some(l / r),
+                                _ => None, // Comparaciones se manejan en nivel Bool
                             }
                         }
+                        _ => None,
                     }
-                    ResultadoVerif::Violada { contraejemplo: ce }
                 }
-                SatResult::Unknown => ResultadoVerif::Desconocido,
-            };
-            solver.pop(1);
-            r
+
+                // Función para traducir expresión a Bool Z3
+                fn trad_bool(
+                    vars: &mut HashMap<String, Int>,
+                    nombres: &std::collections::HashMap<ValueId, String>,
+                    f: &FormulaLogica,
+                ) -> Option<Bool> {
+                    match f {
+                        FormulaLogica::ConstBool(b) => Some(Bool::from_bool(*b)),
+                        FormulaLogica::BinOp { op, lhs, rhs } => match op {
+                            OpLogico::Gt
+                            | OpLogico::Ge
+                            | OpLogico::Lt
+                            | OpLogico::Le
+                            | OpLogico::Eq
+                            | OpLogico::Ne => {
+                                let l = trad(vars, nombres, lhs)?;
+                                let r = trad(vars, nombres, rhs)?;
+                                Some(match op {
+                                    OpLogico::Gt => l.gt(&r),
+                                    OpLogico::Ge => l.ge(&r),
+                                    OpLogico::Lt => l.lt(&r),
+                                    OpLogico::Le => l.le(&r),
+                                    OpLogico::Eq => l.eq(&r),
+                                    _ => l.eq(&r).not(),
+                                })
+                            }
+                            OpLogico::And => {
+                                let l = trad_bool(vars, nombres, lhs)?;
+                                let r = trad_bool(vars, nombres, rhs)?;
+                                Some(Bool::and(&[&l, &r]))
+                            }
+                            OpLogico::Or => {
+                                let l = trad_bool(vars, nombres, lhs)?;
+                                let r = trad_bool(vars, nombres, rhs)?;
+                                Some(Bool::or(&[&l, &r]))
+                            }
+                            _ => None,
+                        },
+                        FormulaLogica::No(x) => trad_bool(vars, nombres, x).map(|b| b.not()),
+                        _ => None,
+                    }
+                }
+
+                let solver = Solver::new();
+
+                for a in asunciones {
+                    if let Some(b) = trad_bool(&mut vars, nombres, a) {
+                        solver.assert(&b);
+                    } else {
+                        return ResultadoVerif::Desconocido;
+                    }
+                }
+                let q = match trad_bool(&mut vars, nombres, meta) {
+                    Some(b) => b,
+                    None => return ResultadoVerif::Desconocido,
+                };
+                solver.push();
+                solver.assert(q.not());
+                let r = match solver.check() {
+                    SatResult::Unsat => ResultadoVerif::Valido,
+                    SatResult::Sat => {
+                        let mut ce = HashMap::new();
+                        if let Some(m) = solver.get_model() {
+                            for (nombre, ast) in vars.iter() {
+                                if let Some(v) = m.eval(ast, true).and_then(|x| x.as_i64()) {
+                                    ce.insert(nombre.clone(), v);
+                                }
+                            }
+                        }
+                        ResultadoVerif::Violada { contraejemplo: ce }
+                    }
+                    SatResult::Unknown => ResultadoVerif::Desconocido,
+                };
+                solver.pop(1);
+                r
+            })
         }
     }
 }
+
+// Re-exportar VerificadorZ3 cuando la feature `smt` está activada
+#[cfg(feature = "smt")]
+pub use z3_backend::VerificadorZ3;
 
 // =============================================================================
 // Orquestador: verifica tarea completa con cache
@@ -875,7 +917,7 @@ pub fn verificar_tarea_con<B: BackendSMT>(
     timeout_ms: u64,
 ) -> Result<(), ErrorSMT> {
     require(timeout_ms > 0, "timeout debe ser > 0");
-    
+
     // Tareas sin invariantes (ni asumir ni demostrar) no requieren verificación
     let tiene_demostracion = !tarea.invariantes(ClaseInvariante::Demostracion).is_empty();
     if !tiene_demostracion {

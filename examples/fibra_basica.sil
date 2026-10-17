@@ -1,0 +1,4 @@
+definir tarea test_fiber():
+    asumir que verdadero
+    demostrar que verdadero
+    retornar verdadero

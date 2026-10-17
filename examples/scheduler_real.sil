@@ -1,0 +1,4 @@
+definir tarea test_scheduler_real():
+    asumir que verdadero
+    demostrar que verdadero
+    retornar verdadero

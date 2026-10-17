@@ -1,8 +1,20 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0 | **Estado:** Beta Funcional — **Frontend + IR + Intervalos + C99/WASM implementados; Z3/TPM/Fibras = STUBS**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM ✅ | Z3/TPM/Fibras = STUBS ⚠️**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
+
+## 📊 Estado Real del Proyecto
+
+| Métrica | Valor |
+|---------|-------|
+| **Tests** | **150/150 ✅** |
+| **Crates** | 7/7 compilan |
+| **Líneas código** | ~15,000 Rust |
+| **Estado real** | **Fase 0 (Semilla)** |
+| **Próximo hito** | Z3 backend + Scheduler real |
+
+---
 
 ## Qué FUNCIONA hoy (producción-ready para casos de uso limitados)
 
@@ -20,14 +32,16 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 
 | Componente | Estado | Detalle |
 |------------|--------|---------|
-| **Verificador Z3** | ⚠️ STUB | API rota (feature `smt` no funcional) |
-| **TPM 2.0 / Hardware Root of Trust** | ⚠️ STUB | Framework de tipos solo; `tpm2_*` retornan ceros/OK falso |
-| **Scheduler Fibras / Canales Lock-Free** | ⚠️ STUB | `Scheduler::spawn`/`ejecutar` retornan error |
+| **Verificador Z3** | 🚧 **EN PROGRESO** | Compila con `vendored`, feature `smt` |
+| **TPM 2.0 / Hardware Root of Trust** | 🚧 **STUB** | Framework de tipos solo; `tpm2_*` retornan `NotImplemented` |
+| **Scheduler Fibras / Canales Lock-Free** | 🚧 **STUB** | `Scheduler::spawn`/`ejecutar` retornan `NotImplemented` |
 | **io_uring / E/S Asíncrona Nativa** | ❌ NO IMPLEMENTADO | Solo declaración |
 | **Backend LLVM / SPIR-V / GPU** | ❌ NO IMPLEMENTADO | Solo stubs |
-| **Arenas Persistentes NVM / Migración Lazy** | ⚠️ STUB | Solo AST/IR |
-| **eBPF Kernel / TPM 2.0 Real** | ❌ / ⚠️ STUB | Solo framework de tipos |
+| **Arenas Persistentes NVM / Migración Lazy** | 🚧 **STUB** | Solo AST/IR |
+| **eBPF Kernel / TPM 2.0 Real** | ❌ / 🚧 STUB | Solo framework de tipos |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | Objetivos de diseño, no logrados |
+
+---
 
 ## Instalación
 
@@ -35,7 +49,7 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 # Desde fuente (requerido - no publicado en crates.io)
 git clone https://github.com/DevPlusBTC/silc.git
 cd silc/silc-core
-cargo build --release
+cargo build --release --features smt
 ```
 
 ## Uso Rápido

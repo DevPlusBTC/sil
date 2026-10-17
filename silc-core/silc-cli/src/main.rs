@@ -8,6 +8,10 @@ use miette::{IntoDiagnostic, Result, WrapErr};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
+// Backend SMT: Z3 (feature `smt`) o Intervalos (fallback)
+#[cfg(feature = "smt")]
+use silc_causal_ir::smt::{verificar_tarea_con, CacheLemas, VerificadorZ3};
+
 #[derive(Parser, Debug)]
 #[command(
     name = "silc",
@@ -113,15 +117,32 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
         ));
     }
 
-    // Fase 4: SMT verify cada tarea (intervalos - Z3 feature needs fixes)
+    // Fase 4: SMT verify cada tarea
+    // Usa Z3 (feature `smt`) si está disponible, si no intervalos
     for ir in &tareas_ir {
-        silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
-            miette::miette!(
-                "{}: verificación SMT falló en '{}': {e}",
-                path.display(),
-                ir.nombre
-            )
-        })?;
+        #[cfg(feature = "smt")]
+        {
+            let mut backend = VerificadorZ3::new();
+            let mut cache = CacheLemas::cargar();
+            verificar_tarea_con(ir, &mut backend, &mut cache, smt_timeout).map_err(|e| {
+                miette::miette!(
+                    "{}: verificación SMT (Z3) falló en '{}': {e}",
+                    path.display(),
+                    ir.nombre
+                )
+            })?;
+            cache.persistir();
+        }
+        #[cfg(not(feature = "smt"))]
+        {
+            silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
+                miette::miette!(
+                    "{}: verificación SMT (intervalos) falló en '{}': {e}",
+                    path.display(),
+                    ir.nombre
+                )
+            })?;
+        }
     }
     info!(archivo = %nombre, tareas = tareas_ir.len(), "SMT OK");
 
@@ -186,17 +207,21 @@ fn cmd_build(
         ));
     }
     let c = compilar_archivo(&archivos[0], smt_timeout)?;
-    if c.tareas_ir.len() != 1 {
-        return Err(miette::miette!(
-            "M8: una sola tarea por archivo (multi-tarea en Fase 1)"
-        ));
+    if c.tareas_ir.is_empty() {
+        return Err(miette::miette!("archivo sin tareas"));
     }
-    let ir = &c.tareas_ir[0];
 
     match target {
         "c99" => {
-            let codigo =
-                silc_backend::c99::emitir(ir).map_err(|e| miette::miette!("backend C99: {e}"))?;
+            // Una sola tarea con parámetros: función suelta (biblioteca).
+            // En otro caso: programa completo con main ejecutable.
+            let codigo = if c.tareas_ir.len() == 1 && !c.tareas_ir[0].params.is_empty() {
+                silc_backend::c99::emitir(&c.tareas_ir[0])
+                    .map_err(|e| miette::miette!("backend C99: {e}"))?
+            } else {
+                silc_backend::c99::emitir_programa(&c.tareas_ir)
+                    .map_err(|e| miette::miette!("backend C99: {e}"))?
+            };
             std::fs::write(out, &codigo)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
@@ -211,17 +236,30 @@ fn cmd_build(
             }
         }
         "wasm" => {
-            let bytes =
-                silc_backend::wasm::emitir(ir).map_err(|e| miette::miette!("backend WASM: {e}"))?;
+            // Un módulo por programa (todas las tareas + start + host).
+            // Una sola tarea con parámetros: módulo de una función.
+            let bytes = if c.tareas_ir.len() == 1 && !c.tareas_ir[0].params.is_empty() {
+                silc_backend::wasm::emitir(&c.tareas_ir[0])
+                    .map_err(|e| miette::miette!("backend WASM: {e}"))?
+            } else {
+                silc_backend::wasm::emitir_programa(&c.tareas_ir)
+                    .map_err(|e| miette::miette!("backend WASM: {e}"))?
+            };
             std::fs::write(out, &bytes)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
             println!(
-                "{} → {} ({} bytes WASM)",
+                "{} ({} tareas) → {} ({} bytes WASM)",
                 c.nombre_archivo,
+                c.tareas_ir.len(),
                 out.display(),
                 bytes.len()
             );
+            let host_js = out.with_extension("host.js");
+            std::fs::write(&host_js, silc_backend::wasm::HOST_JS)
+                .into_diagnostic()
+                .wrap_err_with(|| format!("No se pudo escribir {}", host_js.display()))?;
+            println!("host de referencia: {}", host_js.display());
         }
         otro => {
             return Err(miette::miette!(
@@ -235,16 +273,20 @@ fn cmd_build(
 /// Compila .c → binario con cc/gcc/clang disponible.
 fn compilar_c_con_cc(c_path: &Path) -> Result<()> {
     let bin = c_path.with_extension(if cfg!(windows) { "exe" } else { "" });
-    // Intentar cc, gcc, clang en orden.
+    // Intentar cc, gcc, clang en orden. En Windows se enlaza ws2_32
+    // (la genera el runtime solo si el programa usa red).
     let comps = ["cc", "gcc", "clang"];
     let mut ultimo_err = String::new();
     for cc in comps {
-        let r = std::process::Command::new(cc)
-            .args(["-std=c99", "-O2", "-Wall"])
+        let mut cmd = std::process::Command::new(cc);
+        cmd.args(["-std=c99", "-O2", "-Wall"])
             .arg(c_path)
             .arg("-o")
-            .arg(&bin)
-            .output();
+            .arg(&bin);
+        if cfg!(windows) {
+            cmd.arg("-lws2_32");
+        }
+        let r = cmd.output();
         match r {
             Ok(o) if o.status.success() => {
                 println!("binario: {}", bin.display());
@@ -272,12 +314,15 @@ fn cmd_run(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
     let comps = ["cc", "gcc", "clang"];
     let mut compilado = false;
     for cc in comps {
-        let r = std::process::Command::new(cc)
-            .args(["-std=c99", "-O2"])
+        let mut cmd = std::process::Command::new(cc);
+        cmd.args(["-std=c99", "-O2"])
             .arg(&tmp_c)
             .arg("-o")
-            .arg(&tmp_bin)
-            .output();
+            .arg(&tmp_bin);
+        if cfg!(windows) {
+            cmd.arg("-lws2_32");
+        }
+        let r = cmd.output();
         if matches!(r, Ok(o) if o.status.success()) {
             compilado = true;
             break;

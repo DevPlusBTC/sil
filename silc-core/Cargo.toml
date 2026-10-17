@@ -29,7 +29,7 @@ miette = { version = "7.0", features = ["fancy"] }
 thiserror = "2.0"
 
 # Causal-IR + SMT
-z3 = "0.21"
+z3 = { version = "0.21", features = ["vendored"] }
 sha3 = "0.10"
 blake3 = "1.5"
 petgraph = "0.6"
@@ -62,5 +62,4 @@ tempfile = "3.0"
 silc-frontend = { path = "silc-frontend" }
 silc-causal-ir = { path = "silc-causal-ir" }
 silc-backend = { path = "silc-backend" }
-silc-runtime = { path = "silc-runtime" }
 silc-contracts = { path = "silc-contracts" }

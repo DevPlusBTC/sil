@@ -31,6 +31,7 @@ Thumbs.db
 
 # Rust
 silc-core/target/
+silc-core/silc-lsp/target/
 # Cargo.lock SE COMMITEA (reproducibilidad M9)
 **/*.rs.bk
 
@@ -43,3 +44,17 @@ examples/*.md
 
 # Documento fuente convertido
 /sil 1.md
+
+# Trazas y temporales de verificacion
+.z3-trace
+.z3-trace/
+**/.z3-trace
+**/.z3-trace/
+
+# Respaldos de editor
+*.bak
+*.orig
+
+# Scripts de diagnostico de un solo uso
+fix_*.py
+fix_*.bat

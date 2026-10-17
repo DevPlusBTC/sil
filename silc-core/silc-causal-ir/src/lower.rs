@@ -10,8 +10,8 @@
 //! - `verificar`/`demostrar` generan `InvarianteSMT` clase Demostracion.
 //! - `asumir` genera `InvarianteSMT` clase Asuncion.
 
-use silc_contracts::*;
 use crate::nodes::*;
+use silc_contracts::*;
 use silc_frontend::ast as A;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -236,11 +236,17 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
 /// - Post: Retorna FormulaLogica con VarId vinculado a SSA real
 /// - Invariante: VarId resuelto existe en ctx.vars
 fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
-    require(!ctx.vars.is_empty() || matches!(e, A::Expr::Lit(_)), "contexto sin variables para expresión no literal");
+    require(
+        !ctx.vars.is_empty() || matches!(e, A::Expr::Lit(_)),
+        "contexto sin variables para expresión no literal",
+    );
 
     match e {
         A::Expr::Var(id) => {
-            let vid = ctx.vars.get(&id.nombre).copied()
+            let vid = ctx
+                .vars
+                .get(&id.nombre)
+                .copied()
                 .ok_or_else(|| ErrorBajada::VariableNoDefinida(id.nombre.clone()))?;
             Ok(FormulaLogica::VarId(vid))
         }
@@ -270,11 +276,14 @@ fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
                 rhs: Box::new(a_formula(ctx, rhs)?),
             })
         }
-        A::Expr::AccesoProp { base, prop: _, .. } => {
+        A::Expr::AccesoProp { base, .. } => {
             // M3: propiedad como variable compuesta "base.prop" -> usa VarId del base.
             let b = match base.as_ref() {
                 A::Expr::Var(id) => {
-                    let vid = ctx.vars.get(&id.nombre).copied()
+                    let vid = ctx
+                        .vars
+                        .get(&id.nombre)
+                        .copied()
                         .ok_or_else(|| ErrorBajada::VariableNoDefinida(id.nombre.clone()))?;
                     vid
                 }
@@ -373,6 +382,217 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             ctx.bloques[ctx.actual].terminador = Terminador::Retorno(v);
             Ok(())
         }
+        A::Stmt::SolicitarCapacidad {
+            permiso,
+            recurso,
+            ttl_ns,
+            guardar_como,
+            ..
+        } => {
+            let permiso_ir = match permiso {
+                A::PermisoCap::LecturaArchivo => Permiso::LecturaArchivo,
+                A::PermisoCap::EscrituraArchivo => Permiso::EscrituraArchivo,
+                A::PermisoCap::Red => Permiso::Red,
+                A::PermisoCap::Ejecucion => Permiso::Ejecucion,
+            };
+            let req = CapacidadReq {
+                permiso: permiso_ir,
+                ttl_ns: ttl_ns.unwrap_or(CapacidadReq::TTL_DEFECTO_NS),
+                recurso: Some(recurso.clone()),
+            };
+            let id = ctx.emitir_con_resultado(
+                Operacion::SolicitarCapacidad { req },
+                SilType::CapacidadHardware,
+                None,
+                None,
+            );
+            if let Some(nombre) = guardar_como {
+                ctx.nombres.insert(id, nombre.nombre.clone());
+                ctx.vars.insert(nombre.nombre.clone(), id);
+            }
+            Ok(())
+        }
+        A::Stmt::ValidarCapacidad { token, .. } => {
+            let vid = *ctx.vars.get(&token.nombre).ok_or_else(|| {
+                ErrorBajada::VariableNoDefinida(format!(
+                    "capacidad `{}` no definida (solicitala antes con `solicitar`)",
+                    token.nombre
+                ))
+            })?;
+            ctx.emitir_con_resultado(
+                Operacion::ValidarCapacidad { token: vid },
+                SilType::Booleano,
+                None,
+                None,
+            );
+            Ok(())
+        }
+        A::Stmt::EnviarCanal { valor, canal, .. } => {
+            let v = bajar_expr(ctx, valor)?;
+            let c = *ctx.vars.get(&canal.nombre).ok_or_else(|| {
+                ErrorBajada::VariableNoDefinida(format!(
+                    "canal `{}` no definido (crealo con `crear canal ... como`)",
+                    canal.nombre
+                ))
+            })?;
+            if ctx.tipo_de(c) != SilType::Entero64 {
+                return Err(ErrorBajada::TipoNoSoportado(format!(
+                    "`{}` no es canal (crear canal devuelve handle Entero64)",
+                    canal.nombre
+                )));
+            }
+            ctx.emitir(InstrCausal {
+                resultado: None,
+                op: Operacion::EnviarCanal { canal: c, valor: v },
+                capacidad: None,
+                invariante: None,
+            });
+            Ok(())
+        }
+        A::Stmt::RecibirCanal {
+            canal,
+            guardar_como,
+            ..
+        } => {
+            let c = *ctx.vars.get(&canal.nombre).ok_or_else(|| {
+                ErrorBajada::VariableNoDefinida(format!(
+                    "canal `{}` no definido (crealo con `crear canal ... como`)",
+                    canal.nombre
+                ))
+            })?;
+            if ctx.tipo_de(c) != SilType::Entero64 {
+                return Err(ErrorBajada::TipoNoSoportado(format!(
+                    "`{}` no es canal (crear canal devuelve handle Entero64)",
+                    canal.nombre
+                )));
+            }
+            let id = ctx.emitir_con_resultado(
+                Operacion::RecibirCanal { canal: c },
+                SilType::Entero64,
+                None,
+                None,
+            );
+            ctx.nombres.insert(id, guardar_como.nombre.clone());
+            ctx.vars.insert(guardar_como.nombre.clone(), id);
+            Ok(())
+        }
+        A::Stmt::GenerarFibra { tarea, .. } => {
+            let arena = ctx.arena_local;
+            ctx.emitir(InstrCausal {
+                resultado: None,
+                op: Operacion::CrearFibra {
+                    tarea: tarea.nombre.clone(),
+                    arena,
+                },
+                capacidad: None,
+                invariante: None,
+            });
+            Ok(())
+        }
+        A::Stmt::CrearCanal {
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            let cap = capacidad.unwrap_or(64);
+            if cap == 0 || cap > 1_000_000 {
+                return Err(ErrorBajada::TipoNoSoportado(
+                    "capacidad de canal fuera de rango (1..1000000)".into(),
+                ));
+            }
+            let id = ctx.emitir_con_resultado(
+                Operacion::CrearCanal { capacidad: cap },
+                SilType::Entero64,
+                None,
+                None,
+            );
+            ctx.nombres.insert(id, guardar_como.nombre.clone());
+            ctx.vars.insert(guardar_como.nombre.clone(), id);
+            Ok(())
+        }
+        A::Stmt::OperarIO {
+            operacion,
+            ruta,
+            datos,
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            let token = *ctx.vars.get(&capacidad.nombre).ok_or_else(|| {
+                ErrorBajada::VariableNoDefinida(format!(
+                    "capacidad `{}` no definida (solicitala antes con `solicitar`)",
+                    capacidad.nombre
+                ))
+            })?;
+            // La ruta/destino como literal de texto en el IR.
+            let ruta_expr = A::Expr::Lit(A::Literal::Texto(ruta.clone()));
+            let ruta_vid = bajar_expr(ctx, &ruta_expr)?;
+            let (op_io, con_resultado) = match operacion {
+                A::OpIOStmt::LeerArchivo => (
+                    Operacion::InvocarIO {
+                        operacion: OpIO::LeerArchivo,
+                        args: vec![ruta_vid],
+                        token,
+                    },
+                    true,
+                ),
+                A::OpIOStmt::EscribirArchivo => {
+                    let d = bajar_expr(
+                        ctx,
+                        datos.as_ref().ok_or_else(|| {
+                            ErrorBajada::TipoNoSoportado("escribir requiere datos".into())
+                        })?,
+                    )?;
+                    (
+                        Operacion::InvocarIO {
+                            operacion: OpIO::EscribirArchivo,
+                            args: vec![d, ruta_vid],
+                            token,
+                        },
+                        false,
+                    )
+                }
+                A::OpIOStmt::EnviarRed => {
+                    let d = bajar_expr(
+                        ctx,
+                        datos.as_ref().ok_or_else(|| {
+                            ErrorBajada::TipoNoSoportado("enviar red requiere datos".into())
+                        })?,
+                    )?;
+                    (
+                        Operacion::InvocarIO {
+                            operacion: OpIO::EnviarRed,
+                            args: vec![d, ruta_vid],
+                            token,
+                        },
+                        false,
+                    )
+                }
+                A::OpIOStmt::RecibirRed => (
+                    Operacion::InvocarIO {
+                        operacion: OpIO::RecibirRed,
+                        args: vec![ruta_vid],
+                        token,
+                    },
+                    true,
+                ),
+            };
+            if con_resultado {
+                let id = ctx.emitir_con_resultado(op_io, SilType::Texto, None, None);
+                if let Some(nombre) = guardar_como {
+                    ctx.nombres.insert(id, nombre.nombre.clone());
+                    ctx.vars.insert(nombre.nombre.clone(), id);
+                }
+            } else {
+                ctx.emitir(InstrCausal {
+                    resultado: None,
+                    op: op_io,
+                    capacidad: None,
+                    invariante: None,
+                });
+            }
+            Ok(())
+        }
     }
 }
 
@@ -381,7 +601,7 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
 // =============================================================================
 
 /// Baja una tarea AST completa a Causal-IR.
-/// 
+///
 /// # Contrato
 /// - Pre: `tarea` debe tener al menos un nombre válido y sintaxis correcta
 /// - Post: Retorna `TareaIR` válida con SSA, tipos, y invariantes consistentes
@@ -465,14 +685,27 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
 
     // Postcondición: IR válida
     ensure(!ir.nombre.is_empty(), "IR nombre vacío");
-    ensure(ir.entrada != BlockId::default() || ir.bloques.is_empty(), "entrada inválida");
+    ensure(
+        ir.entrada != BlockId::default() || ir.bloques.is_empty(),
+        "entrada inválida",
+    );
     // Tipos >= nombres (todos los nombres tienen tipo, pero no todos los tipos tienen nombre)
-    ensure(ir.tipos.len() >= ir.nombres.len(), "tipos < nombres: inconsistentes");
+    ensure(
+        ir.tipos.len() >= ir.nombres.len(),
+        "tipos < nombres: inconsistentes",
+    );
 
     // Invariante: SSA única
-    for (id, _) in &ir.tipos {
-        invariant(ir.bloques.values().flat_map(|b| &b.instrs).filter(|i| i.resultado == Some(*id)).count() <= 1,
-            "ValueId duplicado en SSA");
+    for id in ir.tipos.keys() {
+        invariant(
+            ir.bloques
+                .values()
+                .flat_map(|b| &b.instrs)
+                .filter(|i| i.resultado == Some(*id))
+                .count()
+                <= 1,
+            "ValueId duplicado en SSA",
+        );
     }
 
     Ok(ir)

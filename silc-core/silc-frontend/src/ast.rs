@@ -79,7 +79,70 @@ pub enum Stmt {
         expr: Option<Expr>,
         span: Span,
     },
-    // TODO(M2): Coincidir, EfectoSecundario, Transformacion, Persistencia
+    /// solicitar capacidad <permiso> para "<recurso>" [con ttl <ns>] [como <nombre>]
+    SolicitarCapacidad {
+        permiso: PermisoCap,
+        recurso: String,
+        ttl_ns: Option<u64>,
+        guardar_como: Option<Ident>,
+        span: Span,
+    },
+    /// validar <nombre>
+    ValidarCapacidad {
+        token: Ident,
+        span: Span,
+    },
+    /// enviar <expr> por <canal>
+    EnviarCanal {
+        valor: Expr,
+        canal: Ident,
+        span: Span,
+    },
+    /// recibir de <canal> como <nombre>
+    RecibirCanal {
+        canal: Ident,
+        guardar_como: Ident,
+        span: Span,
+    },
+    /// generar <tarea> (la tarea debe existir y no tener parámetros)
+    GenerarFibra {
+        tarea: Ident,
+        span: Span,
+    },
+    /// crear canal [con capacidad <n>] como <nombre>
+    CrearCanal {
+        capacidad: Option<u64>,
+        guardar_como: Ident,
+        span: Span,
+    },
+    /// leer archivo "<ruta>" con <cap> como <nombre>
+    /// escribir <expr> en archivo "<ruta>" con <cap>
+    OperarIO {
+        operacion: OpIOStmt,
+        ruta: String,
+        datos: Option<Expr>,
+        capacidad: Ident,
+        guardar_como: Option<Ident>,
+        span: Span,
+    },
+}
+
+/// Permiso de capacidad en sintaxis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermisoCap {
+    LecturaArchivo,
+    EscrituraArchivo,
+    Red,
+    Ejecucion,
+}
+
+/// Operacion de E/S en sintaxis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpIOStmt {
+    LeerArchivo,
+    EscribirArchivo,
+    EnviarRed,
+    RecibirRed,
 }
 
 /// Expresión.

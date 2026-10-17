@@ -1,0 +1,7 @@
+definir tarea test_z3_complex(x: Entero64, y: Entero64) -> Booleano:
+    asumir que x > 0
+    asumir que y > 0
+    demostrar que x + y > x
+    demostrar que x + y > y
+    demostrar que x * y > 0
+    retornar verdadero

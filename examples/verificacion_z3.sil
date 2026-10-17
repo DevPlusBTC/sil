@@ -1,0 +1,4 @@
+definir tarea test_z3(x: Entero64) -> Booleano:
+    asumir que x > 0
+    demostrar que x * 2 > x
+    retornar verdadero

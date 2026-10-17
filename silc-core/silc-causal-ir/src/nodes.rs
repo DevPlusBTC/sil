@@ -3,7 +3,7 @@
 //! M3: definicion completa — tipos, operaciones, bloques, arenas.
 //! Corresponde a Whitepaper §7.2.
 
-use slotmap::{new_key_type, SlotMap, Key};
+use slotmap::{new_key_type, Key, SlotMap};
 use std::collections::HashMap;
 
 new_key_type! {
@@ -157,10 +157,16 @@ pub fn canonizar(f: &FormulaLogica) -> String {
 
 /// Convierte formula a SMT-LIB2 con nombres fuente (para debug/auditoria).
 /// Requiere mapa ValueId -> nombre fuente.
-pub fn a_smtlib2_con_nombres(f: &FormulaLogica, nombres: &std::collections::HashMap<ValueId, String>) -> String {
+pub fn a_smtlib2_con_nombres(
+    f: &FormulaLogica,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> String {
     match f {
         FormulaLogica::Var(v) => v.clone(),
-        FormulaLogica::VarId(v) => nombres.get(v).cloned().unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
+        FormulaLogica::VarId(v) => nombres
+            .get(v)
+            .cloned()
+            .unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
         FormulaLogica::ConstInt(n) => {
             if *n < 0 {
                 format!("(- {})", n.abs())
@@ -184,7 +190,11 @@ pub fn a_smtlib2_con_nombres(f: &FormulaLogica, nombres: &std::collections::Hash
                 OpLogico::And => "and",
                 OpLogico::Or => "or",
             };
-            format!("({o} {} {})", a_smtlib2_con_nombres(lhs, nombres), a_smtlib2_con_nombres(rhs, nombres))
+            format!(
+                "({o} {} {})",
+                a_smtlib2_con_nombres(lhs, nombres),
+                a_smtlib2_con_nombres(rhs, nombres)
+            )
         }
         FormulaLogica::No(x) => format!("(not {})", a_smtlib2_con_nombres(x, nombres)),
     }
@@ -297,8 +307,12 @@ pub enum Operacion {
         token: ValueId,
     },
     CrearFibra {
-        entrada: BlockId,
+        tarea: String,
         arena: ArenaId,
+    },
+    /// Crea un canal FIFO en el pool global. Resultado: handle Entero64.
+    CrearCanal {
+        capacidad: u64,
     },
     EnviarCanal {
         canal: ValueId,

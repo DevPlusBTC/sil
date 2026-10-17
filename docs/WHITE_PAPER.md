@@ -1,8 +1,46 @@
 # Whitepaper: Especificación Técnica Formal del Lenguaje de Intención Semántica (SIL)
 
-**Versión de Especificación:** 1.0.0-PROD
-**Clasificación de Seguridad:** Grado Militar (Criterios Comunes EAL7 / DO-178C Level A / ISO 26262 ASIL-D) — **OBJETIVO**
-**Estado:** Arquitectura Consolidada — **IMPLEMENTACIÓN PARCIAL** (ver matriz de estado abajo)
+**Versión de Especificación:** 0.1.0-ALPHA
+**Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
+**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM ✅ | Z3/TPM/Fibras = STUBS ⚠️
+
+---
+
+## 📊 Matriz de Estado Honesta
+
+| Componente | Estado | Tests | Notas |
+|------------|--------|-------|-------|
+| **Frontend CNL** (Lexer/Parser) | ✅ **IMPLEMENTADO** | 20/20 ✅ | Keywords español, EBNF completo |
+| **Causal-IR** (SSA + SMT) | ✅ **IMPLEMENTADO** | 21/21 ✅ | SSA, invariantes, lowering |
+| **SMT Intervalos (Rust)** | ✅ **IMPLEMENTADO** | 21/21 ✅ | Sound/incompleto, cache SHA3-512 |
+| **SMT Z3 Backend** | 🚧 **EN PROGRESO** | 0/0 | Compila con `vendored`, feature `smt` |
+| **Backend C99** | ✅ **IMPLEMENTADO** | 13/13 ✅ | `gcc -std=c99 -Wall -Wextra -Werror` |
+| **Backend WASM** | ✅ **IMPLEMENTADO** | 13/13 ✅ | WASI imports, binario válido |
+| **Backend LLVM** | ❌ **NO IMPLEMENTADO** | 0/0 | Solo stub |
+| **Backend SPIR-V/GPU** | ❌ **NO IMPLEMENTADO** | 0/0 | Solo stub |
+| **Arenas O(1)** | ✅ **IMPLEMENTADO** | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
+| **Arenas Persistentes NVM** | 🚧 **STUB** | 0/0 | Solo AST/IR |
+| **Scheduler Fibras** | 🚧 **STUB** | 0/0 | `NotImplemented` |
+| **Canales Lock-Free** | 🚧 **STUB** | 0/0 | Solo tipos AST/IR |
+| **Async I/O (io_uring)** | ❌ **NO IMPLEMENTADO** | 0/0 | Solo declaración |
+| **Capacidades (validación)** | ✅ **IMPLEMENTADO** | 17/17 ✅ | Permisos, expiración, `NotImplemented` en firma |
+| **TPM 2.0** | 🚧 **STUB** | 0/0 | Framework tipos, `NotImplemented` |
+| **eBPF Kernel** | ❌ **NO IMPLEMENTADO** | 0/0 | Solo en paper |
+| **Z3 Backend** | 🚧 **EN PROGRESO** | 0/0 | Compila con `vendored`, feature `smt` |
+| **eBPF Kernel** | ❌ **NO IMPLEMENTADO** | 0/0 | Solo en paper |
+| **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 **OBJETIVO** | 0/0 | Objetivos de diseño |
+
+---
+
+## 📈 Resumen Ejecutivo
+
+| Métrica | Valor |
+|---------|-------|
+| **Tests Totales** | **150/150 ✅** |
+| **Crates** | 7/7 compilan |
+| **Líneas de código** | ~15,000 Rust |
+| **Estado real** | **Fase 0 (Semilla)** — Frontend+IR+Intervalos+C99/WASM ✅ |
+| **Próximo hito real** | Z3 backend funcional + Scheduler real |
 
 ---
 
@@ -14,11 +52,11 @@ El **Lenguaje de Intención Semántica (SIL)** es un lenguaje de programación d
 
 1. **Invarianza Semántica Directa:** El código fuente expresa explícitamente la intención del programador y sus restricciones operativas. No existen comportamientos implícitos o no definidos (Undefined Behavior).
 
-2. **Cero Sobrecoste de Seguridad en Ejecución (Zero-Cost Abstractions):** La verificación de seguridad de memoria y lógica se realiza íntegramente en tiempo de compilación mediante un motor SMT (Satisfiability Modulo Theories) y un sistema de verificación formal.
+2. **Cero Sobrecoste de Seguridad en Ejecución (Zero-Cost Abstractions):** La verificación de seguridad de memoria y lógica se realiza íntegramente en tiempo de compilación mediante un motor SMT (Satisfiability Modulo Theories) y un sistema de verificación formal. **Nota:** Actualmente solo intervalos (sound/incompleto); Z3 en progreso.
 
-3. **Gestión Determinista de Recursos $O(1)$:** Eliminación total de recolectores de basura (Garbage Collector) o pausas no predecibles mediante el uso de Arenas Causales y Sub-Arenas Cíclicas.
+3. **Gestión Determinista de Recursos $O(1)$:** Eliminación total de recolectores de basura (Garbage Collector) o pausas no predecibles mediante el uso de Arenas Causales y Sub-Arenas Cíclicas. **Implementado** ✅.
 
-4. **Seguridad en Hardware (Zero-Trust):** La ejecución de tareas y el acceso a recursos del sistema están gobernados por capacidades afines firmadas en el hardware (Hardware Root of Trust via TPM 2.0 / Secure Enclave) — **STUB**.
+4. **Seguridad en Hardware (Zero-Trust):** La ejecución de tareas y el acceso a recursos del sistema están gobernados por capacidades afines firmadas en el hardware (Hardware Root of Trust via TPM 2.0 / Secure Enclave) — **STUB** ⚠️ (framework listo, implementación pendiente).
 
 ---
 

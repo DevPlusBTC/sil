@@ -444,15 +444,23 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
             Token::Asumir => {
                 let sp = s.span.clone();
                 p.bump();
+                // "asumir" puede ir seguido opcionalmente de "que" para consistencia con "verificar"
+                if p.peek_is_kw(&Token::Que) {
+                    p.bump();
+                }
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Asumir {
                     cond: c,
                     span: sp.start..sp.start,
                 })
             }
-            Token::Demostrar => {
+Token::Demostrar => {
                 let sp = s.span.clone();
                 p.bump();
+                // "demostrar" puede ir seguido opcionalmente de "que" para consistencia con "verificar"
+                if p.peek_is_kw(&Token::Que) {
+                    p.bump();
+                }
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Demostrar {
                     cond: c,
@@ -498,8 +506,170 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                     span: sp.start..sp.start,
                 })
             }
+            Token::Solicitar => {
+                let sp = s.span.clone();
+                p.bump();
+                p.expect_kw(Token::Capacidad)?;
+                let permiso = parse_permiso_cap(p)?;
+                p.expect_kw(Token::Para)?;
+                let recurso = parse_texto_lit(p)?;
+                let ttl_ns = if p.peek_is_kw(&Token::Con) {
+                    p.bump();
+                    p.expect_kw(Token::Ttl)?;
+                    Some(parse_entero_u64(p)?)
+                } else {
+                    None
+                };
+                let guardar_como = if p.peek_is_kw(&Token::Como) {
+                    p.bump();
+                    Some(parse_ident(p)?)
+                } else {
+                    None
+                };
+                Ok(Stmt::SolicitarCapacidad {
+                    permiso,
+                    recurso,
+                    ttl_ns,
+                    guardar_como,
+                    span: sp.start..sp.start,
+                })
+            }
+            Token::Validar => {
+                let sp = s.span.clone();
+                p.bump();
+                let token = parse_ident(p)?;
+                Ok(Stmt::ValidarCapacidad {
+                    token,
+                    span: sp.start..sp.start,
+                })
+            }
+            Token::Enviar => {
+                let sp = s.span.clone();
+                p.bump();
+                // enviar <expr> en <canal>  |  enviar <expr> en red "<dest>" con <cap>
+                let datos = parse_expr(p)?;
+                p.expect_kw(Token::En)?;
+                if p.peek_is_kw(&Token::Red) {
+                    p.bump();
+                    let ruta = parse_texto_lit(p)?;
+                    p.expect_kw(Token::Con)?;
+                    let capacidad = parse_ident(p)?;
+                    Ok(Stmt::OperarIO {
+                        operacion: OpIOStmt::EnviarRed,
+                        ruta,
+                        datos: Some(datos),
+                        capacidad,
+                        guardar_como: None,
+                        span: sp.start..sp.start,
+                    })
+                } else {
+                    let canal = parse_ident(p)?;
+                    Ok(Stmt::EnviarCanal {
+                        valor: datos,
+                        canal,
+                        span: sp.start..sp.start,
+                    })
+                }
+            }
+            Token::Recibir => {
+                let sp = s.span.clone();
+                p.bump();
+                // recibir de <canal> como <nombre> | recibir de red "<d>" con <cap> como <nombre>
+                p.expect_kw(Token::De)?;
+                if p.peek_is_kw(&Token::Red) {
+                    // recibir de red "host:puerto" con <cap> como <nombre>
+                    p.bump();
+                    let ruta = parse_texto_lit(p)?;
+                    p.expect_kw(Token::Con)?;
+                    let capacidad = parse_ident(p)?;
+                    p.expect_kw(Token::Como)?;
+                    let guardar_como = parse_ident(p)?;
+                    Ok(Stmt::OperarIO {
+                        operacion: OpIOStmt::RecibirRed,
+                        ruta,
+                        datos: None,
+                        capacidad,
+                        guardar_como: Some(guardar_como),
+                        span: sp.start..sp.start,
+                    })
+                } else {
+                    let canal = parse_ident(p)?;
+                    p.expect_kw(Token::Como)?;
+                    let guardar_como = parse_ident(p)?;
+                    Ok(Stmt::RecibirCanal {
+                        canal,
+                        guardar_como,
+                        span: sp.start..sp.start,
+                    })
+                }
+            }
+            Token::Generar => {
+                let sp = s.span.clone();
+                p.bump();
+                let tarea = parse_ident(p)?;
+                Ok(Stmt::GenerarFibra {
+                    tarea,
+                    span: sp.start..sp.start,
+                })
+            }
+            Token::Crear => {
+                let sp = s.span.clone();
+                p.bump();
+                p.expect_kw(Token::Canal)?;
+                let capacidad = if p.peek_is_kw(&Token::Con) {
+                    p.bump();
+                    // `con capacidad <n>`
+                    p.expect_kw(Token::Capacidad)?;
+                    Some(parse_entero_u64(p)?)
+                } else {
+                    None
+                };
+                p.expect_kw(Token::Como)?;
+                let guardar_como = parse_ident(p)?;
+                Ok(Stmt::CrearCanal {
+                    capacidad,
+                    guardar_como,
+                    span: sp.start..sp.start,
+                })
+            }
+            Token::Leer => {
+                let sp = s.span.clone();
+                p.bump();
+                p.expect_kw(Token::Archivo)?;
+                let ruta = parse_texto_lit(p)?;
+                p.expect_kw(Token::Con)?;
+                let capacidad = parse_ident(p)?;
+                p.expect_kw(Token::Como)?;
+                let guardar_como = parse_ident(p)?;
+                Ok(Stmt::OperarIO {
+                    operacion: OpIOStmt::LeerArchivo,
+                    ruta,
+                    datos: None,
+                    capacidad,
+                    guardar_como: Some(guardar_como),
+                    span: sp.start..sp.start,
+                })
+            }
+            Token::Escribir => {
+                let sp = s.span.clone();
+                p.bump();
+                let datos = parse_expr(p)?;
+                p.expect_kw(Token::En)?;
+                p.expect_kw(Token::Archivo)?;
+                let ruta = parse_texto_lit(p)?;
+                p.expect_kw(Token::Con)?;
+                let capacidad = parse_ident(p)?;
+                Ok(Stmt::OperarIO {
+                    operacion: OpIOStmt::EscribirArchivo,
+                    ruta,
+                    datos: Some(datos),
+                    capacidad,
+                    guardar_como: None,
+                    span: sp.start..sp.start,
+                })
+            }
             _ => Err(ErrorFrontend::TokenInesperado {
-                esperado: "verificar | asumir | demostrar | let | retornar".into(),
+                esperado: "verificar | asumir | demostrar | let | retornar | solicitar | validar | enviar | recibir | generar | leer | escribir".into(),
                 encontrado: desc(p.peek()),
                 span: span_of(p.peek()),
             }),
@@ -742,6 +912,77 @@ fn parse_ident(p: &mut P) -> Result<Ident, ErrorFrontend> {
             esperado: "identificador".into(),
             encontrado: desc(other),
             span: span_of(other),
+        }),
+    }
+}
+
+/// Lee un literal de texto ("...") y retorna su contenido.
+fn parse_texto_lit(p: &mut P) -> Result<String, ErrorFrontend> {
+    match p.peek().clone() {
+        TokenFull::Tok(s) => match s.tok {
+            Token::Texto(st) => {
+                p.bump();
+                Ok(st)
+            }
+            _ => Err(ErrorFrontend::TokenInesperado {
+                esperado: "texto entre comillas".into(),
+                encontrado: desc(p.peek()),
+                span: span_of(p.peek()),
+            }),
+        },
+        TokenFull::Eof => Err(ErrorFrontend::FinInesperado),
+        other => Err(ErrorFrontend::TokenInesperado {
+            esperado: "texto entre comillas".into(),
+            encontrado: desc(&other),
+            span: span_of(&other),
+        }),
+    }
+}
+
+/// Lee un entero no negativo (para ttl).
+fn parse_entero_u64(p: &mut P) -> Result<u64, ErrorFrontend> {
+    match p.peek().clone() {
+        TokenFull::Tok(s) => match s.tok {
+            Token::Entero(n) => {
+                p.bump();
+                u64::try_from(n).map_err(|_| ErrorFrontend::TokenInesperado {
+                    esperado: "entero no negativo".into(),
+                    encontrado: format!("{n}"),
+                    span: span_of(p.peek()),
+                })
+            }
+            _ => Err(ErrorFrontend::TokenInesperado {
+                esperado: "entero no negativo".into(),
+                encontrado: desc(p.peek()),
+                span: span_of(p.peek()),
+            }),
+        },
+        TokenFull::Eof => Err(ErrorFrontend::FinInesperado),
+        other => Err(ErrorFrontend::TokenInesperado {
+            esperado: "entero no negativo".into(),
+            encontrado: desc(&other),
+            span: span_of(&other),
+        }),
+    }
+}
+
+/// Lee un permiso de capacidad (lectura_archivo | escritura_archivo | red | ejecucion).
+fn parse_permiso_cap(p: &mut P) -> Result<PermisoCap, ErrorFrontend> {
+    // `red` es keyword del lenguaje; el resto son identificadores.
+    if p.peek_is_kw(&Token::Red) {
+        p.bump();
+        return Ok(PermisoCap::Red);
+    }
+    let id = parse_ident(p)?;
+    match id.nombre.as_str() {
+        "lectura_archivo" => Ok(PermisoCap::LecturaArchivo),
+        "escritura_archivo" => Ok(PermisoCap::EscrituraArchivo),
+        "red" => Ok(PermisoCap::Red),
+        "ejecucion" => Ok(PermisoCap::Ejecucion),
+        _ => Err(ErrorFrontend::TokenInesperado {
+            esperado: "lectura_archivo | escritura_archivo | red | ejecucion".into(),
+            encontrado: id.nombre,
+            span: span_of(p.peek()),
         }),
     }
 }

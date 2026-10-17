@@ -35,15 +35,14 @@ typedef enum {
 } FibraEstado_;
 
 typedef struct FibraControl_ {
-    void *ip;
-    void *sp_arena;
-    uint64_t estado;
-    uint8_t cap_token[32];
-    uint8_t _pad[8];
+    SilFibra pub_;
     void (*entrada)(void*);
     void *arg;
     unsigned magic;
     struct FibraControl_ *siguiente;
+#if defined(_WIN32)
+    FibraHandle_ handle;
+#endif
 } FibraControl_;
 
 struct SilScheduler {

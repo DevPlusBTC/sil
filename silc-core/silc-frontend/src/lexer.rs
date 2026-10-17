@@ -177,6 +177,30 @@ pub enum Token {
     Guardar,
     #[token("enviar")]
     Enviar,
+    #[token("recibir")]
+    Recibir,
+    #[token("solicitar")]
+    Solicitar,
+    #[token("validar")]
+    Validar,
+    #[token("generar")]
+    Generar,
+    #[token("crear")]
+    Crear,
+    #[token("canal")]
+    Canal,
+    #[token("fibra")]
+    Fibra,
+    #[token("leer")]
+    Leer,
+    #[token("escribir")]
+    Escribir,
+    #[token("archivo")]
+    Archivo,
+    #[token("red")]
+    Red,
+    #[token("ttl")]
+    Ttl,
     #[token("permitir")]
     Permitir,
     #[token("conectar")]
@@ -296,7 +320,7 @@ pub enum Token {
     Star,
     #[token("/")]
     Slash,
-    #[regex(r"\n[ \t]*", callback_indent)]
+    #[regex(r"\r?\n[ \t]*", callback_indent)]
     Newline,
     #[regex(r"[ \t]+", logos::skip)]
     Espacio,

@@ -2,30 +2,142 @@
 //! Valida invariantes estructurales: lexer/parser round-trip, AST well-formedness.
 
 use proptest::prelude::*;
-use silc_frontend::{lexer::lexear, parser::parsear, ast::*};
+use silc_frontend::{ast::*, lexer::lexear, parser::parsear};
 use std::fmt::Write as FmtWrite;
-use std::io::Write as IoWrite;
 
 // Palabras reservadas de CNL que no pueden usarse como identificadores
 const RESERVADAS: &[&str] = &[
-    "a", "de", "en", "con", "para", "cada", "si", "al", "por", "que", "es", "el", "la", "lo", "un", "una",
-    "definir", "tarea", "servicio", "modelo", "evento", "estructura", "variante", "opcion",
-    "memoria_persistente", "migrar", "capacidad", "modulo", "requerir", "importar", "exportar",
-    "vincular", "biblioteca_nativa", "funcion_externa", "cuando", "llegue", "escuchar", "en",
-    "puerto", "con", "protocolo", "para", "cada", "mientras", "si", "entonces", "retornar",
-    "ejecutar", "cualquier", "otro", "caso", "coincidir", "desde", "hasta", "como", "datos",
-    "de", "forma", "verificar", "que", "sea", "igual", "mayor", "menor", "diferente",
-    "esta_activo", "asumir", "demostrar", "probar", "propiedad", "convertir", "a", "usando",
-    "guardar", "enviar", "permitir", "conectar", "promover", "al", "acceder_campo",
-    "valor_predeterminado", "bajo", "restricciones", "let", "mut", "verdadero", "falso",
-    "nulo", "atomica", "asincrona", "en_memoria", "arena", "cero_pausas",
-    "Entero64", "Flotante64", "Booleano", "Texto", "CapacidadHardware", "Void", "Tensor",
-    "USD", "EUR", "Lista", "Mapa", "Conjunto", "Tupla", "Nominal",
-    "opcion", "con", "datos", "forma", "true", "false", "null",
+    "a",
+    "de",
+    "en",
+    "con",
+    "para",
+    "cada",
+    "si",
+    "al",
+    "por",
+    "que",
+    "es",
+    "el",
+    "la",
+    "lo",
+    "un",
+    "una",
+    "definir",
+    "tarea",
+    "servicio",
+    "modelo",
+    "evento",
+    "estructura",
+    "variante",
+    "opcion",
+    "memoria_persistente",
+    "migrar",
+    "capacidad",
+    "modulo",
+    "requerir",
+    "importar",
+    "exportar",
+    "vincular",
+    "biblioteca_nativa",
+    "funcion_externa",
+    "cuando",
+    "llegue",
+    "escuchar",
+    "en",
+    "puerto",
+    "con",
+    "protocolo",
+    "para",
+    "cada",
+    "mientras",
+    "si",
+    "entonces",
+    "retornar",
+    "ejecutar",
+    "cualquier",
+    "otro",
+    "caso",
+    "coincidir",
+    "desde",
+    "hasta",
+    "como",
+    "datos",
+    "de",
+    "forma",
+    "verificar",
+    "que",
+    "sea",
+    "igual",
+    "mayor",
+    "menor",
+    "diferente",
+    "esta_activo",
+    "asumir",
+    "demostrar",
+    "probar",
+    "propiedad",
+    "convertir",
+    "a",
+    "usando",
+    "guardar",
+    "enviar",
+    "permitir",
+    "conectar",
+    "promover",
+    "al",
+    "acceder_campo",
+    "valor_predeterminado",
+    "bajo",
+    "restricciones",
+    "let",
+    "mut",
+    "verdadero",
+    "falso",
+    "nulo",
+    "atomica",
+    "asincrona",
+    "en_memoria",
+    "arena",
+    "cero_pausas",
+    "solicitar",
+    "validar",
+    "generar",
+    "recibir",
+    "canal",
+    "fibra",
+    "leer",
+    "escribir",
+    "archivo",
+    "red",
+    "ttl",
+    "crear",
+    "Entero64",
+    "Flotante64",
+    "Booleano",
+    "Texto",
+    "CapacidadHardware",
+    "Void",
+    "Tensor",
+    "USD",
+    "EUR",
+    "Lista",
+    "Mapa",
+    "Conjunto",
+    "Tupla",
+    "Nominal",
+    "opcion",
+    "con",
+    "datos",
+    "forma",
+    "true",
+    "false",
+    "null",
 ];
 
 fn ident_strategy() -> impl Strategy<Value = String> {
-    prop::string::string_regex(r"[a-zA-Z_][a-zA-Z0-9_]*").unwrap()
+    prop::string::string_regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
+        .unwrap()
         .prop_filter("no reservada", |s| !RESERVADAS.contains(&s.as_str()))
 }
 
@@ -41,11 +153,10 @@ fn texto_strategy() -> impl Strategy<Value = String> {
     prop::string::string_regex(r#"[^"\n\r]*"#).unwrap()
 }
 
-fn binop_strategy() -> impl Strategy<Value = BinOp> {
-    prop::sample::select(vec![
-        BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div,
-        BinOp::Gt, BinOp::Lt, BinOp::Eq, BinOp::Ge, BinOp::Le,
-    ])
+fn binop_opcion() -> impl Strategy<Value = BinOp> {
+    // Solo aritmética: el parser acepta comparaciones únicamente en el
+    // nivel de condición (verificar/asumir/demostrar), nunca anidadas.
+    prop::sample::select(vec![BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div])
 }
 
 fn literal_strategy() -> impl Strategy<Value = Literal> {
@@ -55,6 +166,29 @@ fn literal_strategy() -> impl Strategy<Value = Literal> {
         texto_strategy().prop_map(Literal::Texto),
         prop::bool::ANY.prop_map(Literal::Booleano),
     ]
+}
+
+fn expr_strategy() -> impl Strategy<Value = Expr> {
+    let hoja = prop_oneof![
+        ident_strategy().prop_map(|s| Expr::Var(Ident {
+            nombre: s,
+            span: 0..0
+        })),
+        literal_strategy()
+            .prop_filter("no float or bool", |l| !matches!(
+                l,
+                Literal::Flotante(_) | Literal::Booleano(_)
+            ))
+            .prop_map(Expr::Lit),
+    ];
+    hoja.prop_recursive(3, 8, 2, |inner| {
+        (binop_opcion(), inner.clone(), inner).prop_map(|(op, lhs, rhs)| Expr::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            span: 0..0,
+        })
+    })
 }
 
 fn tipo_dato_strategy() -> impl Strategy<Value = TipoDato> {
@@ -72,7 +206,8 @@ fn tipo_dato_strategy() -> impl Strategy<Value = TipoDato> {
     leaf.prop_recursive(4, 8, 2, |inner| {
         prop_oneof![
             inner.clone().prop_map(|t| TipoDato::Lista(Box::new(t))),
-            (inner.clone(), inner.clone()).prop_map(|(k, v)| TipoDato::Mapa(Box::new(k), Box::new(v))),
+            (inner.clone(), inner.clone())
+                .prop_map(|(k, v)| TipoDato::Mapa(Box::new(k), Box::new(v))),
             inner.clone().prop_map(|t| TipoDato::Conjunto(Box::new(t))),
             prop::collection::vec(inner.clone(), 2..5).prop_map(TipoDato::Tupla),
             ident_strategy().prop_map(TipoDato::Nominal),
@@ -80,13 +215,21 @@ fn tipo_dato_strategy() -> impl Strategy<Value = TipoDato> {
     })
 }
 
-fn expr_strategy() -> impl Strategy<Value = Expr> {
-    prop_oneof![
-        ident_strategy().prop_map(|s| Expr::Var(Ident { nombre: s, span: 0..0 })),
-        literal_strategy()
-            .prop_filter("no float or bool", |l| !matches!(l, Literal::Flotante(_) | Literal::Booleano(_)))
-            .prop_map(|l| Expr::Lit(l)),
-    ]
+fn permiso_strategy() -> impl Strategy<Value = PermisoCap> {
+    prop::sample::select(vec![
+        PermisoCap::LecturaArchivo,
+        PermisoCap::EscrituraArchivo,
+        PermisoCap::Red,
+        PermisoCap::Ejecucion,
+    ])
+}
+
+fn recurso_strategy() -> impl Strategy<Value = String> {
+    "[a-z/][a-z0-9/.]{0,12}"
+}
+
+fn ident_node_strategy() -> impl Strategy<Value = Ident> {
+    ident_strategy().prop_map(|nombre| Ident { nombre, span: 0..0 })
 }
 
 fn stmt_strategy() -> impl Strategy<Value = Stmt> {
@@ -94,15 +237,50 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
         expr_strategy().prop_map(|cond| Stmt::Verificar { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Asumir { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Demostrar { cond, span: 0..0 }),
+        (
+            permiso_strategy(),
+            recurso_strategy(),
+            prop::option::of(1u64..999_999_999_999u64),
+            prop::option::of(ident_node_strategy()),
+        )
+            .prop_map(|(permiso, recurso, ttl_ns, guardar_como)| {
+                Stmt::SolicitarCapacidad {
+                    permiso,
+                    recurso,
+                    ttl_ns,
+                    guardar_como,
+                    span: 0..0,
+                }
+            }),
+        ident_node_strategy().prop_map(|token| Stmt::ValidarCapacidad { token, span: 0..0 }),
+        (expr_strategy(), ident_node_strategy()).prop_map(|(valor, canal)| Stmt::EnviarCanal {
+            valor,
+            canal,
+            span: 0..0,
+        }),
+        (ident_node_strategy(), ident_node_strategy()).prop_map(|(canal, guardar_como)| {
+            Stmt::RecibirCanal {
+                canal,
+                guardar_como,
+                span: 0..0,
+            }
+        }),
+        ident_node_strategy().prop_map(|tarea| Stmt::GenerarFibra { tarea, span: 0..0 }),
+        (prop::num::u64::ANY, ident_node_strategy()).prop_map(|(capacidad, guardar_como)| {
+            Stmt::CrearCanal {
+                capacidad: Some(capacidad % 1000 + 1),
+                guardar_como,
+                span: 0..0,
+            }
+        }),
     ]
 }
 
 fn param_strategy() -> impl Strategy<Value = Param> {
-    (ident_strategy(), tipo_dato_strategy())
-        .prop_map(|(nombre, tipo)| Param {
-            nombre: Ident { nombre, span: 0..0 },
-            tipo,
-        })
+    (ident_strategy(), tipo_dato_strategy()).prop_map(|(nombre, tipo)| Param {
+        nombre: Ident { nombre, span: 0..0 },
+        tipo,
+    })
 }
 
 fn restriccion_valor_strategy() -> impl Strategy<Value = String> {
@@ -110,22 +288,33 @@ fn restriccion_valor_strategy() -> impl Strategy<Value = String> {
         ident_strategy(),
         prop::num::u64::ANY.prop_map(|n| n.to_string()),
         prop::sample::select(vec![
-            "verdadero".to_string(), "falso".to_string(), "nulo".to_string(),
+            "verdadero".to_string(),
+            "falso".to_string(),
+            "nulo".to_string(),
         ]),
-    ].prop_filter("no A keyword", |s| s != "A")
-        .prop_filter("no parentesis", |s| !s.contains('(') && !s.contains(')'))
-        .prop_filter("no empty", |s| !s.is_empty())
+    ]
+    .prop_filter("no A keyword", |s| s != "A")
+    .prop_filter("no parentesis", |s| !s.contains('(') && !s.contains(')'))
+    .prop_filter("no empty", |s| !s.is_empty())
 }
 
 fn restriccion_strategy() -> impl Strategy<Value = Restriccion> {
-    (ident_strategy(), restriccion_valor_strategy())
-        .prop_map(|(clave, valor)| Restriccion { clave, valor, span: 0..0 })
+    (ident_strategy(), restriccion_valor_strategy()).prop_map(|(clave, valor)| Restriccion {
+        clave,
+        valor,
+        span: 0..0,
+    })
 }
 
 fn cuerpo_strategy() -> impl Strategy<Value = Cuerpo> {
-    (prop::collection::vec(stmt_strategy(), 1..5),
-     prop::collection::vec(restriccion_strategy(), 0..1))
-        .prop_map(|(stmts, restricciones)| Cuerpo { stmts, restricciones })
+    (
+        prop::collection::vec(stmt_strategy(), 1..5),
+        prop::collection::vec(restriccion_strategy(), 0..1),
+    )
+        .prop_map(|(stmts, restricciones)| Cuerpo {
+            stmts,
+            restricciones,
+        })
 }
 
 fn tarea_decl_strategy() -> impl Strategy<Value = TareaDecl> {
@@ -134,13 +323,14 @@ fn tarea_decl_strategy() -> impl Strategy<Value = TareaDecl> {
         prop::collection::vec(param_strategy(), 0..4),
         prop::option::of(tipo_dato_strategy()),
         cuerpo_strategy(),
-    ).prop_map(|(nombre, params, retorno, cuerpo)| TareaDecl {
-        nombre: Ident { nombre, span: 0..0 },
-        params,
-        retorno,
-        cuerpo,
-        span: 0..0,
-    })
+    )
+        .prop_map(|(nombre, params, retorno, cuerpo)| TareaDecl {
+            nombre: Ident { nombre, span: 0..0 },
+            params,
+            retorno,
+            cuerpo,
+            span: 0..0,
+        })
 }
 
 fn decl_strategy() -> impl Strategy<Value = Decl> {
@@ -170,10 +360,7 @@ proptest! {
     #[test]
     fn parser_lexer_roundtrip(ast in program_strategy()) {
         let source = ast_a_source(&ast);
-        // DEBUG
-        eprintln!("=== SOURCE ===\n{}=== END ===", source);
         let tokens = lexear(&source);
-        eprintln!("=== TOKENS ===\n{:?}", tokens);
         let parsed = parsear(&tokens);
 
         match parsed {
@@ -243,7 +430,9 @@ fn decl_a_source(decl: &Decl) -> String {
 fn tarea_a_source(t: &TareaDecl) -> String {
     let mut out = format!("definir tarea {}(", t.nombre.nombre);
     for (i, p) in t.params.iter().enumerate() {
-        if i > 0 { out.push_str(", "); }
+        if i > 0 {
+            out.push_str(", ");
+        }
         write!(&mut out, "{}: {}", p.nombre.nombre, tipo_a_source(&p.tipo)).unwrap();
     }
     out.push(')');
@@ -251,30 +440,35 @@ fn tarea_a_source(t: &TareaDecl) -> String {
         write!(&mut out, " -> {}", tipo_a_source(ret)).unwrap();
     }
     out.push_str(":\n");
-    
+
     let has_content = !t.cuerpo.stmts.is_empty() || !t.cuerpo.restricciones.is_empty();
     if !has_content {
         // Empty body: INDENT + DEDENT
         out.push_str("    \n");
-        out.push_str("\n");
+        out.push('\n');
         return out;
     }
-    
+
     // INDENT for body
     out.push_str("    \n");
-    
+
     // Statements (stmt_a_source already includes newline)
     for stmt in &t.cuerpo.stmts {
         write!(&mut out, "    {}", stmt_a_source(stmt)).unwrap();
     }
-    
+
     // Restrictions at same indent level
     for r in &t.cuerpo.restricciones {
-        write!(&mut out, "    bajo restricciones:\n        {}: {}\n", r.clave, r.valor).unwrap();
+        write!(
+            &mut out,
+            "    bajo restricciones:\n        {}: {}\n",
+            r.clave, r.valor
+        )
+        .unwrap();
     }
-    
+
     // DEDENT
-    out.push_str("\n");
+    out.push('\n');
     out
 }
 
@@ -283,10 +477,18 @@ fn stmt_a_source(stmt: &Stmt) -> String {
         Stmt::Verificar { cond, .. } => format!("verificar que {}\n", expr_a_source(cond)),
         Stmt::Asumir { cond, .. } => format!("asumir {}\n", expr_a_source(cond)),
         Stmt::Demostrar { cond, .. } => format!("demostrar {}\n", expr_a_source(cond)),
-        Stmt::Asignar { nombre, tipo, expr, mutable, .. } => {
+        Stmt::Asignar {
+            nombre,
+            tipo,
+            expr,
+            mutable,
+            ..
+        } => {
             let mut s = if *mutable { "let mut " } else { "let " }.to_string();
             s.push_str(&nombre.nombre);
-            if let Some(t) = tipo { write!(&mut s, ": {}", tipo_a_source(t)).unwrap(); }
+            if let Some(t) = tipo {
+                write!(&mut s, ": {}", tipo_a_source(t)).unwrap();
+            }
             write!(&mut s, " = {}", expr_a_source(expr)).unwrap();
             s.push('\n');
             s
@@ -298,6 +500,100 @@ fn stmt_a_source(stmt: &Stmt) -> String {
                 "retornar\n".to_string()
             }
         }
+        Stmt::SolicitarCapacidad {
+            permiso,
+            recurso,
+            ttl_ns,
+            guardar_como,
+            ..
+        } => {
+            let p = match permiso {
+                PermisoCap::LecturaArchivo => "lectura_archivo",
+                PermisoCap::EscrituraArchivo => "escritura_archivo",
+                PermisoCap::Red => "red",
+                PermisoCap::Ejecucion => "ejecucion",
+            };
+            let mut s = format!("solicitar capacidad {p} para \"{recurso}\"");
+            if let Some(t) = ttl_ns {
+                write!(&mut s, " con ttl {t}").unwrap();
+            }
+            if let Some(n) = guardar_como {
+                write!(&mut s, " como {}", n.nombre).unwrap();
+            }
+            s.push('\n');
+            s
+        }
+        Stmt::ValidarCapacidad { token, .. } => {
+            format!("validar {}\n", token.nombre)
+        }
+        Stmt::EnviarCanal { valor, canal, .. } => {
+            format!("enviar {} en {}\n", expr_a_source(valor), canal.nombre)
+        }
+        Stmt::RecibirCanal {
+            canal,
+            guardar_como,
+            ..
+        } => {
+            format!("recibir de {} como {}\n", canal.nombre, guardar_como.nombre)
+        }
+        Stmt::GenerarFibra { tarea, .. } => {
+            format!("generar {}\n", tarea.nombre)
+        }
+        Stmt::CrearCanal {
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            let mut s = "crear canal".to_string();
+            if let Some(c) = capacidad {
+                write!(&mut s, " con capacidad {c}").unwrap();
+            }
+            writeln!(&mut s, " como {}", guardar_como.nombre).unwrap();
+            s
+        }
+        Stmt::OperarIO {
+            operacion,
+            ruta,
+            datos,
+            capacidad,
+            guardar_como,
+            ..
+        } => match operacion {
+            OpIOStmt::LeerArchivo => {
+                format!(
+                    "leer archivo \"{ruta}\" con {} como {}\n",
+                    capacidad.nombre,
+                    guardar_como
+                        .as_ref()
+                        .map(|i| i.nombre.as_str())
+                        .unwrap_or("_")
+                )
+            }
+            OpIOStmt::EscribirArchivo => {
+                format!(
+                    "escribir {} en archivo \"{ruta}\" con {}\n",
+                    datos.as_ref().map(expr_a_source).unwrap_or_default(),
+                    capacidad.nombre
+                )
+            }
+            OpIOStmt::EnviarRed => {
+                format!(
+                    "enviar {} en red \"{ruta}\" con {}\n",
+                    datos.as_ref().map(expr_a_source).unwrap_or_default(),
+                    capacidad.nombre
+                )
+            }
+            OpIOStmt::RecibirRed => {
+                format!(
+                    "recibir de red \"{ruta}\" con {} como {}\n",
+                    capacidad.nombre,
+                    guardar_como
+                        .as_ref()
+                        .map(|i| i.nombre.as_str())
+                        .unwrap_or("_")
+                )
+            }
+        },
     }
 }
 
@@ -307,9 +603,16 @@ fn expr_a_source(expr: &Expr) -> String {
         Expr::Lit(l) => literal_a_source(l),
         Expr::BinOp { op, lhs, rhs, .. } => {
             let op_str = match op {
-                BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/",
-                BinOp::Gt => ">", BinOp::Lt => "<", BinOp::Eq => "==", BinOp::Ne => "!=",
-                BinOp::Ge => ">=", BinOp::Le => "<=",
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => "/",
+                BinOp::Gt => ">",
+                BinOp::Lt => "<",
+                BinOp::Eq => "==",
+                BinOp::Ne => "!=",
+                BinOp::Ge => ">=",
+                BinOp::Le => "<=",
             };
             format!("({} {} {})", expr_a_source(lhs), op_str, expr_a_source(rhs))
         }
@@ -348,7 +651,9 @@ fn tipo_a_source(t: &TipoDato) -> String {
         TipoDato::Tupla(ts) => {
             let mut s = "Tupla(".to_string();
             for (i, t) in ts.iter().enumerate() {
-                if i > 0 { s.push_str(", "); }
+                if i > 0 {
+                    s.push_str(", ");
+                }
                 s.push_str(&tipo_a_source(t));
             }
             s.push(')');
@@ -366,40 +671,171 @@ fn decls_equiv(a: &Decl, b: &Decl) -> bool {
 }
 
 fn tareas_equiv(a: &TareaDecl, b: &TareaDecl) -> bool {
-    a.nombre.nombre == b.nombre.nombre &&
-    a.params.len() == b.params.len() &&
-    a.params.iter().zip(b.params.iter()).all(|(pa, pb)| {
-        pa.nombre.nombre == pb.nombre.nombre && pa.tipo == pb.tipo
-    }) &&
-    a.retorno == b.retorno &&
-    a.cuerpo.stmts.len() == b.cuerpo.stmts.len() &&
-    a.cuerpo.stmts.iter().zip(b.cuerpo.stmts.iter()).all(|(sa, sb)| stmts_equiv(sa, sb))
+    a.nombre.nombre == b.nombre.nombre
+        && a.params.len() == b.params.len()
+        && a.params
+            .iter()
+            .zip(b.params.iter())
+            .all(|(pa, pb)| pa.nombre.nombre == pb.nombre.nombre && pa.tipo == pb.tipo)
+        && a.retorno == b.retorno
+        && a.cuerpo.stmts.len() == b.cuerpo.stmts.len()
+        && a.cuerpo
+            .stmts
+            .iter()
+            .zip(b.cuerpo.stmts.iter())
+            .all(|(sa, sb)| stmts_equiv(sa, sb))
 }
 
 fn stmts_equiv(a: &Stmt, b: &Stmt) -> bool {
     use std::mem::discriminant;
-    discriminant(a) == discriminant(b) &&
-    match (a, b) {
-        (Stmt::Verificar { cond: ca, .. }, Stmt::Verificar { cond: cb, .. }) => exprs_equiv(ca, cb),
-        (Stmt::Asumir { cond: ca, .. }, Stmt::Asumir { cond: cb, .. }) => exprs_equiv(ca, cb),
-        (Stmt::Demostrar { cond: ca, .. }, Stmt::Demostrar { cond: cb, .. }) => exprs_equiv(ca, cb),
-        (Stmt::Asignar { nombre: na, tipo: ta, expr: ea, mutable: ma, .. },
-         Stmt::Asignar { nombre: nb, tipo: tb, expr: eb, mutable: mb, .. }) =>
-            na.nombre == nb.nombre && ta == tb && ea == eb && ma == mb,
-        (Stmt::Retornar { expr: ea, .. }, Stmt::Retornar { expr: eb, .. }) =>
-            ea == eb,
-        _ => false,
-    }
+    discriminant(a) == discriminant(b)
+        && match (a, b) {
+            (Stmt::Verificar { cond: ca, .. }, Stmt::Verificar { cond: cb, .. }) => {
+                exprs_equiv(ca, cb)
+            }
+            (Stmt::Asumir { cond: ca, .. }, Stmt::Asumir { cond: cb, .. }) => exprs_equiv(ca, cb),
+            (Stmt::Demostrar { cond: ca, .. }, Stmt::Demostrar { cond: cb, .. }) => {
+                exprs_equiv(ca, cb)
+            }
+            (
+                Stmt::Asignar {
+                    nombre: na,
+                    tipo: ta,
+                    expr: ea,
+                    mutable: ma,
+                    ..
+                },
+                Stmt::Asignar {
+                    nombre: nb,
+                    tipo: tb,
+                    expr: eb,
+                    mutable: mb,
+                    ..
+                },
+            ) => na.nombre == nb.nombre && ta == tb && ea == eb && ma == mb,
+            (Stmt::Retornar { expr: ea, .. }, Stmt::Retornar { expr: eb, .. }) => ea == eb,
+            (
+                Stmt::SolicitarCapacidad {
+                    permiso: pa,
+                    recurso: ra,
+                    ttl_ns: ta,
+                    guardar_como: ga,
+                    ..
+                },
+                Stmt::SolicitarCapacidad {
+                    permiso: pb,
+                    recurso: rb,
+                    ttl_ns: tb,
+                    guardar_como: gb,
+                    ..
+                },
+            ) => {
+                pa == pb
+                    && ra == rb
+                    && ta == tb
+                    && ga.as_ref().map(|i| &i.nombre) == gb.as_ref().map(|i| &i.nombre)
+            }
+            (
+                Stmt::ValidarCapacidad { token: ta, .. },
+                Stmt::ValidarCapacidad { token: tb, .. },
+            ) => ta.nombre == tb.nombre,
+            (
+                Stmt::EnviarCanal {
+                    valor: va,
+                    canal: ca,
+                    ..
+                },
+                Stmt::EnviarCanal {
+                    valor: vb,
+                    canal: cb,
+                    ..
+                },
+            ) => exprs_equiv(va, vb) && ca.nombre == cb.nombre,
+            (
+                Stmt::RecibirCanal {
+                    canal: ca,
+                    guardar_como: ga,
+                    ..
+                },
+                Stmt::RecibirCanal {
+                    canal: cb,
+                    guardar_como: gb,
+                    ..
+                },
+            ) => ca.nombre == cb.nombre && ga.nombre == gb.nombre,
+            (Stmt::GenerarFibra { tarea: ta, .. }, Stmt::GenerarFibra { tarea: tb, .. }) => {
+                ta.nombre == tb.nombre
+            }
+            (
+                Stmt::CrearCanal {
+                    capacidad: ca,
+                    guardar_como: ga,
+                    ..
+                },
+                Stmt::CrearCanal {
+                    capacidad: cb,
+                    guardar_como: gb,
+                    ..
+                },
+            ) => ca == cb && ga.nombre == gb.nombre,
+            (
+                Stmt::OperarIO {
+                    operacion: oa,
+                    ruta: ra,
+                    datos: da,
+                    capacidad: ca,
+                    guardar_como: ga,
+                    ..
+                },
+                Stmt::OperarIO {
+                    operacion: ob,
+                    ruta: rb,
+                    datos: db,
+                    capacidad: cb,
+                    guardar_como: gb,
+                    ..
+                },
+            ) => {
+                oa == ob
+                    && ra == rb
+                    && match (da, db) {
+                        (None, None) => true,
+                        (Some(x), Some(y)) => exprs_equiv(x, y),
+                        _ => false,
+                    }
+                    && ca.nombre == cb.nombre
+                    && ga.as_ref().map(|i| &i.nombre) == gb.as_ref().map(|i| &i.nombre)
+            }
+            _ => false,
+        }
 }
 
 fn exprs_equiv(a: &Expr, b: &Expr) -> bool {
     match (a, b) {
         (Expr::Var(va), Expr::Var(vb)) => va.nombre == vb.nombre,
         (Expr::Lit(la), Expr::Lit(lb)) => la == lb,
-        (Expr::BinOp { op: oa, lhs: la, rhs: ra, .. }, Expr::BinOp { op: ob, lhs: lb, rhs: rb, .. }) =>
-            oa == ob && exprs_equiv(la, lb) && exprs_equiv(ra, rb),
-        (Expr::AccesoProp { base: ba, prop: pa, .. }, Expr::AccesoProp { base: bb, prop: pb, .. }) =>
-            exprs_equiv(ba, bb) && pa.nombre == pb.nombre,
+        (
+            Expr::BinOp {
+                op: oa,
+                lhs: la,
+                rhs: ra,
+                ..
+            },
+            Expr::BinOp {
+                op: ob,
+                lhs: lb,
+                rhs: rb,
+                ..
+            },
+        ) => oa == ob && exprs_equiv(la, lb) && exprs_equiv(ra, rb),
+        (
+            Expr::AccesoProp {
+                base: ba, prop: pa, ..
+            },
+            Expr::AccesoProp {
+                base: bb, prop: pb, ..
+            },
+        ) => exprs_equiv(ba, bb) && pa.nombre == pb.nombre,
         _ => false,
     }
 }
@@ -412,17 +848,46 @@ fn decl_well_formed(decl: &Decl) -> bool {
 }
 
 fn tarea_well_formed(t: &TareaDecl) -> bool {
-    !t.nombre.nombre.is_empty() &&
-    t.params.iter().all(|p| !p.nombre.nombre.is_empty()) &&
-    t.cuerpo.stmts.iter().all(stmt_well_formed)
+    !t.nombre.nombre.is_empty()
+        && t.params.iter().all(|p| !p.nombre.nombre.is_empty())
+        && t.cuerpo.stmts.iter().all(stmt_well_formed)
 }
 
 fn stmt_well_formed(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Verificar { cond, .. } | Stmt::Asumir { cond, .. } | Stmt::Demostrar { cond, .. } =>
-            expr_well_formed(cond),
+        Stmt::Verificar { cond, .. } | Stmt::Asumir { cond, .. } | Stmt::Demostrar { cond, .. } => {
+            expr_well_formed(cond)
+        }
         Stmt::Asignar { expr, .. } => expr_well_formed(expr),
         Stmt::Retornar { expr, .. } => expr.as_ref().map_or(true, expr_well_formed),
+        Stmt::SolicitarCapacidad {
+            recurso,
+            guardar_como,
+            ..
+        } => !recurso.is_empty() && guardar_como.as_ref().map_or(true, |i| !i.nombre.is_empty()),
+        Stmt::ValidarCapacidad { token, .. } => !token.nombre.is_empty(),
+        Stmt::EnviarCanal { valor, canal, .. } => {
+            expr_well_formed(valor) && !canal.nombre.is_empty()
+        }
+        Stmt::RecibirCanal {
+            canal,
+            guardar_como,
+            ..
+        } => !canal.nombre.is_empty() && !guardar_como.nombre.is_empty(),
+        Stmt::GenerarFibra { tarea, .. } => !tarea.nombre.is_empty(),
+        Stmt::CrearCanal { guardar_como, .. } => !guardar_como.nombre.is_empty(),
+        Stmt::OperarIO {
+            ruta,
+            datos,
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            !ruta.is_empty()
+                && datos.as_ref().map_or(true, expr_well_formed)
+                && !capacidad.nombre.is_empty()
+                && guardar_como.as_ref().map_or(true, |i| !i.nombre.is_empty())
+        }
     }
 }
 

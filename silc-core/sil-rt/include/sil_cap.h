@@ -10,6 +10,7 @@ typedef enum {
     SIL_CAP_ERROR = -1,
     SIL_CAP_NOT_IMPLEMENTED = -2,
     SIL_CAP_INVALID_PARAM = -3,
+    SIL_CAP_SIN_CLAVE = -4,
 } SilCapError;
 
 typedef enum {
@@ -20,23 +21,29 @@ typedef enum {
     SIL_CAP_EXEC = 0x08,
 } SilPermiso;
 
+/* Capacidad Zero-Trust con firma HMAC-SHA256.
+ * La firma cubre (magic, permisos, expiracion, recurso). El recurso
+ * queda ligado por hash: una capacidad no se puede reutilizar en otra ruta. */
 typedef struct {
     uint64_t id;
     uint32_t permisos;
     uint64_t expiracion_ns;
+    uint8_t recurso_hash[32];
     uint8_t firma[32];
     bool valida;
 } SilCapacidad;
 
-/* Valida una capacidad existente (O(1), sin syscalls salvo clock_gettime).
- * Requiere capacidad válida, permisos correctos y no expirada. */
-SilCapError sil_cap_validar(const SilCapacidad *cap, SilPermiso requerido, uint64_t ahora_ns);
+/* Clave fija desde el proceso huesped (ej. wrapper Rust que ya leyo el entorno).
+ * Tiene prioridad sobre SIL_CAP_KEY. Se limpia al reemplazar. */
+SilCapError sil_cap_fijar_clave(const uint8_t clave[32]);
 
-/* Solicita una nueva capacidad.
- * NOTA: Implementación de desarrollo (DEV-ONLY). La firma es XOR simple (NO CRIPTOGRÁFICA).
- * El parámetro `recurso` se ignora en esta versión (sin resource binding).
- * Para producción: requiere HMAC-SHA256 con clave en TPM 2.0 + attestation.
- * Retorna SIL_CAP_NOT_IMPLEMENTED hasta que se integre backend criptográfico real. */
+/* Solicita una capacidad firmada para `recurso` (max 1024 bytes).
+ * Clave: variable de entorno SIL_CAP_KEY con 64 hex chars (32 bytes).
+ * Sin clave retorna SIL_CAP_SIN_CLAVE. ttl_ns == 0 usa 500ms por defecto. */
 SilCapError sil_cap_solicitar(const char *recurso, uint32_t permisos, uint64_t ttl_ns, SilCapacidad *out_cap);
+
+/* Valida firma, permisos, recurso y expiracion. O(1).
+ * ahora_ns == 0 usa reloj monotonico interno. */
+SilCapError sil_cap_validar(const SilCapacidad *cap, const char *recurso, SilPermiso requerido, uint64_t ahora_ns);
 
 #endif

@@ -101,19 +101,22 @@ where
 /// Verifica que no hay desbordamiento en operación aritmética.
 #[inline(always)]
 pub fn checked_add(a: u64, b: u64, msg: &str) -> u64 {
-    a.checked_add(b).unwrap_or_else(|| panic!("{msg}: desbordamiento en suma"))
+    a.checked_add(b)
+        .unwrap_or_else(|| panic!("{msg}: desbordamiento en suma"))
 }
 
 /// Verifica que no hay desbordamiento en resta.
 #[inline(always)]
 pub fn checked_sub(a: u64, b: u64, msg: &str) -> u64 {
-    a.checked_sub(b).unwrap_or_else(|| panic!("{msg}: desbordamiento en resta"))
+    a.checked_sub(b)
+        .unwrap_or_else(|| panic!("{msg}: desbordamiento en resta"))
 }
 
 /// Verifica que no hay desbordamiento en multiplicación.
 #[inline(always)]
 pub fn checked_mul(a: u64, b: u64, msg: &str) -> u64 {
-    a.checked_mul(b).unwrap_or_else(|| panic!("{msg}: desbordamiento en multiplicación"))
+    a.checked_mul(b)
+        .unwrap_or_else(|| panic!("{msg}: desbordamiento en multiplicación"))
 }
 
 /// Verifica que no hay división por cero.
@@ -135,7 +138,9 @@ pub fn require_valid_ident(s: &str, max_len: usize, msg: &str) {
         msg,
     );
     require(
-        s.chars().next().map_or(false, |c| c.is_ascii_alphabetic() || c == '_'),
+        s.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_'),
         msg,
     );
 }
@@ -194,11 +199,7 @@ macro_rules! contract_invariant {
 #[macro_export]
 macro_rules! contract {
     ($pre:expr, $f:expr, $post:expr) => {
-        $crate::contract(
-            || $pre,
-            $f,
-            |r| $post
-        )
+        $crate::contract(|| $pre, $f, |r| $post)
     };
 }
 

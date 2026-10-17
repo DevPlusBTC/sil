@@ -1,0 +1,11 @@
+definir tarea trabajo() -> Entero64:
+    crear canal con capacidad 8 como c
+    enviar 40 en c
+    recibir de c como v
+    retornar v + 2
+
+definir tarea principal() -> Entero64:
+    solicitar capacidad lectura_archivo para "/tmp/datos" como cap
+    validar cap
+    generar trabajo
+    retornar 42
