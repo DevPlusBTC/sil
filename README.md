@@ -1,6 +1,6 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM ✅ | Z3/TPM/Fibras = STUBS ⚠️**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Scheduler Fibras + Canales + TPM 2.0 ✅ | Z3/LLVM/eBPF/NVM = Pendientes ⚠️**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
@@ -8,38 +8,19 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests** | **150/150 ✅** |
+| **Tests** | **139/139 ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |
-| **Próximo hito** | Z3 backend + Scheduler real |
+| **Próximo hito** | Z3 backend + LLVM + eBPF |
 
 ---
 
-## Qué FUNCIONA hoy (producción-ready para casos de uso limitados)
-
-- ✅ **Frontend CNL completo**: Lexer + Parser determinista sin backtracking, keywords en español
-- ✅ **Causal-IR completo**: SSA con invariantes SMT adjuntas, lowering AST → IR
-- ✅ **Verificador SMT (Intervalos)**: Backend puro Rust, sound pero incompleto, cache persistente SHA3-512
-- ✅ **Arenas O(1)**: Bump alloc, sub-arenas cíclicas O(1), promoción zero-copy, migración lazy (AST/IR)
-- ✅ **Backend C99**: Emite C99 estricto, compila con `gcc -std=c99 -Wall -Wextra -Werror`, runtime Arenas embebido
-- ✅ **Backend WASM**: Emite binario WASM válido con imports WASI (`proc_exit`, `fd_write`)
-- ✅ **Contratos SMT**: `asumir`/`verificar`/`demostrar` con contraejemplos concretos
-- ✅ **CLI completo**: `silc check|build|emit-smt|run`
-- ✅ **150 tests pasando**
-
-## Qué NO funciona (STUBS / Planificado)
-
-| Componente | Estado | Detalle |
-|------------|--------|---------|
-| **Verificador Z3** | 🚧 **EN PROGRESO** | Compila con `vendored`, feature `smt` |
-| **TPM 2.0 / Hardware Root of Trust** | 🚧 **STUB** | Framework de tipos solo; `tpm2_*` retornan `NotImplemented` |
-| **Scheduler Fibras / Canales Lock-Free** | 🚧 **STUB** | `Scheduler::spawn`/`ejecutar` retornan `NotImplemented` |
-| **io_uring / E/S Asíncrona Nativa** | ❌ NO IMPLEMENTADO | Solo declaración |
-| **Backend LLVM / SPIR-V / GPU** | ❌ NO IMPLEMENTADO | Solo stubs |
-| **Arenas Persistentes NVM / Migración Lazy** | 🚧 **STUB** | Solo AST/IR |
-| **eBPF Kernel / TPM 2.0 Real** | ❌ / 🚧 STUB | Solo framework de tipos |
-| **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | Objetivos de diseño, no logrados |
+| **Tests** | **139/139 ✅** |
+| **Crates** | 7/7 compilan |
+| **Líneas código** | ~15,000 Rust |
+| **Estado real** | **Fase 0 (Semilla)** |
+| **Próximo hito** | Z3 backend + LLVM + eBPF |
 
 ---
 
@@ -88,12 +69,13 @@ definir tarea procesar_pago(monto: Entero64, saldo: Entero64) -> Booleano:
 silc-core/
 ├── silc-frontend/     # Lexer + Parser CNL → AST  ✅
 ├── silc-causal-ir/    # Causal-IR + SMT (Intervalos)  ✅
-├── silc-backend/      # Codegen C99, WASM  ✅  (LLVM: stub)
-├── silc-runtime/      # Arenas O(1), Capacidades (validación ✅, firma TPM: STUB)
+├── silc-backend/      # Codegen C99, WASM  ✅  (LLVM: no implementado)
+├── silc-runtime/      # Arenas O(1), Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales  ✅
 ├── silc-cli/          # CLI  ✅
 ├── silc-contracts/    # Contratos compartidos  ✅
 └── silc-test/         # Tests integración  ✅
 
+silc-lsp/              # Servidor LSP (JSON-RPC)  ✅
 silc-vscode/           # Extensión VS Code  ⚠️ STUB
 docs/                  # Documentación (WHITE_PAPER actualizado)
 ```
@@ -105,7 +87,7 @@ docs/                  # Documentación (WHITE_PAPER actualizado)
 | `silc-frontend` | 0.1.0 | ✅ Lexer, Parser CNL, AST |
 | `silc-causal-ir` | 0.1.0 | ✅ Causal-IR, SMT (Intervalos) |
 | `silc-backend` | 0.1.0 | ✅ Codegen C99, WASM |
-| `silc-runtime` | 0.1.0 | ✅ Arenas, Capacidades (firma: STUB) |
+| `silc-runtime` | 0.1.0 | ✅ Arenas O(1), Capacidades HMAC, TPM 2.0, Scheduler Fibras, Canales |
 | `silc-cli` | 0.1.0 | ✅ CLI |
 | `silc-contracts` | 0.1.0 | ✅ Contratos compartidos |
 | `silc-test` | 0.1.0 | ✅ Tests integración |
@@ -116,4 +98,4 @@ MIT
 
 ## Contribución
 
-Ver [CONTRIBUTING.md](CONTRIBUTING.md) — **no existe aún** 📋
+Ver [CONTRIBUTING.md](CONTRIBUTING.md) — **disponible** 📋

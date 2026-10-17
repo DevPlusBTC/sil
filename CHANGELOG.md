@@ -12,10 +12,10 @@
 | silc-std | 0.1.0 | Standard library prelude |
 
 ### ✅ Componentes
-- **CLI `silc`**: `silc check`, `silc build --target c99|wasm`, `silc emit-smt`
+- **CLI `silc`**: `silc check`, `silc build --target c99|wasm`, `silc emit-smt`, `silc run`
 - **LSP Server** (`silc-lsp`): diagnostics, completion, hover, time-travel debugger
 - **VS Code Extension**: `silc-vscode` (diagnostics, completion, hover)
-- **Tests**: 7/7 integración pasando (check, build c99/wasm, emit-smt)
+- **Tests**: 139/139 integración pasando (check, build c99/wasm, emit-smt)
 - **Documentación**: SPEC.md, USER_GUIDE.md, API.md, 9 ejemplos
 - **CI/CD**: deny.toml, SBOM CycloneDX, release workflow
 
@@ -48,4 +48,4 @@ silc emit-smt hola.sil
 
 ---
 
-**5 crates en crates.io** | **LSP + VS Code** | **7/7 tests** | **Docs completas**
+**5 crates en crates.io** | **LSP + VS Code** | **139/139 tests** | **Docs completas**

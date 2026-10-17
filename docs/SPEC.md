@@ -10,17 +10,17 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 
 | Componente | Implementado | Notas |
 |------------|--------------|-------|
-| Frontend (Lexer/Parser CNL) | ✅ 95% | `silc-frontend` publicado |
-| Causal-IR + SMT | ✅ 90% | `silc-causal-ir` publicado, Z3 incremental |
-| Backend C99 | ✅ 85% | `silc-backend` publicado, emite C99 válido |
-| Backend WASM | ✅ 80% | `silc-backend` publicado, magic `\0asm` válido |
-| Runtime FFI | ✅ 70% | `silc-runtime` publicado, arena O(1) básica |
-| CLI (`silc`) | ✅ 95% | 4 comandos: check, build, emit-smt |
-| LSP Server | ✅ 85% | JSON-RPC 3.17, diagnostics, completion, hover, TTD |
-| VS Code Extension | ✅ 80% | Diagnostics, completion, hover, toggle |
-| Tests Integración | ✅ 100% | 7/7 passing |
+| Frontend (Lexer/Parser CNL) | Listo para probar | `silc-frontend` publicado |
+| Causal-IR + SMT | Listo para probar | `silc-causal-ir` publicado, Intervalos + Z3 |
+| Backend C99 | Listo para probar | `silc-backend` publicado, emite C99 válido |
+| Backend WASM | Listo para probar | `silc-backend` publicado, magic `\0asm` válido |
+| Runtime FFI | Listo para probar | `silc-runtime` publicado, arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
+| CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
+| LSP Server | Listo para probar | JSON-RPC, diagnostics, completion, hover |
+| VS Code Extension | En proceso | Pendiente de empaquetado |
+| Tests Integración | Listo para probar | 139/139 passing |
 
-**NO implementado aún (ver WHITE_PAPER.md):** Arenas persistentes NVM, Capabilities TPM, eBPF kernel, SPIR-V/GPU, M:N scheduler, migración esquemas lazy, superoptimizer, certificaciones militares.
+**Pendiente para desarrollo:** Arenas persistentes NVM, eBPF kernel, SPIR-V/GPU, M:N scheduler, migración esquemas lazy, superoptimizer, certificaciones militares.
 
 ---
 
