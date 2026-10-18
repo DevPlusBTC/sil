@@ -2,7 +2,7 @@
 
 **Versión de Especificación:** 0.1.0-ALPHA
 **Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
-**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3/LLVM/eBPF/NVM = Pendiente para desarrollo ⚠️
+**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM/eBPF/NVM = Pendientes ⚠️
 
 ---
 
@@ -13,7 +13,7 @@
 | **Frontend CNL** (Lexer/Parser) | Listo para probar | 20/20 ✅ | Keywords español, EBNF completo |
 | **Causal-IR** (SSA + SMT) | Listo para probar | 21/21 ✅ | SSA, invariantes, lowering |
 | **SMT Intervalos (Rust)** | Listo para probar | 21/21 ✅ | Sound/incompleto, cache SHA3-512 |
-| **SMT Z3 Backend** | En proceso | 0/0 | Compila con `vendored`, feature `smt` |
+| **SMT Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **Backend C99** | Listo para probar | 13/13 ✅ | `gcc -std=c99 -Wall -Wextra -Werror` |
 | **Backend WASM** | Listo para probar | 13/13 ✅ | WASI imports, binario válido |
 | **Backend LLVM** | Pendiente para desarrollo | 0/0 | Solo stub |
@@ -26,7 +26,7 @@
 | **Capacidades (validación)** | Listo para probar | 17/17 ✅ | Permisos, expiración, firma HMAC-SHA256 |
 | **TPM 2.0** | Listo para probar | 0/0 | Framework tipos implementado |
 | **eBPF Kernel** | Pendiente para desarrollo | 0/0 | Solo en paper |
-| **Z3 Backend** | En proceso | 0/0 | Compila con `vendored`, feature `smt` |
+| **Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **eBPF Kernel** | Pendiente para desarrollo | 0/0 | Solo en paper |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | 0/0 | Objetivos de diseño |
 
@@ -40,7 +40,7 @@
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend+IR+Intervalos+C99/WASM+Capacidades HMAC+TPM 2.0+Scheduler Fibras+Canales ✅ |
-| **Próximo hito real** | Z3 backend funcional + LLVM + eBPF |
+| **Próximo hito real** | LLVM + eBPF |
 
 ---
 
@@ -52,7 +52,7 @@ El **Lenguaje de Intención Semántica (SIL)** es un lenguaje de programación d
 
 1. **Invarianza Semántica Directa:** El código fuente expresa explícitamente la intención del programador y sus restricciones operativas. No existen comportamientos implícitos o no definidos (Undefined Behavior).
 
-2. **Cero Sobrecoste de Seguridad en Ejecución (Zero-Cost Abstractions):** La verificación de seguridad de memoria y lógica se realiza íntegramente en tiempo de compilación mediante un motor SMT (Satisfiability Modulo Theories) y un sistema de verificación formal. **Nota:** Actualmente intervalos (sound/incompleto); Z3 en progreso de integración.
+2. **Cero Sobrecoste de Seguridad en Ejecución (Zero-Cost Abstractions):** La verificación de seguridad de memoria y lógica se realiza íntegramente en tiempo de compilación mediante un motor SMT (Satisfiability Modulo Theories) y un sistema de verificación formal. **Nota:** Actualmente intervalos (sound/incompleto); Z3 disponible con feature `smt`.
 
 3. **Gestión Determinista de Recursos $O(1)$:** Eliminación total de recolectores de basura (Garbage Collector) o pausas no predecibles mediante el uso de Arenas Causales y Sub-Arenas Cíclicas. **Implementado** ✅.
 
@@ -99,7 +99,7 @@ SIL utiliza una gramática de **Lenguaje Natural Controlado (CNL)** determinista
 
 [Ver versión anterior]
 
-### 3.3 Pipeline de Verificación SMT — En proceso
+### 3.3 Pipeline de Verificación SMT — Listo para probar
 
 | Componente | Estado |
 |------------|--------|
@@ -107,11 +107,11 @@ SIL utiliza una gramática de **Lenguaje Natural Controlado (CNL)** determinista
 | Traducción a SMT-LIB2 | ✅ Listo para probar |
 | Caché persistente SHA3-512 | ✅ Listo para probar |
 | **Backend Intervalos (puro Rust)** | ✅ Listo para probar |
-| **Backend Z3** | En proceso |
+| **Backend Z3** | Listo para probar (feature `smt`) |
 | Backend CVC5 | Pendiente para desarrollo |
 | Cache por asunciones (SHA3-512) | ✅ Listo para probar |
 
-**Verificador por defecto:** Intervalos (puro Rust, sound pero incompleto). Z3 en progreso de integración.
+**Verificador por defecto:** Intervalos (puro Rust, sound pero incompleto). Z3 disponible con feature `smt`.
 
 ### 3.4 Superoptimizador Matemático (SMT Superoptimizer) — Pendiente para desarrollo
 
@@ -296,7 +296,7 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 | **Frontend (Lexer/Parser CNL)** | Listo para probar ✅ | 100% |
 | **Causal-IR (SSA + Invariantes SMT)** | Listo para probar ✅ | 100% |
 | **Verificador Intervalos (Rust)** | Listo para probar ✅ | 100% |
-| **Backend Z3** | En proceso | 0/0 | Compila con `vendored`, feature `smt` |
+| **Backend Z3** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **Backend C99** | Listo para probar ✅ | 100% |
 | **Backend WASM** | Listo para probar ✅ | 100% |
 | **Backend LLVM** | Pendiente para desarrollo ❌ | |
@@ -311,7 +311,7 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 | **eBPF Kernel** | Pendiente para desarrollo ❌ | |
 | **Scheduler Fibras** | Listo para probar ✅ | Implementado |
 | **Canales Lock-Free** | Listo para probar ✅ | Implementado |
-| **Z3 Backend** | En proceso | 0/0 | API rota |
+| **Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **eBPF Kernel** | Pendiente para desarrollo ❌ | |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | |
 
@@ -336,7 +336,7 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - E/S asíncrona con io_uring (Linux) / IOCP (Windows)
 
 **Pendiente para desarrollo:**
-- Verificador Z3 (en proceso de integración)
+- Verificador Z3 disponible con feature `smt`
 - TPM 2.0 (implementado, listo para pruebas de integración completa)
 - Scheduler de fibras (implementado, listo para pruebas de integración completa)
 - Canales lock-free (implementado, listo para pruebas de integración completa)
@@ -345,7 +345,7 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Arenas persistentes NVM / Migración lazy
 - Certificaciones militares (objetivos de diseño)
 
-**Siguiente paso realista:** Completar integración de Z3 backend, completar integración de scheduler fibras, implementar scheduler fibras real.
+**Siguiente paso realista:** LLVM + eBPF.
 
 ---
 

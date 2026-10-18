@@ -1,6 +1,6 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Scheduler Fibras + Canales + TPM 2.0 ✅ | Z3/LLVM/eBPF/NVM = Pendientes ⚠️**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Scheduler Fibras + Canales + TPM 2.0 ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM/eBPF/NVM = Pendientes ⚠️**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
@@ -12,7 +12,7 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |
-| **Próximo hito** | Z3 backend + LLVM + eBPF |
+| **Próximo hito** | LLVM + eBPF |
 
 ---
 
@@ -20,7 +20,7 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |
-| **Próximo hito** | Z3 backend + LLVM + eBPF |
+| **Próximo hito** | LLVM + eBPF |
 
 ---
 
@@ -68,7 +68,7 @@ definir tarea procesar_pago(monto: Entero64, saldo: Entero64) -> Booleano:
 ```
 silc-core/
 ├── silc-frontend/     # Lexer + Parser CNL → AST  ✅
-├── silc-causal-ir/    # Causal-IR + SMT (Intervalos)  ✅
+├── silc-causal-ir/    # Causal-IR + SMT (Intervalos + Z3 con feature `smt`)  ✅
 ├── silc-backend/      # Codegen C99, WASM  ✅  (LLVM: no implementado)
 ├── silc-runtime/      # Arenas O(1), Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales  ✅
 ├── silc-cli/          # CLI  ✅
@@ -85,7 +85,7 @@ docs/                  # Documentación (WHITE_PAPER actualizado)
 | Crate | Versión | Estado |
 |-------|---------|--------|
 | `silc-frontend` | 0.1.0 | ✅ Lexer, Parser CNL, AST |
-| `silc-causal-ir` | 0.1.0 | ✅ Causal-IR, SMT (Intervalos) |
+| `silc-causal-ir` | 0.1.0 | ✅ Causal-IR, SMT (Intervalos + Z3 con feature `smt`) |
 | `silc-backend` | 0.1.0 | ✅ Codegen C99, WASM |
 | `silc-runtime` | 0.1.0 | ✅ Arenas O(1), Capacidades HMAC, TPM 2.0, Scheduler Fibras, Canales |
 | `silc-cli` | 0.1.0 | ✅ CLI |

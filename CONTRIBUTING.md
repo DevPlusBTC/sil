@@ -44,7 +44,7 @@ Para proponer nuevas características o mejoras:
 SIL/
 ├── silc-core/           # Compilador SIL (Rust)
 │   ├── silc-frontend/   # Lexer + Parser CNL → AST
-│   ├── silc-causal-ir/  # Causal-IR + SMT (Intervalos)
+│   ├── silc-causal-ir/  # Causal-IR + SMT (Intervalos + Z3 con feature `smt`)
 │   ├── silc-backend/    # Codegen C99, WASM
 │   ├── silc-runtime/    # Runtime: Arenas O(1), Capacidades HMAC, TPM 2.0, Fibras, Canales
 │   ├── silc-cli/        # CLI: silc check, build, emit-smt, run, lsp
