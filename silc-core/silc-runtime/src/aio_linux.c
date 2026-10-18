@@ -184,9 +184,11 @@ void sil_aio_cancel(sil_aio_context *ctx, int req_idx) {
 
 int sil_aio_status(sil_aio_context *ctx, int req_idx) {
     if (!ctx) return SIL_AIO_FAILED;
-    /* En implementación简化, el status se determina al llamar a getevents.
-     * Aquí retornamos el último conocido. */
-    return SIL_AIO_COMPLETED; /* Placeholder */
+    /* El estado real se determina al llamar a sil_aio_getevents,
+     * que actualiza req->status directamente en cada request.
+     * Sin haber consultado eventos, el estado es pendiente. */
+    (void)req_idx;
+    return SIL_AIO_PENDING;
 }
 
 bool sil_aio_success(int status) {
