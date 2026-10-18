@@ -1174,3 +1174,126 @@ mod tests {
         assert!(r3.is_err(), "x > 5 no implica y > 3");
     }
 }
+
+// =============================================================================
+// Tests del backend Z3 (feature `smt`)
+// =============================================================================
+
+#[cfg(all(test, feature = "smt"))]
+mod tests_z3 {
+    use super::*;
+    use crate::lower::bajar_tarea;
+    use silc_frontend::lexer::lexear;
+    use silc_frontend::parser::parsear;
+
+    fn ir_de(src: &str) -> TareaIR {
+        let prog = parsear(&lexear(src)).expect("parse OK");
+        let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!("se esperaba una tarea")
+        };
+        bajar_tarea(t).expect("lower OK")
+    }
+
+    fn verif_ok_z3(src: &str) {
+        let ir = ir_de(src);
+        let mut b = VerificadorZ3::new();
+        let mut c = CacheLemas::en_memoria();
+        verificar_tarea_con(&ir, &mut b, &mut c, 5000).expect("debe ser válido con Z3");
+    }
+
+    fn verif_falla_z3(src: &str) -> ErrorSMT {
+        let ir = ir_de(src);
+        let mut b = VerificadorZ3::new();
+        let mut c = CacheLemas::en_memoria();
+        verificar_tarea_con(&ir, &mut b, &mut c, 5000).expect_err("debe fallar con Z3")
+    }
+
+    #[test]
+    fn z3_meta_trivial_valida() {
+        // asumir x > 0 ⊢ demostrar x > 0 → Válido
+        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+    }
+
+    #[test]
+    fn z3_meta_refinada_valida() {
+        // asumir x > 5 ⊢ demostrar x > 0 → Válido
+        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 5\n    demostrar x > 0\n    retornar x\n");
+    }
+
+    #[test]
+    fn z3_meta_falsa_con_contraejemplo() {
+        // asumir x > 0 ⊬ demostrar x > 5 → Violada (x=1 falsifica)
+        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 5\n    retornar x\n");
+        match e {
+            ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
+                assert!(
+                    contraejemplo.contains('x'),
+                    "contraejemplo menciona x: {contraejemplo}"
+                );
+            }
+            other => panic!("esperaba Violada, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn z3_sin_asunciones_meta_falsa() {
+        // ⊢ demostrar x > 0 → Violada (x = 0 o negativo)
+        let e = verif_falla_z3(
+            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+        );
+        assert!(matches!(e, ErrorSMT::InvarianteViolada { .. }));
+    }
+
+    #[test]
+    fn z3_multiples_variables_y_suma() {
+        // asumir x > 5, y > 10 ⊢ demostrar x + y > 15 → Válido
+        verif_ok_z3("definir tarea f(x: Entero64, y: Entero64) -> Entero64:\n    asumir x > 5\n    asumir y > 10\n    demostrar x + y > 15\n    retornar x + y\n");
+    }
+
+    #[test]
+    fn z3_igualdad_valida() {
+        // asumir x == 5 ⊢ demostrar x == 5 → Válido
+        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x == 5\n    demostrar x == 5\n    retornar x\n");
+    }
+
+    #[test]
+    fn z3_menor_igual_valido() {
+        // asumir x >= 5 ⊢ demostrar x >= 0 → Válido
+        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x >= 5\n    demostrar x >= 0\n    retornar x\n");
+    }
+
+    #[test]
+    fn z3_contraejemplo_con_valor_concreto() {
+        // asumir x > 0 ⊬ demostrar x > 100 → Violada con contraejemplo
+        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 100\n    retornar x\n");
+        match e {
+            ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
+                assert!(
+                    contraejemplo.contains('x'),
+                    "contraejemplo menciona x: {contraejemplo}"
+                );
+            }
+            other => panic!("esperaba Violada, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn z3_dos_metas_una_valida_una_no() {
+        // Primera meta válida, segunda falsa → debe fallar en la segunda
+        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    demostrar x > 100\n    retornar x\n");
+        assert!(matches!(e, ErrorSMT::InvarianteViolada { .. }));
+    }
+
+    #[test]
+    fn z3_cache_evita_reverificacion() {
+        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        let mut b = VerificadorZ3::new();
+        let mut c = CacheLemas::en_memoria();
+        assert_eq!(c.len(), 0);
+        verificar_tarea_con(&ir, &mut b, &mut c, 5000).unwrap();
+        assert_eq!(c.len(), 1, "una meta guardada en caché");
+        // Segunda vez: hit de caché
+        verificar_tarea_con(&ir, &mut b, &mut c, 5000).expect("cache hit → OK");
+        assert_eq!(c.len(), 1, "cáche no creció en segundo hit");
+    }
+}
