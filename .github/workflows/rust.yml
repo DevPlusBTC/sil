@@ -1,4 +1,4 @@
-name: CI Rust (build + test + clippy + fmt + fuzz)
+﻿name: CI Rust (build + test + clippy + fmt + fuzz + smt)
 
 on:
   push:
@@ -16,8 +16,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Reproducibilidad: timestamp fijo desde git (o época si no hay git).
-  # El job de reproducibilidad lo sobrescribe con el commit real.
   SOURCE_DATE_EPOCH: '1700000000'
 
 jobs:
@@ -67,7 +65,53 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
         working-directory: silc-core
 
-  # --- Fuzzing (Linux only - ASan required) ---
+  # --- 3. Feature SMT (Z3) - requiere Python + CMake ---
+  smt-test:
+    name: smt tests (Z3 backend)
+    runs-on: ubuntu-latest
+    needs: [build-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CMake
+        uses: lukka/get-cmake@v3
+        with:
+          cmake-version: '3.25.0'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Build with SMT feature
+        run: cargo build --workspace --locked --features smt
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+      - name: Tests with SMT feature (Z3)
+        run: cargo test --workspace --locked --features smt
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+      - name: Clippy with SMT feature
+        run: cargo clippy --workspace --all-targets --locked --features smt -- -D warnings
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+  # --- 4. Fuzzing (Linux only - ASan required) ---
   fuzz:
     name: fuzz (ubuntu-latest, nightly)
     runs-on: ubuntu-latest
@@ -100,7 +144,7 @@ jobs:
         run: cargo fuzz run fuzz_roundtrip -- -max_total_time=30
         working-directory: silc-core/silc-frontend/fuzz
 
-  # --- 3. Python prototipo (no romper Fase -1) ---
+  # --- 5. Python prototipo (no romper Fase -1) ---
   python-proto:
     name: python prototipo (31 tests)
     runs-on: ubuntu-latest
@@ -116,7 +160,7 @@ jobs:
       - name: Tests WASM
         run: python3 test_sil_wasm.py
 
-  # --- 4. Reproducibilidad: doble build → hashes idénticos ---
+  # --- 6. Reproducibilidad: doble build -> hashes idénticos ---
   reproducibilidad:
     name: reproducible build (2x sha256)
     runs-on: ubuntu-latest

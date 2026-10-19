@@ -63,3 +63,6 @@ silc-frontend = { path = "silc-frontend" }
 silc-causal-ir = { path = "silc-causal-ir" }
 silc-backend = { path = "silc-backend" }
 silc-contracts = { path = "silc-contracts" }
+
+
+
