@@ -26,7 +26,7 @@ struct Cli {
     verbose: u8,
 
     /// Timeout SMT por query (ms)
-    #[arg(long, default_value = "5000", global = true)]
+    #[arg(long, default_value = "5000", global = true, value_parser = clap::value_parser!(u64).range(1..))]
     smt_timeout: u64,
 
     #[command(subcommand)]
@@ -328,6 +328,15 @@ fn cmd_run(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
     // Build a .c temporal + compilar + ejecutar + mostrar salida.
     let tmp_c = std::env::temp_dir().join(format!("sil_run_{}.c", std::process::id()));
     cmd_build(archivos, &tmp_c, "c99", smt_timeout, false)?;
+    let codigo = std::fs::read_to_string(&tmp_c)
+        .into_diagnostic()
+        .wrap_err("no se pudo leer el C generado")?;
+    if !codigo.contains("int main(void)") {
+        let _ = std::fs::remove_file(&tmp_c);
+        return Err(miette::miette!(
+            "el archivo es una biblioteca (la última tarea tiene parámetros); `silc run` requiere una tarea principal sin parámetros"
+        ));
+    }
     // Compilar a binario temporal.
     let tmp_bin = tmp_c.with_extension(if cfg!(windows) { "exe" } else { "out" });
     let comps = ["cc", "gcc", "clang"];
@@ -383,10 +392,9 @@ fn main() -> Result<()> {
             archivos,
             out,
             target,
-            ..
+            cc,
         } => {
-            // M8: flag --cc eliminado del struct (simplificado); usamos env SIL_CC=1.
-            let cc = std::env::var("SIL_CC").map(|v| v == "1").unwrap_or(false);
+            let cc = cc || std::env::var("SIL_CC").map(|v| v == "1").unwrap_or(false);
             cmd_build(&archivos, &out, &target, cli.smt_timeout, cc)
         }
         Comando::Check { archivos } => cmd_check(&archivos, cli.smt_timeout),

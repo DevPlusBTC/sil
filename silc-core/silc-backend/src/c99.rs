@@ -490,16 +490,14 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
 
 /// Emite un programa C99 completo con todas las tareas del archivo + main.
 ///
-/// Convención: la última tarea es la principal y no tiene parámetros.
-/// `generar X` registra X como fibra del scheduler global; el main ejecuta
-/// primero la principal (que registra) y luego todas las fibras en orden.
+/// Convención: la última tarea es la principal.
+/// - Sin parámetros: se emite `main`, que ejecuta la principal y luego las
+///   fibras registradas con `generar X`.
+/// - Con parámetros: se emite una biblioteca (sin `main`), igual que `emitir`.
 pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     require(!tareas.is_empty(), "programa sin tareas");
     let principal = tareas.last().expect("programa sin tareas");
-    require(
-        principal.params.is_empty(),
-        "la tarea principal (última) no puede tener parámetros",
-    );
+    let con_main = principal.params.is_empty();
     for t in tareas {
         require(!t.nombre.is_empty(), "nombre de tarea vacío");
         require_valid_ident(&t.nombre, 64, "identificador de tarea inválido");
@@ -513,8 +511,10 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
-    out.push_str("static SilArena_ sil_arena_main_;\n");
-    out.push_str("static SilSched_ sil_sched_main_;\n");
+    if con_main {
+        out.push_str("static SilArena_ sil_arena_main_;\n");
+        out.push_str("static SilSched_ sil_sched_main_;\n");
+    }
 
     // Valida los `generar X`: la tarea debe existir y no tener parámetros.
     {
@@ -538,6 +538,11 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
                         if !sin_params.contains(f.as_str()) {
                             return Err(ErrorC99::Emision(format!(
                                 "generar {f}: la tarea no puede tener parámetros"
+                            )));
+                        }
+                        if !con_main {
+                            return Err(ErrorC99::Emision(format!(
+                                "generar {f}: requiere una tarea principal sin parámetros"
                             )));
                         }
                     }
@@ -572,42 +577,46 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     }
 
     // Wrappers de fibra para las tareas aptas.
-    for nombre in &aptas {
-        let f = c_nombre_fn(nombre);
+    if con_main {
+        for nombre in &aptas {
+            let f = c_nombre_fn(nombre);
+            out.push_str(&format!(
+                "static void sil_fibra_{f}(void *ctx) {{ (void)ctx; (void){f}(&sil_arena_main_); }}\n",
+            ));
+        }
+
+        // main: arena global, principal, scheduler, impresión del retorno.
+        let fp = c_nombre_fn(&principal.nombre);
+        let llamada = match &principal.retorno {
+            SilType::Void => format!("{fp}(&sil_arena_main_);"),
+            SilType::Entero64 | SilType::USD | SilType::EUR => {
+                format!(
+                    "{{ long long sil_r_ = {fp}(&sil_arena_main_); printf(\"%lld\\n\", sil_r_); }}"
+                )
+            }
+            SilType::Flotante64 => {
+                format!("{{ double sil_r_ = {fp}(&sil_arena_main_); printf(\"%f\\n\", sil_r_); }}")
+            }
+            SilType::Booleano => {
+                format!("{{ int sil_r_ = {fp}(&sil_arena_main_); printf(\"%d\\n\", sil_r_); }}")
+            }
+            SilType::Texto => {
+                format!("{{ SilTexto_ sil_r_ = {fp}(&sil_arena_main_); fwrite(sil_r_.ptr, 1, (unsigned long)sil_r_.len, stdout); fputc('\\n', stdout); }}")
+            }
+            SilType::CapacidadHardware => {
+                format!("{{ (void){fp}(&sil_arena_main_); }}")
+            }
+            otro => {
+                return Err(ErrorC99::TipoNoSoportado(format!("{otro:?}")));
+            }
+        };
         out.push_str(&format!(
-            "static void sil_fibra_{f}(void *ctx) {{ (void)ctx; (void){f}(&sil_arena_main_); }}\n",
+            "\nint main(void) {{\nsil_arena_main_ = sil_arena_crear_(65536ul);\n{llamada}\nsil_sched_ejecutar_(&sil_sched_main_);\nreturn 0;\n}}\n",
+            llamada = llamada,
         ));
+
+        ensure(out.contains("int main(void)"), "main no generado");
     }
-
-    // main: arena global, principal, scheduler, impresión del retorno.
-    let fp = c_nombre_fn(&principal.nombre);
-    let llamada = match &principal.retorno {
-        SilType::Void => format!("{fp}(&sil_arena_main_);"),
-        SilType::Entero64 | SilType::USD | SilType::EUR => {
-            format!("{{ long long sil_r_ = {fp}(&sil_arena_main_); printf(\"%lld\\n\", sil_r_); }}")
-        }
-        SilType::Flotante64 => {
-            format!("{{ double sil_r_ = {fp}(&sil_arena_main_); printf(\"%f\\n\", sil_r_); }}")
-        }
-        SilType::Booleano => {
-            format!("{{ int sil_r_ = {fp}(&sil_arena_main_); printf(\"%d\\n\", sil_r_); }}")
-        }
-        SilType::Texto => {
-            format!("{{ SilTexto_ sil_r_ = {fp}(&sil_arena_main_); fwrite(sil_r_.ptr, 1, (unsigned long)sil_r_.len, stdout); fputc('\\n', stdout); }}")
-        }
-        SilType::CapacidadHardware => {
-            format!("{{ (void){fp}(&sil_arena_main_); }}")
-        }
-        otro => {
-            return Err(ErrorC99::TipoNoSoportado(format!("{otro:?}")));
-        }
-    };
-    out.push_str(&format!(
-        "\nint main(void) {{\nsil_arena_main_ = sil_arena_crear_(65536ul);\n{llamada}\nsil_sched_ejecutar_(&sil_sched_main_);\nreturn 0;\n}}\n",
-        llamada = llamada,
-    ));
-
-    ensure(out.contains("int main(void)"), "main no generado");
     Ok(out)
 }
 

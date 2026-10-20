@@ -480,17 +480,15 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
 
 /// Emite un módulo WASM con todas las tareas del archivo + función start.
 ///
-/// La última tarea es la principal (sin parámetros). `generar X` es llamada
-/// directa a X (cooperativo sin desalojo, igual que el C99). El start llama
-/// a la principal y descarta su retorno.
+/// La última tarea es la principal. Si no tiene parámetros, la función start
+/// la llama y descarta su retorno; si tiene parámetros, se emite una
+/// biblioteca (sin start). `generar X` es llamada directa a X (cooperativo sin
+/// desalojo, igual que el C99).
 pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
     use silc_contracts::{require, require_valid_ident};
     require(!tareas.is_empty(), "programa sin tareas");
     let principal = tareas.last().expect("programa sin tareas");
-    require(
-        principal.params.is_empty(),
-        "la tarea principal (última) no puede tener parámetros",
-    );
+    let con_start = principal.params.is_empty();
 
     // Uso host global + textos globales.
     let mut uso = UsoHost::default();
@@ -656,8 +654,9 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
         funcs.function(i as u32);
     }
     // start usa el type start.
-    let idx_start = n_imports + tareas.len() as u32;
-    funcs.function(idx_type_start);
+    if con_start {
+        funcs.function(idx_type_start);
+    }
     module.section(&funcs);
 
     let mut exports = ExportSection::new();
@@ -698,7 +697,7 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
         code.function(&f);
     }
     // start: llama a la principal y descarta su retorno si lo hay.
-    {
+    if con_start {
         let mut f = wasm_encoder::Function::new([]);
         let idx_p = llamables[&principal.nombre].0;
         f.instruction(&wasm_encoder::Instruction::Call(idx_p));
@@ -707,12 +706,10 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
         }
         f.instruction(&wasm_encoder::Instruction::End);
         code.function(&f);
-    }
-    // StartSection ANTES de Code (orden WASM: Start < Code < Data).
-    {
+        // StartSection ANTES de Code (orden WASM: Start < Code < Data).
         use wasm_encoder::StartSection;
         let start = StartSection {
-            function_index: idx_start,
+            function_index: n_imports + tareas.len() as u32,
         };
         module.section(&start);
     }
