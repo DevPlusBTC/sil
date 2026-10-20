@@ -322,7 +322,7 @@ pub enum Token {
     Slash,
     #[regex(r"\r?\n[ \t]*", callback_indent)]
     Newline,
-    #[regex(r"[ \t]+", logos::skip)]
+    #[regex(r"[ \t\x{FEFF}]+", logos::skip)]
     Espacio,
     #[regex(r"//[^\n]*", logos::skip)]
     ComentarioLinea,

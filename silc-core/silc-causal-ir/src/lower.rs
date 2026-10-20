@@ -236,11 +236,6 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
 /// - Post: Retorna FormulaLogica con VarId vinculado a SSA real
 /// - Invariante: VarId resuelto existe en ctx.vars
 fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
-    require(
-        !ctx.vars.is_empty() || matches!(e, A::Expr::Lit(_)),
-        "contexto sin variables para expresión no literal",
-    );
-
     match e {
         A::Expr::Var(id) => {
             let vid = ctx

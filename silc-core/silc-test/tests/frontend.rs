@@ -42,6 +42,12 @@ fn parsea_programa_multideclaracion() {
 }
 
 #[test]
+fn acepta_bom_utf8_al_inicio() {
+    let con_bom = format!("\u{feff}{PROGRAMA}");
+    assert_eq!(defs(&con_bom).len(), 3);
+}
+
+#[test]
 fn spans_declaraciones_cubren_el_fuente() {
     for decl in defs(PROGRAMA) {
         let span = match &decl {
