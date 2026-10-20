@@ -22,6 +22,10 @@ build/
 *.swp
 *.swo
 
+# Extension VS Code (dependencias y salida compilada)
+node_modules/
+silc-vscode/out/
+
 # OS
 .DS_Store
 Thumbs.db

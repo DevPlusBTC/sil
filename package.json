@@ -12,7 +12,7 @@
     "Linters",
     "Snippets"
   ],
-  "main": "./client/out/extension.js",
+  "main": "./silc-vscode/out/extension.js",
   "contributes": {
     "languages": [{
       "id": "sil",
@@ -25,27 +25,6 @@
       "scopeName": "source.sil",
       "path": "./syntaxes/sil.tmLanguage.json"
     }],
-    "configuration": {
-      "type": "object",
-      "title": "SIL Language Configuration",
-      "properties": {
-        "sil.enableSMTDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "description": "Habilitar diagnósticos SMT en tiempo real (requiere z3-solver instalado)"
-        },
-        "sil.smtTimeoutMs": {
-          "type": "number",
-          "default": 5000,
-          "description": "Timeout para verificación SMT por archivo (ms)"
-        },
-        "sil.formatter.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Habilitar formateador canónico al guardar"
-        }
-      }
-    },
     "commands": [
       {
         "command": "sil.compile",
@@ -55,11 +34,6 @@
       {
         "command": "sil.verify",
         "title": "SIL: Verificar invariantes SMT del archivo actual",
-        "category": "SIL"
-      },
-      {
-        "command": "sil.format",
-        "title": "SIL: Formatear documento (silfmt)",
         "category": "SIL"
       }
     ],
@@ -80,18 +54,16 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "compile": "tsc -p ./silc-vscode",
+    "watch": "tsc -watch -p ./silc-vscode"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.0",
-    "eslint": "^8.50.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0"
+    "typescript": "^5.3.0"
   },
   "activationEvents": [
     "onLanguage:sil"

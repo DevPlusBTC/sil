@@ -1,95 +1,80 @@
+import * as cp from 'child_process';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { LanguageClient, LanguageClientOptions, ServerOptions, TransportKind } from 'vscode-languageclient';
+import {
+    LanguageClient,
+    LanguageClientOptions,
+    ServerOptions,
+    TransportKind,
+} from 'vscode-languageclient/node';
 
-export function activate(context: vscode.ExtensionContext) {
+let client: LanguageClient | undefined;
+let salida: vscode.OutputChannel;
 
-	// Use the language client to connect to the SIL language server
-	const serverOptions: ServerOptions = {
-		run: {
-			command: 'silc-lsp',
-			args: [],
-		},
-		debug: {
-			command: 'silc-lsp',
-			args: [],
-		},
-	};
-
-	const clientOptions: LanguageClientOptions = {
-		// Don't automatically show diagnostics
-		diagnosticCollectionName: 'silc-vscode',
-		diagnosticCollection: undefined,
-		workspaceFolders: false,
-		// Emit telemetry events to VS Code
-		telemetery: 'off',
-		// Cancel any request when the client is cancelled
-		cancelRequested: true,
-		// Delegate tooltip / hover to the language server
-		hover: true,
-		// Delegate completion to the language server
-		completion: true,
-		// Delegate signature help to the language server
-		signatureHelp: true,
-	};
-
-	// Create the language client
-	const languageClient = new LanguageClient(
-		'silc-lsp',
-		'SIL Language Server',
-		serverOptions,
-		clientOptions
-	);
-
-	// Register the language client to be activated when a .sil file is opened
-	const diagnosticCollection = vscode.diagnosticCollection.create('silc-vscode');
-	context.subscriptions.push(diagnosticCollection);
-
-	// Push the diagnostic collection to be disposed on extension deactivation
-	context.subscriptions.push(diagnosticCollection);
-
-	// Register the command to toggle diagnostics
-	const toggleDiagnosticsDisposable = vscode.commands.registerCommand('silc-vscode.toggleDiagnostics', () => {
-		const enabled = !diagnosticCollection.enabled;
-		diagnosticCollection.enabled = enabled;
-		vscode.window.showInformationMessage(`SIL diagnostics ${enabled ? 'enabled' : 'disabled'}`);
-	});
-	context.subscriptions.push(toggleDiagnosticsDisposable);
-
-	// When the language client is started, connect it to the diagnostic collection
-	languageClient.onDidChangeDiagnostics((change) => {
-		diagnosticCollection.delete();
-		for (const entry of change.items) {
-			const diagnostic: vscode.Diagnostic = {
-				range: entry.range,
-				severity: entry.severity ? entry.severity : vscode.DiagnosticSeverity.Error,
-				message: entry.message,
-				code: entry.code,
-			};
-			diagnosticCollection.set(entry.range.start, diagnostic);
-		}
-	});
-
-	// Start the language client
-	const disposable = languageClient.start();
-	context.subscriptions.push(disposable);
-
-	// Add a listener for when a .sil file is opened
-	const openListener = vscode.workspace.onDidOpenTextDocument((document) => {
-		if (document.languageId === 'sil') {
-			languageClient.prepareCallHierarchy();
-		}
-	});
-	context.subscriptions.push(openListener);
-
-	// Add a listener for when a .sil file is closed
-	const closeListener = vscode.workspace.onDidCloseTextDocument((document) => {
-		if (document.languageId === 'sil') {
-			// Could cleanup here if needed
-		}
-	});
-	context.subscriptions.push(closeListener);
+function archivoActual(): string | undefined {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'sil') {
+        void vscode.window.showErrorMessage('Abre un archivo SIL (.sil) primero.');
+        return undefined;
+    }
+    return editor.document.uri.fsPath;
 }
 
-export function deactivate() {
-	// Language client will be stopped automatically
+function ejecutar(argumentos: (archivo: string) => string[]): void {
+    const archivo = archivoActual();
+    if (!archivo) {
+        return;
+    }
+    const args = argumentos(archivo);
+    salida.show(true);
+    salida.appendLine(`$ silc ${args.join(' ')}`);
+    const proceso = cp.spawn('silc', args, { shell: false });
+    proceso.stdout.on('data', (datos: Buffer) => salida.append(datos.toString()));
+    proceso.stderr.on('data', (datos: Buffer) => salida.append(datos.toString()));
+    proceso.on('error', (error: Error) =>
+        salida.appendLine(`No se pudo ejecutar silc: ${error.message}`),
+    );
+    proceso.on('close', (codigo: number | null) =>
+        salida.appendLine(`silc terminó con código ${codigo ?? '?'}`),
+    );
+}
+
+export function activate(context: vscode.ExtensionContext): void {
+    salida = vscode.window.createOutputChannel('SIL');
+    context.subscriptions.push(salida);
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('sil.compile', () =>
+            ejecutar((archivo) => [
+                'build',
+                archivo,
+                '--target',
+                'c99',
+                '-o',
+                path.join(path.dirname(archivo), `${path.basename(archivo, '.sil')}.c`),
+            ]),
+        ),
+        vscode.commands.registerCommand('sil.verify', () =>
+            ejecutar((archivo) => ['check', archivo]),
+        ),
+    );
+
+    const serverOptions: ServerOptions = {
+        run: { command: 'silc', args: ['lsp'], transport: TransportKind.stdio },
+        debug: { command: 'silc', args: ['lsp'], transport: TransportKind.stdio },
+    };
+    const clientOptions: LanguageClientOptions = {
+        documentSelector: [{ scheme: 'file', language: 'sil' }],
+    };
+    client = new LanguageClient(
+        'silc',
+        'SIL Language Server',
+        serverOptions,
+        clientOptions,
+    );
+    void client.start();
+}
+
+export function deactivate(): Thenable<void> | undefined {
+    return client?.stop();
 }
