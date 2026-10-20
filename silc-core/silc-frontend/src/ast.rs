@@ -26,7 +26,13 @@ pub enum Decl {
     Tarea(TareaDecl),
     Estructura(EstructuraDecl),
     Variante(VarianteDecl),
-    // TODO(M2): Servicio, Modelo, MemoriaPersistente, Capacidad, Modulo, Migracion
+    Servicio(ServicioDecl),
+    /// Modelo de dominio: registro con campos tipados (misma forma que una estructura).
+    Modelo(ModeloDecl),
+    MemoriaPersistente(MemoriaPersistenteDecl),
+    Capacidad(CapacidadDecl),
+    Modulo(ModuloDecl),
+    Migracion(MigracionDecl),
 }
 
 /// Declaración de tarea (función).
@@ -233,6 +239,97 @@ pub struct VarianteDecl {
 pub struct CasoVariante {
     pub nombre: Ident,
     pub datos: Vec<Campo>,
+}
+
+/// Declaración de servicio: configuración de red, manejadores de eventos y tareas.
+#[derive(Debug, Clone)]
+pub struct ServicioDecl {
+    pub nombre: Ident,
+    pub red: Option<ConfiguracionRed>,
+    pub manejadores: Vec<ManejadorEvento>,
+    pub tareas: Vec<TareaDecl>,
+    pub restricciones: Vec<Restriccion>,
+    pub span: Span,
+}
+
+/// `escuchar en puerto <n> [con protocolo <p>]`.
+#[derive(Debug, Clone)]
+pub struct ConfiguracionRed {
+    pub puerto: u64,
+    pub protocolo: Option<Ident>,
+}
+
+/// `cuando llegue evento <E>(<params>):` con su cuerpo de intención.
+#[derive(Debug, Clone)]
+pub struct ManejadorEvento {
+    pub evento: Ident,
+    pub params: Vec<Param>,
+    pub cuerpo: Cuerpo,
+    pub span: Span,
+}
+
+/// Modelo de dominio: registro con campos tipados.
+#[derive(Debug, Clone)]
+pub struct ModeloDecl {
+    pub nombre: Ident,
+    pub campos: Vec<Campo>,
+    pub span: Span,
+}
+
+/// Memoria persistente NVM: registro con campos tipados.
+#[derive(Debug, Clone)]
+pub struct MemoriaPersistenteDecl {
+    pub nombre: Ident,
+    pub campos: Vec<Campo>,
+    pub span: Span,
+}
+
+/// Capacidad hardware declarada con su recurso y límite de ancho de banda.
+#[derive(Debug, Clone)]
+pub struct CapacidadDecl {
+    pub nombre: Ident,
+    pub recurso: String,
+    pub puerto: u64,
+    pub limite_ancho_banda: String,
+    pub span: Span,
+}
+
+/// Módulo: agrupa y exporta entidades declaradas.
+#[derive(Debug, Clone)]
+pub struct ModuloDecl {
+    pub nombre: Ident,
+    pub exportaciones: Vec<Exportacion>,
+    pub span: Span,
+}
+
+/// Entidad exportada por un módulo.
+#[derive(Debug, Clone)]
+pub struct Exportacion {
+    pub clase: ClaseExportada,
+    pub nombre: Ident,
+}
+
+/// Clase de entidad exportable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaseExportada {
+    Servicio,
+    Tarea,
+    Estructura,
+    Variante,
+    Capacidad,
+}
+
+/// Migración de esquema: valor por defecto al leer un campo inexistente.
+#[derive(Debug, Clone)]
+pub struct MigracionDecl {
+    pub origen: Ident,
+    pub version_desde: Ident,
+    pub version_a: Ident,
+    pub campo: String,
+    pub registro: Ident,
+    pub valor_predeterminado: Expr,
+    pub restricciones: Vec<Restriccion>,
+    pub span: Span,
 }
 
 /// Restricción de hardware.

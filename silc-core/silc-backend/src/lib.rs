@@ -1,6 +1,6 @@
-//! silc-backend: Emisión de código nativo (LLVM, C99, WASM).
+//! silc-backend: Emisión de código nativo (C99, WASM, LLVM).
 //!
-//! M0: esqueletos que compilan. Implementación completa en M5 (C99) y M6 (LLVM).
+//! C99 y WASM están implementados; LLVM requiere la feature `llvm` y LLVM 17.
 
 pub mod c99;
 pub mod llvm;

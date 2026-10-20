@@ -1,6 +1,4 @@
 //! silc-frontend: Lexer + Parser + AST para SIL (CNL).
-//!
-//! Fase M0: esqueletos que compilan. Implementación completa en M1 (lexer) y M2 (parser).
 
 pub mod ast;
 pub mod error;
@@ -8,16 +6,27 @@ pub mod lexer;
 pub mod parser;
 
 #[cfg(test)]
-mod test_z3_lexer {
+mod tests {
+    use crate::ast::Decl;
+    use crate::lexer::{lexear, Token, TokenFull};
+    use crate::parser::parsear;
+
     #[test]
-    fn test_z3_lexer() {
-        use crate::lexer::lexear;
-
-        let content = "definir tarea test_z3(x: Entero64) -> Booleano:\n    asumir que x > 0\n    demostrar que x * 2 > x\n    retornar verdadero";
-
-        let tokens = lexear(content);
-        for t in &tokens {
-            println!("{:?}", t);
-        }
+    fn pipeline_publico_lexer_parser() {
+        let fuente = "\
+definir tarea doblar(x: Entero64) -> Entero64:
+    asumir x >= 0
+    demostrar x * 2 >= x
+    retornar x
+";
+        let toks = lexear(fuente);
+        assert!(
+            toks.iter()
+                .any(|t| matches!(t, TokenFull::Tok(s) if s.tok == Token::Definir)),
+            "falta el token `definir`"
+        );
+        let prog = parsear(&toks).expect("parse OK");
+        assert_eq!(prog.defs.len(), 1);
+        assert!(matches!(prog.defs[0], Decl::Tarea(_)));
     }
 }

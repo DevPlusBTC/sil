@@ -1,10 +1,9 @@
 //! Parser CNL: descenso recursivo sobre TokenFull → AST tipado.
 //!
-//! M2: implementacion completa del nucleo EBNF:
-//!   Programa, DefinicionTarea, Cuerpo, Sentencias
-//!   (verificar/asumir/demostrar/let/retornar),
-//!   Expresiones con precedencia, BloqueRestricciones,
-//!   Estructura, Variante.
+//! Cubre el núcleo EBNF: Programa, DefinicionTarea, Cuerpo, Sentencias
+//! (verificar/asumir/demostrar/let/retornar), Expresiones con precedencia,
+//! BloqueRestricciones, Estructura, Variante, Servicio, Modelo,
+//! MemoriaPersistente, Capacidad, Modulo y Migracion.
 //!
 //! Errores via ErrorFrontend (miette) con spans precisos.
 
@@ -119,6 +118,36 @@ impl<'a> P<'a> {
     fn peek_is_sym(&self, sym: &Token) -> bool {
         self.peek_is_kw(sym)
     }
+
+    /// Offset final del último token consumido (fin del span en curso).
+    fn fin(&self) -> usize {
+        if self.pos == 0 {
+            return 0;
+        }
+        fin_de(&self.toks[self.pos - 1])
+    }
+}
+
+/// Offset final de un token estructural o léxico.
+fn fin_de(t: &TokenFull) -> usize {
+    match t {
+        TokenFull::Tok(s) => s.span.end,
+        TokenFull::Indent { span } | TokenFull::Dedent { span } | TokenFull::Newline { span } => {
+            span.end
+        }
+        TokenFull::Eof => 0,
+    }
+}
+
+/// Offset inicial del token actual (inicio del span de la expresión que empieza).
+fn inicio_expr(p: &P) -> usize {
+    match p.peek() {
+        TokenFull::Tok(s) => s.span.start,
+        TokenFull::Indent { span } | TokenFull::Dedent { span } | TokenFull::Newline { span } => {
+            span.start
+        }
+        TokenFull::Eof => 0,
+    }
 }
 
 fn desc(t: &TokenFull) -> String {
@@ -172,7 +201,14 @@ pub fn parsear(toks: &[TokenFull]) -> Result<Program, ErrorFrontend> {
 // =============================================================================
 
 fn parse_declaracion(p: &mut P) -> Result<Decl, ErrorFrontend> {
-    // Todas empiezan con "definir"
+    // `modulo` y `migrar` son declaraciones que no llevan el prefijo "definir".
+    if p.peek_is_kw(&Token::Modulo) {
+        return Ok(Decl::Modulo(parse_modulo(p)?));
+    }
+    if p.peek_is_kw(&Token::Migrar) {
+        return Ok(Decl::Migracion(parse_migracion(p)?));
+    }
+
     p.expect_kw(Token::Definir)?;
     if p.peek_is_kw(&Token::Tarea) {
         Ok(Decl::Tarea(parse_tarea(p)?))
@@ -180,11 +216,19 @@ fn parse_declaracion(p: &mut P) -> Result<Decl, ErrorFrontend> {
         Ok(Decl::Estructura(parse_estructura(p)?))
     } else if p.peek_is_kw(&Token::Variante) {
         Ok(Decl::Variante(parse_variante(p)?))
+    } else if p.peek_is_kw(&Token::Servicio) {
+        Ok(Decl::Servicio(parse_servicio(p)?))
+    } else if p.peek_is_kw(&Token::Modelo) {
+        Ok(Decl::Modelo(parse_modelo(p)?))
+    } else if p.peek_is_kw(&Token::MemoriaPersistente) {
+        Ok(Decl::MemoriaPersistente(parse_memoria_persistente(p)?))
+    } else if p.peek_is_kw(&Token::Capacidad) {
+        Ok(Decl::Capacidad(parse_capacidad(p)?))
     } else {
         Err(match p.peek() {
             TokenFull::Eof => ErrorFrontend::FinInesperado,
             other => ErrorFrontend::TokenInesperado {
-                esperado: "tarea | estructura | variante".into(),
+                esperado: "tarea | estructura | variante | servicio | modelo | memoria_persistente | capacidad".into(),
                 encontrado: desc(other),
                 span: span_of(other),
             },
@@ -192,12 +236,8 @@ fn parse_declaracion(p: &mut P) -> Result<Decl, ErrorFrontend> {
     }
 }
 
-// DefinicionTarea ::= "definir" "tarea" Ident "(" [Params] ")" ["->" Tipo] ":" NL INDENT Cuerpo DEDENT
-// (el "definir" ya fue consumido por parse_declaracion)
-fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
-    let inicio = p.expect_kw(Token::Tarea)?.start;
-    let nombre = parse_ident(p)?;
-    p.expect_sym(Token::LParen)?;
+// ListaParametros ::= Ident ":" Tipo { "," Ident ":" Tipo }
+fn parse_params(p: &mut P) -> Result<Vec<Param>, ErrorFrontend> {
     let mut params = Vec::new();
     if !p.peek_is_sym(&Token::RParen) {
         loop {
@@ -212,6 +252,16 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
             }
         }
     }
+    Ok(params)
+}
+
+// DefinicionTarea ::= "definir" "tarea" Ident "(" [Params] ")" ["->" Tipo] ":" NL INDENT Cuerpo DEDENT
+// (el "definir" ya fue consumido por parse_declaracion)
+fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Tarea)?.start;
+    let nombre = parse_ident(p)?;
+    p.expect_sym(Token::LParen)?;
+    let params = parse_params(p)?;
     p.expect_sym(Token::RParen)?;
 
     let retorno = if p.peek_is_sym(&Token::Arrow) {
@@ -227,7 +277,7 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
     let cuerpo = parse_cuerpo(p)?;
     p.expect_dedent()?;
 
-    let fin = cuerpo_fin(&cuerpo);
+    let fin = p.fin();
     Ok(TareaDecl {
         nombre,
         params,
@@ -235,12 +285,6 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
         cuerpo,
         span: inicio..fin,
     })
-}
-
-fn cuerpo_fin(c: &Cuerpo) -> usize {
-    // Aproximación: usamos 0 si vacío (el span exacto se refina en M3 con tracking)
-    let _ = c;
-    0
 }
 
 // Cuerpo ::= [Sentencia { NL Sentencia }] [ NL BloqueRestricciones ]
@@ -287,8 +331,8 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
             break;
         }
         // clave: valor (ambos como texto crudo del token)
-        let (clave, cspan) = match p.peek() {
-            TokenFull::Tok(s) => (format!("{:?}", s.tok).to_lowercase(), s.span.clone()),
+        let (clave_nombre, ini) = match p.peek() {
+            TokenFull::Tok(s) => (token_nombre(&s.tok), s.span.start),
             other => {
                 return Err(ErrorFrontend::TokenInesperado {
                     esperado: "clave de restricción".into(),
@@ -297,13 +341,6 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
                 })
             }
         };
-        // La clave real es el nombre del identificador/keyword en minúsculas.
-        // Para Ident tomamos el slice original vía Debug; mejor: extraer nombre.
-        let clave_nombre = match p.peek() {
-            TokenFull::Tok(s) => token_nombre(&s.tok),
-            _ => clave,
-        };
-        let _ = cspan;
         p.bump();
         p.expect_sym(Token::Colon)?;
         let valor = match p.peek() {
@@ -323,7 +360,7 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
         out.push(Restriccion {
             clave: clave_nombre,
             valor,
-            span: 0..0,
+            span: ini..p.fin(),
         });
     }
     p.expect_dedent()?;
@@ -338,10 +375,8 @@ fn token_nombre(t: &Token) -> String {
     }
 }
 
-// Estructura ::= "definir" "estructura" Ident ":" NL INDENT Campo { NL Campo } DEDENT
-fn parse_estructura(p: &mut P) -> Result<EstructuraDecl, ErrorFrontend> {
-    let inicio = p.expect_kw(Token::Estructura)?.start;
-    let nombre = parse_ident(p)?;
+// CamposBlque ::= ":" NL INDENT Campo { NL Campo } DEDENT
+fn parse_campos(p: &mut P) -> Result<Vec<Campo>, ErrorFrontend> {
     p.expect_sym(Token::Colon)?;
     p.expect_newline()?;
     p.expect_indent()?;
@@ -369,10 +404,18 @@ fn parse_estructura(p: &mut P) -> Result<EstructuraDecl, ErrorFrontend> {
         campos.push(Campo { nombre: n, tipo: t });
     }
     p.expect_dedent()?;
+    Ok(campos)
+}
+
+// Estructura ::= "definir" "estructura" Ident CamposBlque
+fn parse_estructura(p: &mut P) -> Result<EstructuraDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Estructura)?.start;
+    let nombre = parse_ident(p)?;
+    let campos = parse_campos(p)?;
     Ok(EstructuraDecl {
         nombre,
         campos,
-        span: inicio..inicio,
+        span: inicio..p.fin(),
     })
 }
 
@@ -420,7 +463,286 @@ fn parse_variante(p: &mut P) -> Result<VarianteDecl, ErrorFrontend> {
     Ok(VarianteDecl {
         nombre,
         casos,
-        span: inicio..inicio,
+        span: inicio..p.fin(),
+    })
+}
+
+// =============================================================================
+// Declaraciones de servicio, modelo, memoria persistente, capacidad, módulo y migración
+// =============================================================================
+
+// Servicio ::= "definir" "servicio" Ident ":" NL INDENT
+//              [ ConfiguracionRed ] { ManejadorEvento | DefinicionTarea }
+//              [ BloqueRestricciones ] DEDENT
+fn parse_servicio(p: &mut P) -> Result<ServicioDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Servicio)?.start;
+    let nombre = parse_ident(p)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+
+    let mut red = None;
+    let mut manejadores = Vec::new();
+    let mut tareas = Vec::new();
+    let mut restricciones = Vec::new();
+
+    loop {
+        p.skip_newlines();
+        match p.peek() {
+            TokenFull::Dedent { .. } | TokenFull::Eof => break,
+            TokenFull::Tok(s) if s.tok == Token::Escuchar => {
+                red = Some(parse_configuracion_red(p)?);
+            }
+            TokenFull::Tok(s) if s.tok == Token::Cuando => {
+                manejadores.push(parse_manejador_evento(p)?);
+            }
+            TokenFull::Tok(s) if s.tok == Token::Definir => {
+                p.bump();
+                tareas.push(parse_tarea(p)?);
+            }
+            TokenFull::Tok(s) if s.tok == Token::Bajo => {
+                restricciones = parse_restricciones(p)?;
+                p.skip_newlines();
+                break;
+            }
+            other => {
+                return Err(ErrorFrontend::TokenInesperado {
+                    esperado: "escuchar | cuando | definir tarea | bajo restricciones".into(),
+                    encontrado: desc(other),
+                    span: span_of(other),
+                })
+            }
+        }
+    }
+    p.expect_dedent()?;
+    Ok(ServicioDecl {
+        nombre,
+        red,
+        manejadores,
+        tareas,
+        restricciones,
+        span: inicio..p.fin(),
+    })
+}
+
+// ConfiguracionRed ::= "escuchar" "en" "puerto" NUM [ "con" "protocolo" Ident ] NL
+fn parse_configuracion_red(p: &mut P) -> Result<ConfiguracionRed, ErrorFrontend> {
+    p.expect_kw(Token::Escuchar)?;
+    p.expect_kw(Token::En)?;
+    p.expect_kw(Token::Puerto)?;
+    let puerto = parse_entero_u64(p)?;
+    let protocolo = if p.peek_is_kw(&Token::Con) {
+        p.bump();
+        p.expect_kw(Token::Protocolo)?;
+        Some(parse_ident(p)?)
+    } else {
+        None
+    };
+    p.expect_newline()?;
+    Ok(ConfiguracionRed { puerto, protocolo })
+}
+
+// ManejadorEvento ::= "cuando" "llegue" "evento" Ident "(" [Params] ")" ":" NL INDENT Cuerpo DEDENT
+fn parse_manejador_evento(p: &mut P) -> Result<ManejadorEvento, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Cuando)?.start;
+    p.expect_kw(Token::Llegue)?;
+    p.expect_kw(Token::Evento)?;
+    let evento = parse_ident(p)?;
+    p.expect_sym(Token::LParen)?;
+    let params = parse_params(p)?;
+    p.expect_sym(Token::RParen)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+    let cuerpo = parse_cuerpo(p)?;
+    p.expect_dedent()?;
+    Ok(ManejadorEvento {
+        evento,
+        params,
+        cuerpo,
+        span: inicio..p.fin(),
+    })
+}
+
+// Modelo ::= "definir" "modelo" Ident CamposBlque
+fn parse_modelo(p: &mut P) -> Result<ModeloDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Modelo)?.start;
+    let nombre = parse_ident(p)?;
+    let campos = parse_campos(p)?;
+    Ok(ModeloDecl {
+        nombre,
+        campos,
+        span: inicio..p.fin(),
+    })
+}
+
+// MemoriaPersistente ::= "definir" "memoria_persistente" Ident CamposBlque
+fn parse_memoria_persistente(p: &mut P) -> Result<MemoriaPersistenteDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::MemoriaPersistente)?.start;
+    let nombre = parse_ident(p)?;
+    let campos = parse_campos(p)?;
+    Ok(MemoriaPersistenteDecl {
+        nombre,
+        campos,
+        span: inicio..p.fin(),
+    })
+}
+
+// Capacidad ::= "definir" "capacidad" Ident ":" NL INDENT
+//               "permitir" "conectar" "a" STRING "en" "puerto" NUM NL
+//               "limite_ancho_banda" ":" STRING NL DEDENT
+fn parse_capacidad(p: &mut P) -> Result<CapacidadDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Capacidad)?.start;
+    let nombre = parse_ident(p)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+
+    p.expect_kw(Token::Permitir)?;
+    p.expect_kw(Token::Conectar)?;
+    p.expect_kw(Token::A)?;
+    let recurso = parse_texto_lit(p)?;
+    p.expect_kw(Token::En)?;
+    p.expect_kw(Token::Puerto)?;
+    let puerto = parse_entero_u64(p)?;
+    p.expect_newline()?;
+
+    p.skip_newlines();
+    let clave = parse_ident(p)?;
+    if clave.nombre != "limite_ancho_banda" {
+        return Err(ErrorFrontend::TokenInesperado {
+            esperado: "limite_ancho_banda".into(),
+            encontrado: clave.nombre,
+            span: (clave.span.start, clave.span.len()).into(),
+        });
+    }
+    p.expect_sym(Token::Colon)?;
+    let limite_ancho_banda = parse_texto_lit(p)?;
+    p.skip_newlines();
+    p.expect_dedent()?;
+
+    Ok(CapacidadDecl {
+        nombre,
+        recurso,
+        puerto,
+        limite_ancho_banda,
+        span: inicio..p.fin(),
+    })
+}
+
+// Modulo ::= "modulo" Ident ":" NL INDENT { "exportar" Clase Ident NL } DEDENT
+// (a diferencia del resto de declaraciones, no lleva el prefijo "definir")
+fn parse_modulo(p: &mut P) -> Result<ModuloDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Modulo)?.start;
+    let nombre = parse_ident(p)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+
+    let mut exportaciones = Vec::new();
+    loop {
+        p.skip_newlines();
+        if matches!(p.peek(), TokenFull::Dedent { .. } | TokenFull::Eof) {
+            break;
+        }
+        p.expect_kw(Token::Exportar)?;
+        let clase = match p.peek() {
+            TokenFull::Tok(s) => match &s.tok {
+                Token::Servicio => ClaseExportada::Servicio,
+                Token::Tarea => ClaseExportada::Tarea,
+                Token::Estructura => ClaseExportada::Estructura,
+                Token::Variante => ClaseExportada::Variante,
+                Token::Capacidad => ClaseExportada::Capacidad,
+                _ => {
+                    return Err(ErrorFrontend::TokenInesperado {
+                        esperado: "servicio | tarea | estructura | variante | capacidad".into(),
+                        encontrado: desc(p.peek()),
+                        span: span_of(p.peek()),
+                    })
+                }
+            },
+            other => {
+                return Err(ErrorFrontend::TokenInesperado {
+                    esperado: "servicio | tarea | estructura | variante | capacidad".into(),
+                    encontrado: desc(other),
+                    span: span_of(other),
+                })
+            }
+        };
+        p.bump();
+        let nombre_exp = parse_ident(p)?;
+        exportaciones.push(Exportacion {
+            clase,
+            nombre: nombre_exp,
+        });
+        p.expect_newline()?;
+    }
+    p.expect_dedent()?;
+    Ok(ModuloDecl {
+        nombre,
+        exportaciones,
+        span: inicio..p.fin(),
+    })
+}
+
+// Migracion ::= "migrar" Ident "desde" Ident "a" Ident ":" NL INDENT
+//               "al" "acceder_campo" STRING "en" "registro" Ident ":" NL INDENT
+//               "retornar" "valor_predeterminado" Expresion NL
+//               [ BloqueRestricciones ] DEDENT DEDENT
+fn parse_migracion(p: &mut P) -> Result<MigracionDecl, ErrorFrontend> {
+    let inicio = p.expect_kw(Token::Migrar)?.start;
+    let origen = parse_ident(p)?;
+    p.expect_kw(Token::Desde)?;
+    let version_desde = parse_ident(p)?;
+    p.expect_kw(Token::A)?;
+    let version_a = parse_ident(p)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+
+    p.skip_newlines();
+    p.expect_kw(Token::Al)?;
+    p.expect_kw(Token::AccederCampo)?;
+    let campo = parse_texto_lit(p)?;
+    p.expect_kw(Token::En)?;
+    // `registro` no es palabra reservada del lexer: se valida como identificador literal.
+    let registro_kw = parse_ident(p)?;
+    if registro_kw.nombre != "registro" {
+        return Err(ErrorFrontend::TokenInesperado {
+            esperado: "registro".into(),
+            encontrado: registro_kw.nombre,
+            span: (registro_kw.span.start, registro_kw.span.len()).into(),
+        });
+    }
+    let registro = parse_ident(p)?;
+    p.expect_sym(Token::Colon)?;
+    p.expect_newline()?;
+    p.expect_indent()?;
+
+    p.skip_newlines();
+    p.expect_kw(Token::Retornar)?;
+    p.expect_kw(Token::ValorPredeterminado)?;
+    let valor_predeterminado = parse_expr(p)?;
+    p.skip_newlines();
+
+    let mut restricciones = Vec::new();
+    if p.peek_is_kw(&Token::Bajo) {
+        restricciones = parse_restricciones(p)?;
+        p.skip_newlines();
+    }
+    p.expect_dedent()?;
+    p.skip_newlines();
+    p.expect_dedent()?;
+
+    Ok(MigracionDecl {
+        origen,
+        version_desde,
+        version_a,
+        campo,
+        registro,
+        valor_predeterminado,
+        restricciones,
+        span: inicio..p.fin(),
     })
 }
 
@@ -438,7 +760,7 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Verificar {
                     cond: c,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Asumir => {
@@ -451,7 +773,7 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Asumir {
                     cond: c,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
 Token::Demostrar => {
@@ -464,7 +786,7 @@ Token::Demostrar => {
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Demostrar {
                     cond: c,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Let => {
@@ -490,7 +812,7 @@ Token::Demostrar => {
                     tipo,
                     expr: e,
                     mutable,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Retornar => {
@@ -503,7 +825,7 @@ Token::Demostrar => {
                 };
                 Ok(Stmt::Retornar {
                     expr: e,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Solicitar => {
@@ -531,7 +853,7 @@ Token::Demostrar => {
                     recurso,
                     ttl_ns,
                     guardar_como,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Validar => {
@@ -540,7 +862,7 @@ Token::Demostrar => {
                 let token = parse_ident(p)?;
                 Ok(Stmt::ValidarCapacidad {
                     token,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Enviar => {
@@ -560,14 +882,14 @@ Token::Demostrar => {
                         datos: Some(datos),
                         capacidad,
                         guardar_como: None,
-                        span: sp.start..sp.start,
+                        span: sp.start..p.fin(),
                     })
                 } else {
                     let canal = parse_ident(p)?;
                     Ok(Stmt::EnviarCanal {
                         valor: datos,
                         canal,
-                        span: sp.start..sp.start,
+                        span: sp.start..p.fin(),
                     })
                 }
             }
@@ -590,7 +912,7 @@ Token::Demostrar => {
                         datos: None,
                         capacidad,
                         guardar_como: Some(guardar_como),
-                        span: sp.start..sp.start,
+                        span: sp.start..p.fin(),
                     })
                 } else {
                     let canal = parse_ident(p)?;
@@ -599,7 +921,7 @@ Token::Demostrar => {
                     Ok(Stmt::RecibirCanal {
                         canal,
                         guardar_como,
-                        span: sp.start..sp.start,
+                        span: sp.start..p.fin(),
                     })
                 }
             }
@@ -609,7 +931,7 @@ Token::Demostrar => {
                 let tarea = parse_ident(p)?;
                 Ok(Stmt::GenerarFibra {
                     tarea,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Crear => {
@@ -629,7 +951,7 @@ Token::Demostrar => {
                 Ok(Stmt::CrearCanal {
                     capacidad,
                     guardar_como,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Leer => {
@@ -647,7 +969,7 @@ Token::Demostrar => {
                     datos: None,
                     capacidad,
                     guardar_como: Some(guardar_como),
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             Token::Escribir => {
@@ -665,7 +987,7 @@ Token::Demostrar => {
                     datos: Some(datos),
                     capacidad,
                     guardar_como: None,
-                    span: sp.start..sp.start,
+                    span: sp.start..p.fin(),
                 })
             }
             _ => Err(ErrorFrontend::TokenInesperado {
@@ -698,6 +1020,7 @@ fn parse_expr_logica(p: &mut P) -> Result<Expr, ErrorFrontend> {
 }
 
 fn parse_cmp(p: &mut P) -> Result<Expr, ErrorFrontend> {
+    let inicio = inicio_expr(p);
     let lhs = parse_add(p)?;
     // Operadores relacionales CNL y simbólicos
     let op = if p.peek_is_kw(&Token::Sea) {
@@ -740,7 +1063,7 @@ fn parse_cmp(p: &mut P) -> Result<Expr, ErrorFrontend> {
     };
     if let Some(op) = op {
         let rhs = parse_add(p)?;
-        let span = expr_span(&lhs);
+        let span = inicio..p.fin();
         Ok(Expr::BinOp {
             op,
             lhs: Box::new(lhs),
@@ -753,6 +1076,7 @@ fn parse_cmp(p: &mut P) -> Result<Expr, ErrorFrontend> {
 }
 
 fn parse_add(p: &mut P) -> Result<Expr, ErrorFrontend> {
+    let inicio = inicio_expr(p);
     let mut lhs = parse_mul(p)?;
     loop {
         let op = if p.peek_is_sym(&Token::Plus) {
@@ -764,7 +1088,7 @@ fn parse_add(p: &mut P) -> Result<Expr, ErrorFrontend> {
         };
         p.bump();
         let rhs = parse_mul(p)?;
-        let span = expr_span(&lhs);
+        let span = inicio..p.fin();
         lhs = Expr::BinOp {
             op,
             lhs: Box::new(lhs),
@@ -776,6 +1100,7 @@ fn parse_add(p: &mut P) -> Result<Expr, ErrorFrontend> {
 }
 
 fn parse_mul(p: &mut P) -> Result<Expr, ErrorFrontend> {
+    let inicio = inicio_expr(p);
     let mut lhs = parse_primary(p)?;
     loop {
         let op = if p.peek_is_sym(&Token::Star) {
@@ -787,7 +1112,7 @@ fn parse_mul(p: &mut P) -> Result<Expr, ErrorFrontend> {
         };
         p.bump();
         let rhs = parse_primary(p)?;
-        let span = expr_span(&lhs);
+        let span = inicio..p.fin();
         lhs = Expr::BinOp {
             op,
             lhs: Box::new(lhs),
@@ -803,9 +1128,10 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
         TokenFull::Tok(s) => match s.tok {
             Token::Minus => {
                 // Unary minus: -expr
+                let inicio = s.span.start;
                 p.bump();
                 let rhs = parse_primary(p)?;
-                let span = expr_span(&rhs);
+                let span = inicio..p.fin();
                 Ok(Expr::BinOp {
                     op: BinOp::Sub,
                     lhs: Box::new(Expr::Lit(Literal::Entero(0))),
@@ -847,7 +1173,7 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
                     Ok(Expr::AccesoProp {
                         base: Box::new(Expr::Var(base)),
                         prop,
-                        span: sp,
+                        span: sp.start..p.fin(),
                     })
                 } else {
                     Ok(Expr::Var(base))
@@ -873,15 +1199,6 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
                 span: span_of(other),
             },
         }),
-    }
-}
-
-fn expr_span(e: &Expr) -> Span {
-    match e {
-        Expr::Var(i) => i.span.clone(),
-        Expr::Lit(_) => 0..0,
-        Expr::AccesoProp { span, .. } => span.clone(),
-        Expr::BinOp { span, .. } => span.clone(),
     }
 }
 

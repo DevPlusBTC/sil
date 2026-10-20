@@ -79,6 +79,20 @@ fn leer_fuente(path: &Path) -> Result<String> {
         .wrap_err_with(|| format!("No se pudo leer {}", path.display()))
 }
 
+/// Baja una tarea declarada (de nivel superior o dentro de un servicio) a IR.
+fn bajar_tarea_declarada(
+    t: &silc_frontend::ast::TareaDecl,
+    path: &Path,
+) -> Result<silc_causal_ir::nodes::TareaIR> {
+    silc_causal_ir::lower::bajar_tarea(t).map_err(|e| {
+        miette::miette!(
+            "{}: error de lowering en tarea '{}': {e}",
+            path.display(),
+            t.nombre.nombre
+        )
+    })
+}
+
 /// Fase 1-4: lex → parse → lower → SMT verify. Retorna IR verificado.
 fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     let fuente = leer_fuente(path)?;
@@ -95,20 +109,23 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     })?;
     debug!(archivo = %nombre, defs = prog.defs.len(), "parse OK");
 
-    // Fase 3: Lower cada tarea
+    // Fase 3: Lower cada tarea (las de servicio también se compilan).
     let mut tareas_ir = Vec::new();
     for decl in &prog.defs {
-        if let silc_frontend::ast::Decl::Tarea(t) = decl {
-            let ir = silc_causal_ir::lower::bajar_tarea(t).map_err(|e| {
-                miette::miette!(
-                    "{}: error de lowering en tarea '{}': {e}",
-                    path.display(),
-                    t.nombre.nombre
-                )
-            })?;
-            tareas_ir.push(ir);
+        match decl {
+            silc_frontend::ast::Decl::Tarea(t) => {
+                tareas_ir.push(bajar_tarea_declarada(t, path)?);
+            }
+            silc_frontend::ast::Decl::Servicio(s) => {
+                for t in &s.tareas {
+                    tareas_ir.push(bajar_tarea_declarada(t, path)?);
+                }
+            }
+            // Estructuras, variantes, modelos, memoria persistente, capacidades,
+            // módulos y migraciones son declaraciones de tipos/metadatos: se
+            // validan en el parser y no generan código todavía.
+            _ => {}
         }
-        // M8: estructuras/variantes se registran (sin codegen aún, pero no error).
     }
     if tareas_ir.is_empty() {
         return Err(miette::miette!(
