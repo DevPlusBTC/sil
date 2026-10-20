@@ -58,3 +58,10 @@ examples/*.md
 # Scripts de diagnostico de un solo uso
 fix_*.py
 fix_*.bat
+
+# Herramientas de agente locales (no forman parte de SIL)
+.opencode/
+.claude/
+.superpowers/
+docs/superpowers/
+AGENTS.md
