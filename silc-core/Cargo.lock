@@ -1484,6 +1484,7 @@ dependencies = [
  "miette",
  "predicates",
  "proptest",
+ "serde_json",
  "silc-backend",
  "silc-causal-ir",
  "silc-frontend",

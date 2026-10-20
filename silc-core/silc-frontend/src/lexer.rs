@@ -368,10 +368,26 @@ pub enum TokenFull {
     Eof,
 }
 
+/// Carácter que el lexer no pudo reconocer, con su posición en el fuente.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LexErrorInfo {
+    pub caracter: char,
+    pub span: std::ops::Range<usize>,
+}
+
 pub fn lexear(fuente: &str) -> Vec<TokenFull> {
+    lexear_con_errores(fuente).0
+}
+
+/// Lexea y además devuelve los caracteres que no se pudieron reconocer.
+///
+/// `lexear` conserva el comportamiento histórico: los caracteres inválidos se
+/// sustituyen por `Ident("\0ERR")` para que el parser produzca un error.
+pub fn lexear_con_errores(fuente: &str) -> (Vec<TokenFull>, Vec<LexErrorInfo>) {
     let mut lex = Token::lexer(fuente);
     lex.extras = IndentState::new();
     let mut out: Vec<TokenFull> = Vec::new();
+    let mut errores: Vec<LexErrorInfo> = Vec::new();
     while let Some(res) = lex.next() {
         let span = lex.span();
         match res {
@@ -391,6 +407,11 @@ pub fn lexear(fuente: &str) -> Vec<TokenFull> {
             }
             Ok(tok) => out.push(TokenFull::Tok(SpannedToken { tok, span })),
             Err(_) => {
+                let caracter = fuente[span.clone()].chars().next().unwrap_or('\u{0}');
+                errores.push(LexErrorInfo {
+                    caracter,
+                    span: span.clone(),
+                });
                 out.push(TokenFull::Tok(SpannedToken {
                     tok: Token::Ident(String::from("\u{0}ERR")),
                     span,
@@ -406,7 +427,7 @@ pub fn lexear(fuente: &str) -> Vec<TokenFull> {
         });
     }
     out.push(TokenFull::Eof);
-    out
+    (out, errores)
 }
 
 pub fn lexear_simple(fuente: &str) -> Vec<SpannedToken> {

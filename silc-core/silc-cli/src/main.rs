@@ -8,6 +8,8 @@ use miette::{IntoDiagnostic, Result, WrapErr};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
+mod lsp;
+
 // Backend SMT: Z3 (feature `smt`) o Intervalos (fallback)
 #[cfg(feature = "smt")]
 use silc_causal_ir::smt::{verificar_tarea_con, CacheLemas, VerificadorZ3};
@@ -373,6 +375,7 @@ fn main() -> Result<()> {
     };
     tracing_subscriber::fmt()
         .with_env_filter(format!("silc={nivel}"))
+        .with_writer(std::io::stderr)
         .init();
 
     match cli.cmd {
@@ -389,12 +392,6 @@ fn main() -> Result<()> {
         Comando::Check { archivos } => cmd_check(&archivos, cli.smt_timeout),
         Comando::EmitSmt { archivos } => cmd_emit_smt(&archivos, cli.smt_timeout),
         Comando::Run { archivos } => cmd_run(&archivos, cli.smt_timeout),
-        Comando::Lsp => {
-            eprintln!(
-                "silc lsp: servidor LSP completo en Fase 1 (protocolo en silc_lsp.py prototipo)."
-            );
-            eprintln!("M8: use `silc check --verbose` para diagnósticos incrementales.");
-            Ok(())
-        }
+        Comando::Lsp => lsp::servir(),
     }
 }
