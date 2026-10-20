@@ -4,7 +4,6 @@
 
 pub mod c99;
 pub mod llvm;
-pub mod targets;
 pub mod wasm;
 
 pub use silc_contracts::*;

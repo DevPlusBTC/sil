@@ -35,7 +35,6 @@ Thumbs.db
 
 # Rust
 silc-core/target/
-silc-core/silc-lsp/target/
 # Cargo.lock SE COMMITEA (reproducibilidad M9)
 **/*.rs.bk
 

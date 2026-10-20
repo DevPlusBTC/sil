@@ -47,15 +47,15 @@ SIL/
 │   ├── silc-causal-ir/  # Causal-IR + SMT (Intervalos + Z3 con feature `smt`)
 │   ├── silc-backend/    # Codegen C99, WASM
 │   ├── silc-runtime/    # Runtime: Arenas O(1), Capacidades HMAC, TPM 2.0, Fibras, Canales
-│   ├── silc-cli/        # CLI: silc check, build, emit-smt, run, lsp
+│   ├── silc-cli/        # CLI + servidor LSP (`silc lsp`): check, build, emit-smt, run
 │   ├── silc-contracts/  # Contratos compartidos
 │   └── silc-test/       # Tests de integración
-├── silc-lsp/            # Servidor LSP (JSON-RPC)
+├── silc-vscode/         # Extensión VS Code (cliente LSP + comandos)
 ├── sil-rt/              # Runtime C (arenas, capacidades, canales, fibras, E/S)
 ├── silc_bootstrap.py    # Bootstrapper del compilador (Python)
 ├── sil_stdlib.py        # Biblioteca estándar SIL (C99)
 ├── sil_wasm.py          # Backend WASM (Python)
-├── sil_lsp.py           # Servidor LSP (Python)
+├── sil_lsp.py           # Prototipo LSP legado en Python (el canónico es `silc lsp`)
 ├── README.md            # Documentación principal
 ├── sil.toml             # Archivo de configuración de proyecto SIL
 ├── CONTRIBUTING.md      # Esta guía de contribución
