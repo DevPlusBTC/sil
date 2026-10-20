@@ -155,6 +155,14 @@ pub fn canonizar(f: &FormulaLogica) -> String {
     }
 }
 
+/// Nombre SMT de un `ValueId`: nombre fuente si existe, o `v<ffi>`.
+pub fn nombre_de_var(v: ValueId, nombres: &HashMap<ValueId, String>) -> String {
+    nombres
+        .get(&v)
+        .cloned()
+        .unwrap_or_else(|| format!("v{}", v.data().as_ffi()))
+}
+
 /// Convierte formula a SMT-LIB2 con nombres fuente (para debug/auditoria).
 /// Requiere mapa ValueId -> nombre fuente.
 pub fn a_smtlib2_con_nombres(
@@ -163,10 +171,7 @@ pub fn a_smtlib2_con_nombres(
 ) -> String {
     match f {
         FormulaLogica::Var(v) => v.clone(),
-        FormulaLogica::VarId(v) => nombres
-            .get(v)
-            .cloned()
-            .unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
+        FormulaLogica::VarId(v) => nombre_de_var(*v, nombres),
         FormulaLogica::ConstInt(n) => {
             if *n < 0 {
                 format!("(- {})", n.abs())
@@ -276,8 +281,6 @@ pub enum Operacion {
         op: OpArit,
         lhs: ValueId,
         rhs: ValueId,
-        /// true si SMT probo no-overflow → backend emite `nsw` y omite checks.
-        sin_overflow: bool,
     },
     Comparar {
         op: OpCmp,
@@ -400,6 +403,50 @@ impl TareaIR {
                     if inv.clase == clase {
                         out.push(inv);
                     }
+                }
+            }
+        }
+        out
+    }
+
+    /// Definiciones SSA que el verificador debe asumir (p. ej. `let x = a - b`).
+    ///
+    /// Solo cubre valores enteros. Comparaciones (Bool), llamadas y E/S no se
+    /// traducen: `FormulaLogica` no tiene variables booleanas.
+    pub fn definiciones(&self) -> Vec<FormulaLogica> {
+        let mut out = Vec::new();
+        for (_, b) in self.bloques.iter() {
+            for i in &b.instrs {
+                let Some(r) = i.resultado else { continue };
+                let igualdad = |rhs: FormulaLogica| FormulaLogica::BinOp {
+                    op: OpLogico::Eq,
+                    lhs: Box::new(FormulaLogica::VarId(r)),
+                    rhs: Box::new(rhs),
+                };
+                match &i.op {
+                    Operacion::Const {
+                        valor: Constante::Int(n),
+                        ..
+                    } => out.push(igualdad(FormulaLogica::ConstInt(*n))),
+                    Operacion::AsignarArena { valor, .. } => {
+                        out.push(igualdad(FormulaLogica::VarId(*valor)));
+                    }
+                    Operacion::BinOpSegura { op, lhs, rhs, .. } => {
+                        let op = match op {
+                            OpArit::Add => OpLogico::Add,
+                            OpArit::Sub => OpLogico::Sub,
+                            OpArit::Mul => OpLogico::Mul,
+                            // shortcut: C trunca hacia cero y Z3 Int div es euclídea;
+                            // no codificamos la división para no perder soundness.
+                            OpArit::Div => continue,
+                        };
+                        out.push(igualdad(FormulaLogica::BinOp {
+                            op,
+                            lhs: Box::new(FormulaLogica::VarId(*lhs)),
+                            rhs: Box::new(FormulaLogica::VarId(*rhs)),
+                        }));
+                    }
+                    _ => {}
                 }
             }
         }

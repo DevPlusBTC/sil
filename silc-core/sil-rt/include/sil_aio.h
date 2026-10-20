@@ -7,7 +7,8 @@
 
 /* Async I/O operations for SIL runtime.
  * Windows: Overlapped I/O (IOCP)
- * Linux: io_uring
+ * Linux: io_uring si <liburing.h> está disponible; si no, pread/pwrite
+ * macOS/BSD: pread/pwrite (solo archivos)
  */
 
 typedef enum {

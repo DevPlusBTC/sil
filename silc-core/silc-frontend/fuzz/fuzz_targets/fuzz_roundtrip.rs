@@ -1,7 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use silc_frontend::{lexer::lexear, parser::parsear, ast::*};
+use silc_frontend::{ast::*, lexer::lexear, parser::parsear};
+use std::fmt::Write;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(s) = std::str::from_utf8(data) {
@@ -16,7 +17,6 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn ast_a_source(ast: &Program) -> String {
-    use std::fmt::Write;
     let mut out = String::new();
     for decl in &ast.defs {
         write!(&mut out, "{}", decl_a_source(decl)).unwrap();
@@ -73,6 +73,81 @@ fn stmt_a_source(stmt: &Stmt) -> String {
                 "retornar\n".to_string()
             }
         }
+        Stmt::SolicitarCapacidad {
+            permiso,
+            recurso,
+            ttl_ns,
+            guardar_como,
+            ..
+        } => {
+            let permiso = match permiso {
+                PermisoCap::LecturaArchivo => "lectura_archivo",
+                PermisoCap::EscrituraArchivo => "escritura_archivo",
+                PermisoCap::Red => "red",
+                PermisoCap::Ejecucion => "ejecucion",
+            };
+            let mut s = format!("solicitar capacidad {permiso} para {recurso:?}");
+            if let Some(ttl) = ttl_ns {
+                write!(&mut s, " con ttl {ttl}").unwrap();
+            }
+            if let Some(nombre) = guardar_como {
+                write!(&mut s, " como {}", nombre.nombre).unwrap();
+            }
+            s.push('\n');
+            s
+        }
+        Stmt::ValidarCapacidad { token, .. } => format!("validar {}\n", token.nombre),
+        Stmt::EnviarCanal { valor, canal, .. } => {
+            format!("enviar {} en {}\n", expr_a_source(valor), canal.nombre)
+        }
+        Stmt::RecibirCanal {
+            canal,
+            guardar_como,
+            ..
+        } => format!("recibir de {} como {}\n", canal.nombre, guardar_como.nombre),
+        Stmt::GenerarFibra { tarea, .. } => format!("generar {}\n", tarea.nombre),
+        Stmt::CrearCanal {
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            let mut s = "crear canal".to_string();
+            if let Some(c) = capacidad {
+                write!(&mut s, " con capacidad {c}").unwrap();
+            }
+            write!(&mut s, " como {}\n", guardar_como.nombre).unwrap();
+            s
+        }
+        Stmt::OperarIO {
+            operacion,
+            ruta,
+            datos,
+            capacidad,
+            guardar_como,
+            ..
+        } => {
+            let cap = capacidad.nombre.as_str();
+            let guardar = guardar_como
+                .as_ref()
+                .map(|i| i.nombre.as_str())
+                .unwrap_or("valor");
+            let datos = datos
+                .as_ref()
+                .map(expr_a_source)
+                .unwrap_or_else(|| "0".to_string());
+            match operacion {
+                OpIOStmt::LeerArchivo => {
+                    format!("leer archivo {ruta:?} con {cap} como {guardar}\n")
+                }
+                OpIOStmt::EscribirArchivo => {
+                    format!("escribir {datos} en archivo {ruta:?} con {cap}\n")
+                }
+                OpIOStmt::EnviarRed => format!("enviar {datos} en red {ruta:?} con {cap}\n"),
+                OpIOStmt::RecibirRed => {
+                    format!("recibir de red {ruta:?} con {cap} como {guardar}\n")
+                }
+            }
+        }
     }
 }
 
@@ -98,8 +173,9 @@ fn literal_a_source(lit: &Literal) -> String {
     match lit {
         Literal::Entero(n) => n.to_string(),
         Literal::Flotante(f) => f.to_string(),
-        Literal::Texto(s) => format!("\"{}\"", s),
-        Literal::Booleano(b) => b.to_string(),
+        Literal::Texto(s) => format!("{s:?}"),
+        Literal::Booleano(true) => "verdadero".to_string(),
+        Literal::Booleano(false) => "falso".to_string(),
     }
 }
 

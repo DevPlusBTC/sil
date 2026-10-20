@@ -18,7 +18,8 @@
 //! - Contraejemplo: si retorna `Violada`, incluye asignacion concreta.
 
 use crate::nodes::{
-    a_smtlib2_con_nombres, canonizar, ClaseInvariante, FormulaLogica, OpLogico, TareaIR, ValueId,
+    a_smtlib2_con_nombres, canonizar, nombre_de_var, ClaseInvariante, FormulaLogica, OpLogico,
+    TareaIR, ValueId,
 };
 use silc_contracts::*;
 use std::collections::HashMap;
@@ -63,9 +64,15 @@ pub fn a_smtlib2(f: &FormulaLogica) -> String {
     a_smtlib2_con_nombres(f, &std::collections::HashMap::new())
 }
 
-/// Genera script SMT-LIB2 completo para una tarea (asunciones + metas negadas).
+/// Genera script SMT-LIB2 completo para una tarea (definiciones + asunciones
+/// + metas negadas).
+///
 /// Usa nombres fuente desde tarea.nombres para VarId.
 pub fn script_completo(tarea: &TareaIR) -> String {
+    let definiciones = tarea.definiciones();
+    let asunciones = tarea.invariantes(ClaseInvariante::Asuncion);
+    let metas = tarea.invariantes(ClaseInvariante::Demostracion);
+
     let mut vars: Vec<String> = Vec::new();
     let mut recoge = |f: &FormulaLogica| {
         let mut stack = vec![f];
@@ -77,10 +84,9 @@ pub fn script_completo(tarea: &TareaIR) -> String {
                     }
                 }
                 FormulaLogica::VarId(v) => {
-                    if let Some(nombre) = tarea.nombres.get(v) {
-                        if !vars.contains(nombre) {
-                            vars.push(nombre.clone());
-                        }
+                    let nombre = nombre_de_var(*v, &tarea.nombres);
+                    if !vars.contains(&nombre) {
+                        vars.push(nombre);
                     }
                 }
                 FormulaLogica::BinOp { lhs, rhs, .. } => {
@@ -92,10 +98,13 @@ pub fn script_completo(tarea: &TareaIR) -> String {
             }
         }
     };
-    for inv in tarea.invariantes(ClaseInvariante::Asuncion) {
+    for d in &definiciones {
+        recoge(d);
+    }
+    for inv in &asunciones {
         recoge(&inv.formula);
     }
-    for inv in tarea.invariantes(ClaseInvariante::Demostracion) {
+    for inv in &metas {
         recoge(&inv.formula);
     }
 
@@ -103,13 +112,19 @@ pub fn script_completo(tarea: &TareaIR) -> String {
     for v in &vars {
         out.push_str(&format!("(declare-fun {v} () Int)\n"));
     }
-    for inv in tarea.invariantes(ClaseInvariante::Asuncion) {
+    for d in &definiciones {
+        out.push_str(&format!(
+            "(assert {})\n",
+            a_smtlib2_con_nombres(d, &tarea.nombres)
+        ));
+    }
+    for inv in &asunciones {
         out.push_str(&format!(
             "(assert {})\n",
             a_smtlib2_con_nombres(&inv.formula, &tarea.nombres)
         ));
     }
-    for inv in tarea.invariantes(ClaseInvariante::Demostracion) {
+    for inv in &metas {
         out.push_str(&format!(
             "; meta (hash {:02x?}...)\n(push)\n(assert (not {}))\n(check-sat)\n(pop)\n",
             &inv.hash[..4],
@@ -924,12 +939,13 @@ pub fn verificar_tarea_con<B: BackendSMT>(
         return Ok(()); // Sin metas que verificar → pasa
     }
 
-    // Recolectar asunciones (fórmulas).
-    let asunciones: Vec<FormulaLogica> = tarea
+    // Recolectar asunciones (fórmulas) y definiciones SSA (`let x = ...`).
+    let mut asunciones: Vec<FormulaLogica> = tarea
         .invariantes(ClaseInvariante::Asuncion)
         .into_iter()
         .map(|i| i.formula.clone())
         .collect();
+    asunciones.extend(tarea.definiciones());
 
     // Hash del contexto de asunciones para clave de cache combinada.
     let asunciones_hash = hash_asunciones(&asunciones);

@@ -19,7 +19,7 @@ typedef struct {
 
 typedef struct {
     HANDLE iocp;
-    int ref_count;
+    int pendientes;
 } SilAioCtxInterno;
 
 SilAioCtx* sil_aio_ctx_crear(void) {
@@ -40,7 +40,7 @@ SilAioCtx* sil_aio_ctx_crear(void) {
         return NULL;
     }
     
-    interno->ref_count = 0;
+    interno->pendientes = 0;
     ctx->interno = interno;
     return ctx;
 }
@@ -67,12 +67,8 @@ bool sil_aio_leer(SilAioCtx *ctx, SilAioReq *req) {
     
     SilAioCtxInterno *interno = (SilAioCtxInterno*)ctx->interno;
     HANDLE handle = (HANDLE)req->fd;
-    
-    /* Asociar handle si es la primera vez */
-    if (interno->ref_count == 0) {
-        if (!asociar_handle(interno, handle)) return false;
-        interno->ref_count++;
-    }
+
+    if (!asociar_handle(interno, handle)) return false;
     
     /* Preparar Overlapped */
     SilAioOverlapped *ol = (SilAioOverlapped*)malloc(sizeof(SilAioOverlapped));
@@ -103,7 +99,8 @@ bool sil_aio_leer(SilAioCtx *ctx, SilAioReq *req) {
             return false;
         }
     }
-    
+
+    interno->pendientes++;
     return true;
 }
 
@@ -112,12 +109,8 @@ bool sil_aio_escribir(SilAioCtx *ctx, SilAioReq *req) {
     
     SilAioCtxInterno *interno = (SilAioCtxInterno*)ctx->interno;
     HANDLE handle = (HANDLE)req->fd;
-    
-    /* Asociar handle si es la primera vez */
-    if (interno->ref_count == 0) {
-        if (!asociar_handle(interno, handle)) return false;
-        interno->ref_count++;
-    }
+
+    if (!asociar_handle(interno, handle)) return false;
     
     /* Preparar Overlapped */
     SilAioOverlapped *ol = (SilAioOverlapped*)malloc(sizeof(SilAioOverlapped));
@@ -148,7 +141,8 @@ bool sil_aio_escribir(SilAioCtx *ctx, SilAioReq *req) {
             return false;
         }
     }
-    
+
+    interno->pendientes++;
     return true;
 }
 
@@ -189,24 +183,22 @@ int sil_aio_procesar(SilAioCtx *ctx, int max_eventos, int timeout_ms) {
         
         SilAioOverlapped *ol = (SilAioOverlapped*)overlapped;
         SilAioReq *req = ol->req;
-        
+
         if (ok) {
             req->resultado = (int)bytes_transferidos;
         } else {
             req->resultado = -(int)GetLastError();
         }
-        
-        /* Llamar callback */
+
+        if (interno->pendientes > 0) interno->pendientes--;
+
         if (req->callback) {
             req->callback(req, req->user_data, req->resultado);
         }
-        
+
         free(ol);
         req->interno = NULL;
         procesados++;
-        
-        /* Para timeout > 0, solo procesar uno a la vez */
-        if (timeout_ms > 0) break;
     }
     
     return procesados;
@@ -223,7 +215,6 @@ bool sil_aio_cancelar(SilAioCtx *ctx, SilAioReq *req) {
 }
 
 bool sil_aio_tiene_pendientes(SilAioCtx *ctx) {
-    /* En Windows, no hay forma directa sin llamar a GetQueuedCompletionStatus con timeout 0.
-     * Por simplicidad, retornamos true si el contexto existe. */
-    return ctx && ctx->interno != NULL;
+    if (!ctx || !ctx->interno) return false;
+    return ((SilAioCtxInterno*)ctx->interno)->pendientes > 0;
 }

@@ -330,9 +330,18 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
         if matches!(p.peek(), TokenFull::Dedent { .. } | TokenFull::Eof) {
             break;
         }
-        // clave: valor (ambos como texto crudo del token)
+        // clave: valor (identificador o palabra clave del lenguaje)
         let (clave_nombre, ini) = match p.peek() {
-            TokenFull::Tok(s) => (token_nombre(&s.tok), s.span.start),
+            TokenFull::Tok(s) => match palabra_restriccion(&s.tok) {
+                Some(n) => (n, s.span.start),
+                None => {
+                    return Err(ErrorFrontend::TokenInesperado {
+                        esperado: "clave de restricción (identificador)".into(),
+                        encontrado: desc(p.peek()),
+                        span: span_of(p.peek()),
+                    })
+                }
+            },
             other => {
                 return Err(ErrorFrontend::TokenInesperado {
                     esperado: "clave de restricción".into(),
@@ -344,11 +353,19 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
         p.bump();
         p.expect_sym(Token::Colon)?;
         let valor = match p.peek() {
-            TokenFull::Tok(s) => {
-                let v = token_nombre(&s.tok);
-                p.bump();
-                v
-            }
+            TokenFull::Tok(s) => match palabra_restriccion(&s.tok) {
+                Some(v) => {
+                    p.bump();
+                    v
+                }
+                None => {
+                    return Err(ErrorFrontend::TokenInesperado {
+                        esperado: "valor de restricción (identificador)".into(),
+                        encontrado: desc(p.peek()),
+                        span: span_of(p.peek()),
+                    })
+                }
+            },
             other => {
                 return Err(ErrorFrontend::TokenInesperado {
                     esperado: "valor de restricción".into(),
@@ -367,11 +384,19 @@ fn parse_restricciones(p: &mut P) -> Result<Vec<Restriccion>, ErrorFrontend> {
     Ok(out)
 }
 
-/// Nombre canónico de un token para claves/valores de restricciones.
-fn token_nombre(t: &Token) -> String {
+/// Palabra aceptada como clave/valor de una restricción.
+///
+/// Los valores del lenguaje (`arena`, `atomica`, `asincrona`, `en_memoria`,
+/// `cero_pausas`) son palabras clave del lexer, no identificadores.
+fn palabra_restriccion(t: &Token) -> Option<String> {
     match t {
-        Token::Ident(n) => n.clone(),
-        _ => format!("{t:?}").to_lowercase(),
+        Token::Ident(n) => Some(n.clone()),
+        Token::Arena => Some("arena".into()),
+        Token::Atomica => Some("atomica".into()),
+        Token::Asincrona => Some("asincrona".into()),
+        Token::EnMemoria => Some("en_memoria".into()),
+        Token::CeroPausas => Some("cero_pausas".into()),
+        _ => None,
     }
 }
 
@@ -1461,6 +1486,12 @@ mod tests {
             Decl::Tarea(t) => assert!(!t.cuerpo.restricciones.is_empty()),
             _ => panic!("esperaba tarea"),
         }
+    }
+
+    #[test]
+    fn restriccion_exige_valor_identificador() {
+        let r = parse("definir tarea f() -> Entero64:\n    retornar 1\n    bajo restricciones:\n        latencia_maxima: 200\n");
+        assert!(r.is_err(), "un valor numérico no es un identificador");
     }
 
     #[test]

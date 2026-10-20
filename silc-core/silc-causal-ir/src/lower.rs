@@ -190,7 +190,6 @@ fn bajar_expr(ctx: &mut Ctx, e: &A::Expr) -> Result<ValueId, ErrorBajada> {
                             op: o,
                             lhs: l,
                             rhs: r,
-                            sin_overflow: false,
                         },
                         t,
                         None,

@@ -38,7 +38,6 @@ skip = [
     "silc-runtime",
     "silc-cli",
     "silc-test",
-    "silc-lsp",
 ]
 wildcards = "allow"
 

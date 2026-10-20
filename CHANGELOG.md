@@ -1,36 +1,60 @@
-# SIL v0.1.0 - First Release
+# Changelog
 
-## Toolchain SIL v0.1.0 - Complete
+## Unreleased
 
-### 📦 Crates publicados (5/5)
-| Crate | Versión | Descripción |
-|-------|---------|-------------|
-| silc-frontend | 0.1.0 | Parser + SMT verification |
-| silc-causal-ir | 0.1.0 | Causal IR + SMT encoding |
-| silc-backend | 0.1.0 | Backends C99 / WASM |
-| silc-runtime | 0.1.0 | Runtime O(1) arenas + capabilities |
-| silc-std | 0.1.0 | Standard library prelude |
+### Corregido
+- `silc build` emite una biblioteca (sin `main`/`start`) cuando la última tarea
+  tiene parámetros, en vez de abortar.
+- `silc run` detecta bibliotecas y falla con un mensaje claro.
+- El flag `--cc` ya no se ignora y `--smt-timeout` exige un valor >= 1.
+- El lexer acepta BOM UTF-8 y las invariantes constantes sin variables ya no
+  abortan el compilador.
+- El target de fuzz `fuzz_roundtrip` compila y cubre todas las sentencias.
+- Workflow de release: flags válidos en Rust stable, atestación de procedencia
+  de GitHub, SBOM CycloneDX y smoke test del binario publicado.
 
-### ✅ Componentes
-- **CLI `silc`**: `silc check`, `silc build --target c99|wasm`, `silc emit-smt`, `silc run`
-- **LSP Server** (`silc-lsp`): diagnostics, completion, hover, time-travel debugger
-- **VS Code Extension**: `silc-vscode` (diagnostics, completion, hover)
-- **Tests**: 139/139 integración pasando (check, build c99/wasm, emit-smt)
-- **Documentación**: SPEC.md, USER_GUIDE.md, API.md, 9 ejemplos
-- **CI/CD**: deny.toml, SBOM CycloneDX, release workflow
+### Añadido
+- Servidor LSP en Rust (`silc lsp`) con diagnósticos, completion y ciclo de vida.
+- Extensión de VS Code que lanza `silc lsp`.
+- Backend SMT con Z3; activo por defecto en el CLI y desactivable con `--no-default-features`.
 
-### 📦 Instalación
+### Eliminado
+- `silc-lsp` (duplicado fuera del workspace, framing inválido).
+- NVM y targets sin codegen (`SPIR-V`).
+
+## 0.1.0 - Primera versión
+
+### Crates del workspace
+| Crate | Descripción |
+|-------|-------------|
+| silc-frontend | Lexer, parser y AST |
+| silc-causal-ir | Causal-IR y verificación SMT |
+| silc-backend | Backends C99, WASM y LLVM |
+| silc-runtime | Arenas O(1), capacidades, fibras y canales |
+| silc-contracts | Contratos compartidos (`require`/`ensure`) |
+| silc-cli | CLI `silc` y servidor LSP |
+| silc-test | Tests de integración |
+
+### Componentes
+- **CLI `silc`**: `check`, `build --target c99|wasm`, `emit-smt`, `run`, `lsp`
+- **LSP**: diagnósticos y completion (sin hover ni debugger todavía)
+- **VS Code**: extensión con los comandos `sil.compile` y `sil.verify`
+- **Tests**: workspace Rust completo + 31 tests del prototipo Python
+- **Documentación**: `SPEC.md`, `WHITE_PAPER.md`, `API.md`, `USER_GUIDE.md`
+- **CI**: fmt, clippy, tests, SMT, fuzz, reproducibilidad y release
+
+### Instalación
 ```bash
-# Cargo (recomendado)
-cargo install silc-cli
+# Desde el repositorio
+cargo install --path silc-core/silc-cli
 
-# Binarios precompilados (ver assets)
+# Binarios precompilados (ver assets del release)
 # Windows: silc-windows-x64.exe
 # Linux: silc-linux-x64
 # macOS: silc-macos-arm64
 ```
 
-### 🧪 Quick Start
+### Quick Start
 ```sil
 definir tarea sumar(a: Entero64, b: Entero64) -> Entero64:
     asumir a > 0
@@ -45,7 +69,3 @@ silc build hola.sil --target c99 -o hola.c
 silc build hola.sil --target wasm -o hola.wasm
 silc emit-smt hola.sil
 ```
-
----
-
-**5 crates en crates.io** | **LSP + VS Code** | **139/139 tests** | **Docs completas**

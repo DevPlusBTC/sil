@@ -153,12 +153,7 @@ fn generar_instruccion(
                 vars_llvm.insert(dest, llvm_val);
             }
         }
-        BinOpSegura {
-            op,
-            lhs,
-            rhs,
-            sin_overflow: _,
-        } => {
+        BinOpSegura { op, lhs, rhs } => {
             if let Some(dest) = instr.resultado {
                 let l = vars_llvm
                     .get(lhs)

@@ -859,12 +859,12 @@ fn stmt_well_formed(stmt: &Stmt) -> bool {
             expr_well_formed(cond)
         }
         Stmt::Asignar { expr, .. } => expr_well_formed(expr),
-        Stmt::Retornar { expr, .. } => expr.as_ref().map_or(true, expr_well_formed),
+        Stmt::Retornar { expr, .. } => expr.as_ref().is_none_or(expr_well_formed),
         Stmt::SolicitarCapacidad {
             recurso,
             guardar_como,
             ..
-        } => !recurso.is_empty() && guardar_como.as_ref().map_or(true, |i| !i.nombre.is_empty()),
+        } => !recurso.is_empty() && guardar_como.as_ref().is_none_or(|i| !i.nombre.is_empty()),
         Stmt::ValidarCapacidad { token, .. } => !token.nombre.is_empty(),
         Stmt::EnviarCanal { valor, canal, .. } => {
             expr_well_formed(valor) && !canal.nombre.is_empty()
@@ -884,9 +884,9 @@ fn stmt_well_formed(stmt: &Stmt) -> bool {
             ..
         } => {
             !ruta.is_empty()
-                && datos.as_ref().map_or(true, expr_well_formed)
+                && datos.as_ref().is_none_or(expr_well_formed)
                 && !capacidad.nombre.is_empty()
-                && guardar_como.as_ref().map_or(true, |i| !i.nombre.is_empty())
+                && guardar_como.as_ref().is_none_or(|i| !i.nombre.is_empty())
         }
     }
 }

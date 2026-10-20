@@ -2,7 +2,7 @@
 
 **Versión de Especificación:** 0.1.0-ALPHA
 **Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
-**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM = implementado sin validar en CI | eBPF = runtime Linux ✅ | NVM/migración = AST/parser ⚠️
+**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | LLVM = implementado sin validar en CI | eBPF = runtime Linux ✅ | migración = metadatos AST/parser ⚠️
 
 ---
 
@@ -10,11 +10,11 @@
 
 | Componente | Estado | Tests | Notas |
 |------------|--------|-------|-------|
-| **Frontend CNL** (Lexer/Parser) | Listo para probar | 13/13 integración ✅ | Keywords español, EBNF completo (tareas, servicios, modelos, memoria, capacidades, módulos, migraciones) |
-| **Causal-IR** (SSA + SMT) | Listo para probar | 21/21 ✅ | SSA, invariantes, lowering |
+| **Frontend CNL** (Lexer/Parser) | Listo para probar | 14/14 integración ✅ | Keywords español, EBNF completo (tareas, servicios, modelos, memoria, capacidades, módulos, migraciones) |
+| **Causal-IR** (SSA + SMT) | Listo para probar | 31/31 ✅ | SSA, invariantes, definiciones `let`, lowering |
 | **SMT Intervalos (Rust)** | Listo para probar | 21/21 ✅ | Sound/incompleto, cache SHA3-512 |
-| **SMT Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
-| **Backend C99** | Listo para probar | 13/13 ✅ | `gcc -std=c99 -Wall -Wextra -Werror` |
+| **SMT Z3 Backend** | Listo para probar | 10/10 ✅ | `vendored`, feature `smt` (activa por defecto en el CLI) |
+| **Backend C99** | Listo para probar | 13/13 ✅ | Emite C99; no se compila en CI (no hay compilador C en los runners) |
 | **Backend WASM** | Listo para probar | 13/13 ✅ | WASI imports, binario válido |
 | **Backend LLVM** | Implementado, sin validar en CI | 0/0 | Feature `llvm`; requiere LLVM 17 instalado |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
@@ -22,7 +22,7 @@
 | **Arenas Persistentes NVM** | Pendiente para desarrollo | 0/0 | AST/parser; sin mmap/NVM |
 | **Scheduler Fibras** | Listo para probar | 0/0 | Win32 Fibers / ucontext implementado |
 | **Canales Lock-Free** | Listo para probar | 0/0 | SPSC/MPSC implementados en sil-rt |
-| **Async I/O (io_uring/IOCP)** | Listo para probar (runtime) | 0/0 | Runtime C implementado; falta integrarlo al codegen |
+| **Async I/O (io_uring/IOCP/POSIX)** | Listo para probar (runtime) | 1/1 ✅ | `io_uring` si hay liburing; si no, `pread`/`pwrite`; IOCP en Windows; falta integrarlo al codegen |
 | **Capacidades (validación)** | Listo para probar | 17/17 ✅ | Permisos, expiración, firma HMAC-SHA256 |
 | **TPM 2.0** | Listo para probar | 0/0 | Framework tipos implementado |
 | **eBPF Kernel** | Listo para probar (Linux) | 0/0 | libbpf implementado; sin soporte en Windows |
@@ -34,11 +34,11 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Totales** | **150/150 ✅** |
+| **Tests Totales** | **161/161 Rust + 31 Python ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
-| **Próximo hito real** | Codegen de servicios/red + NVM/migración; validar LLVM en CI |
+| **Próximo hito real** | Codegen de servicios/red; validar LLVM en CI |
 
 ---
 
@@ -149,7 +149,7 @@ SPSC y MPSC con operaciones atómicas, implementados en sil-rt.
 
 ### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Runtime listo, integración pendiente
 
-`sil_aio` implementa Overlapped I/O + IOCP en Windows e io_uring en Linux (con fallback en otras plataformas). `sil_ebpf` carga y adjunta programas con libbpf en Linux; en otras plataformas devuelve `SIL_EBPF_NO_SOPORTADO`. Pendiente: que el codegen emita las llamadas al runtime de red/E/S a partir de las declaraciones `servicio`/`evento`.
+`sil_aio` implementa Overlapped I/O + IOCP en Windows y, en POSIX, io_uring cuando `<liburing.h>` está disponible (Linux) o `pread`/`pwrite` en caso contrario (macOS, BSD, Linux sin liburing). `sil_ebpf` carga y adjunta programas con libbpf en Linux; en otras plataformas devuelve `SIL_EBPF_NO_SOPORTADO`. Pendiente: que el codegen emita las llamadas al runtime de red/E/S a partir de las declaraciones `servicio`/`evento`.
 
 ---
 
@@ -190,7 +190,7 @@ SSA con invariantes SMT adjuntas.
 
 ### 7.3 Backend C99 — Listo para probar ✅
 
-Emite C99 estricto compilable con `gcc -std=c99 -Wall -Wextra -Werror`. Runtime Arenas embebido.
+Emite C99 estándar. La compilación del C generado no se valida en CI: los runners no traen compilador C y el proyecto no instala uno.
 
 ### 7.4 Backend WASM — Listo para probar ✅
 
@@ -198,7 +198,7 @@ Emite WASM binario válido con imports WASI.
 
 ### 7.5 Backend LLVM / SPIR-V / NVPTX — Parcial
 
-`llvm.rs` implementa la emisión con la feature `llvm` (requiere LLVM 17); no se valida en CI. SPIR-V/NVPTX siguen pendientes (`targets.rs`).
+`llvm.rs` implementa la emisión con la feature `llvm` (requiere LLVM 17); no se valida en CI. SPIR-V/NVPTX no están implementados.
 
 ---
 
@@ -320,18 +320,18 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de intervalos, y backends C99/WASM**.
 
 **Lo que FUNCIONA hoy (producción-ready para casos de uso limitados):**
-- Compilación SIL → C99/WASM con verificación SMT (intervalos)
+- Compilación SIL → C99/WASM con verificación SMT (intervalos o Z3)
 - Arenas $O(1)$ con sub-arenas cíclicas y promoción zero-copy
 - Verificación de contratos (`asumir`/`demostrar`) con contraejemplos
-- Backend C99 compilable con `gcc -std=c99 -Wall -Wextra -Werror`
+- Backend C99 con salida estándar (la compilación del C generado no se valida en CI)
 - Backend WASM binario válido con WASI
 - CLI completo (`build`, `check`, `emit-smt`, `run`)
-- 140+ tests pasando
+- 161 tests Rust + 31 Python pasando
 - Capacidades Zero-Trust con firma HMAC-SHA256
-- TPM 2.0 con comandos TBS reales
+- TPM 2.0: tipos y framework (sin pruebas en hardware)
 - Scheduler de fibras cooperativas
 - Canales lock-free SPSC y MPSC
-- E/S asíncrona con io_uring (Linux) / IOCP (Windows)
+- E/S asíncrona con io_uring (Linux), IOCP (Windows) o `pread`/`pwrite` (POSIX sin liburing)
 - eBPF con libbpf (Linux)
 
 **Pendiente para desarrollo:**

@@ -27,6 +27,21 @@ fn check_ok() {
 }
 
 #[test]
+fn check_verifica_let() {
+    // Regresión: `let` debe entrar en SMT como definición SSA, no como variable libre.
+    let f = ejemplo(
+        "let",
+        "definir tarea f(monto: Entero64, saldo: Entero64) -> Booleano:\n    asumir que monto > 0\n    asumir que saldo >= monto\n    let nuevo_saldo = saldo - monto\n    demostrar que nuevo_saldo >= 0\n    retornar verdadero\n",
+    );
+    Command::cargo_bin("silc")
+        .unwrap()
+        .args(["check", f.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK"));
+}
+
+#[test]
 fn check_falla_smt() {
     let f = ejemplo(
         "bad",

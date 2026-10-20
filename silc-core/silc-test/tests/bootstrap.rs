@@ -125,7 +125,11 @@ fn bootstrap_build_c99() {
     // Verificar que el C generado tiene la estructura correcta
     assert!(c.contains("long long sumar("));
     // El retorno puede variar en formato, verificar que la expresión está presente
-    assert!(c.contains("valor_a + valor_b") || c.contains("valor_a+valor_b"));
+    assert!(
+        c.contains("valor_a + valor_b")
+            || c.contains("valor_a+valor_b")
+            || c.contains("(uint64_t)valor_a + (uint64_t)valor_b")
+    );
     let _ = std::fs::remove_file(&out_path);
 }
 

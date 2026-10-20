@@ -10,15 +10,15 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 
 | Componente | Implementado | Notas |
 |------------|--------------|-------|
-| Frontend (Lexer/Parser CNL) | Listo para probar | `silc-frontend` publicado |
-| Causal-IR + SMT | Listo para probar | `silc-causal-ir` publicado, Intervalos + Z3 |
-| Backend C99 | Listo para probar | `silc-backend` publicado, emite C99 válido |
-| Backend WASM | Listo para probar | `silc-backend` publicado, magic `\0asm` válido |
-| Runtime FFI | Listo para probar | `silc-runtime` publicado, arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
+| Frontend (Lexer/Parser CNL) | Listo para probar | Crate del workspace |
+| Causal-IR + SMT | Listo para probar | Intervalos + Z3 |
+| Backend C99 | Listo para probar | Emite C99 válido |
+| Backend WASM | Listo para probar | Magic `\0asm` válido |
+| Runtime FFI | Listo para probar | Arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
 | CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
-| Tests Integración | Listo para probar | 140+ tests passing |
+| Tests | Listo para probar | 161 Rust + 31 Python |
 
 **Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM, migración de esquemas lazy, SPIR-V/GPU, eBPF (runtime Linux ya implementado; sin soporte en Windows), M:N scheduler, superoptimizer, certificaciones militares.
 
@@ -27,30 +27,47 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 ## 2. Gramática SIL Implementada (Subconjunto CNL)
 
 ```ebnf
-Programa        ::= { DefinicionTarea } ;
-DefinicionTarea ::= "definir" "tarea" Identificador "(" [ ListaParametros ] ")" [ "->" TipoDato ] ":" NL INDENT
-                    CuerpoTarea DEDENT ;
-ListaParametros ::= Identificador [ ":" TipoDato ] { "," Identificador [ ":" TipoDato ] } ;
-CuerpoTarea     ::= { Sentencia } [ BloqueRestricciones ] ;
-Sentencia       ::= "asumir" ExpresionLogica
-                  | "demostrar" ExpresionLogica
-                  | "retornar" Expresion ;
+Programa        ::= { Declaracion } ;
+Declaracion     ::= Tarea | Estructura | Variante | Servicio
+                  | Modelo | MemoriaPersistente | Capacidad | Modulo | Migracion ;
+Tarea           ::= "definir" "tarea" Ident "(" [ Parametros ] ")" [ "->" Tipo ] ":" NL INDENT
+                    Cuerpo DEDENT ;
+Parametros      ::= Ident ":" Tipo { "," Ident ":" Tipo } ;
+Cuerpo          ::= { Sentencia } [ BloqueRestricciones ] ;
+Sentencia       ::= "verificar" [ "que" ] ExpresionLogica
+                  | "asumir" [ "que" ] ExpresionLogica
+                  | "demostrar" [ "que" ] ExpresionLogica
+                  | "let" [ "mut" ] Ident [ ":" Tipo ] "=" Expresion
+                  | "retornar" [ Expresion ]
+                  | "solicitar" "capacidad" Permiso "para" TEXTO
+                    [ "con" "ttl" NUM ] [ "como" Ident ]
+                  | "validar" Ident
+                  | "crear" "canal" [ "con" "capacidad" NUM ] "como" Ident
+                  | "enviar" Expresion "en" Ident
+                  | "enviar" Expresion "en" "red" TEXTO "con" Ident
+                  | "recibir" "de" Ident "como" Ident
+                  | "recibir" "de" "red" TEXTO "con" Ident "como" Ident
+                  | "generar" Ident
+                  | "leer" "archivo" TEXTO "con" Ident "como" Ident
+                  | "escribir" Expresion "en" "archivo" TEXTO "con" Ident ;
 ExpresionLogica ::= Expresion OperadorRelacional Expresion
-                  | Identificador ;
+                  | Ident ;
 OperadorRelacional ::= ">" | "<" | ">=" | "<=" | "==" | "!=" ;
-Expresion       ::= Identificador | Literal | Expresion OperadorAritmetico Expresion ;
+Expresion       ::= Ident | Literal | Expresion OperadorAritmetico Expresion ;
 OperadorAritmetico ::= "+" | "-" | "*" | "/" ;
-Literal         ::= NUM ;
-TipoDato        ::= "Entero64" | "Flotante64" | "Booleano" | "Texto" ;
+Literal         ::= NUM | TEXTO | "verdadero" | "falso" ;
+Tipo            ::= "Entero64" | "Flotante64" | "Booleano" | "Texto"
+                  | "USD" | "EUR" | "CapacidadHardware" | "Void"
+                  | "Lista" "de" Tipo | "Mapa" "de" Tipo "a" Tipo
+                  | "Conjunto" "de" Tipo | "Tupla" "(" [ Tipo { "," Tipo } ] ")" ;
+Permiso         ::= "lectura_archivo" | "escritura_archivo" | "red" | "ejecucion" ;
 BloqueRestricciones ::= "bajo" "restricciones" ":" NL INDENT { Restriccion } DEDENT ;
-Restriccion     ::= Identificador ":" ValorRestriccion ;
+Restriccion     ::= Ident ":" Ident ;
 ```
 
-**Restricciones soportadas:**
-- `latencia_maxima: NUMms`
-- `gestion_memoria: arena`
-- `concurrencia: modelo_actores_masivo`
-- `seguridad_tipo: estricta`
+**Restricciones soportadas:** clave y valor son identificadores de un solo token
+(p. ej. `gestion_memoria: arena`, `tiempo_ejecucion: constante`,
+`latencia_maxima: baja`). Unidades compuestas (`200us`) todavía no se aceptan.
 
 ---
 
@@ -67,8 +84,9 @@ definir tarea f(x: Entero64) -> Entero64:
 ### 3.2 Pipeline SMT
 1. Extracción cláusulas: `asumir` → premisas, `demostrar` → metas
 2. Traducción SMT-LIB2: `assert (P ∧ ¬Q)`
-3. Resolución Z3/CVC5 incremental con caché SHA3-512
-3. **UNSAT** → Compilación OK | **SAT** → Contraejemplo + Error
+3. Resolución con Z3 (por defecto en el CLI) o con verificación de intervalos
+   (`--no-default-features`), con caché SHA3-512
+4. **UNSAT** → Compilación OK | **SAT** → Contraejemplo + Error
 
 ### 3.3 Tipos de Refinamiento
 ```sil
@@ -91,10 +109,10 @@ Si `pct = 60` → Error: `SMT SAT: contraejemplo pct=60 rompe final >= precio/2`
 ```bash
 silc build prog.sil --target c99 -o prog.c
 ```
-- Emite C99 estricto (`-std=c99 -Wall -Werror`)
+- Emite C99. `silc build --cc` compila con `-std=c99 -O2 -Wall`; `silc run` con `-std=c99 -O2`
 - Runtime embebido: `sil_arena_*`, tipos `SilTexto_`, `SilCap_`, `Entero64`
-- Compilable: GCC, Clang, MSVC
-- Salida: ~2.3KB para tarea simple
+- Pensado para GCC/Clang; la compilación no se valida en CI (los runners no traen compilador C)
+- Sin `main` si la última tarea tiene parámetros: se emite una biblioteca
 
 ### 4.2 Target WASM (`--target wasm`)
 ```bash
@@ -102,8 +120,8 @@ silc build prog.sil --target wasm -o prog.wasm
 ```
 - Emite WASM válido (magic `\0asm`)
 - Validador `wasmparser` integrado en tests
-- Sin dependencias WASI (standalone)
-- Salida: ~158 bytes para tarea simple
+- Importa `sil.memory` y las funciones WASI `fd_write`/`proc_exit`
+- Sin `start` si la última tarea tiene parámetros: se emite una biblioteca
 
 ### 4.3 Verificación SMT (`emit-smt`)
 ```bash
@@ -130,7 +148,7 @@ Emite SMT-LIB2 (QF_LIA):
 | `silc build <file.sil> --target c99\|wasm -o <out>` | Genera C99 o WASM |
 | `silc emit-smt <file.sil>` | Emite script SMT-LIB2 QF_LIA |
 
-**Códigos de salida:** 0=OK, 1=Error sintaxis/SMT, 2=Error I/O
+**Códigos de salida:** 0=OK, 1=Error (sintaxis, SMT o E/S)
 
 ---
 
@@ -167,20 +185,21 @@ Emite SMT-LIB2 (QF_LIA):
 
 | Limitación | Workaround |
 |------------|------------|
-| `build` solo 1 tarea por archivo | Usar 1 archivo = 1 tarea; `check` soporta multi-tarea |
-| SMT timeout 5s en postcondiciones complejas | Simplificar `demostrar`; dividir en tareas menores |
+| La última tarea con parámetros se emite como biblioteca (sin `main`) | Añadir una tarea principal sin parámetros al final |
+| `generar` en C99 requiere tarea principal sin parámetros | Usar WASM (llamada directa) o una principal sin parámetros |
+| SMT timeout 5s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `demostrar` |
 | Sin stdlib/prelude | Definir tipos base en cada archivo |
-| Solo Linux/Windows x64 probado | macOS/ARM no validado |
 | Sin `silpm` / `silfmt` / `silup` | Usar `cargo build` + `silc` directo |
+| LSP sin hover, definición ni formateador | Usar completion y diagnósticos |
 
 ---
 
 ## 8. Versionado y Compatibilidad
 
 - **SemVer:** v0.1.0 = Beta (breaking changes esperados)
-- **MSRV:** Rust 1.75.0
-- **Targets:** x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu
-- **Publicación:** 4 crates en crates.io (`silc-frontend`, `silc-causal-ir`, `silc-backend`, `silc-runtime` v0.1.0)
+- **MSRV:** 1.88.0 (mínimo declarado por las dependencias); CI usa 1.97.1
+- **Targets:** x86_64-pc-windows-msvc, x86_64-unknown-linux-gnu, aarch64-apple-darwin (CI)
+- **Publicación:** 4 crates en crates.io (`silc-frontend`, `silc-causal-ir`, `silc-backend`, `silc-runtime` v0.1.0); `silc-cli` y `silc-contracts` se instalan desde el repositorio
 
 ---
 

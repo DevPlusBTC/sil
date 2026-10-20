@@ -807,28 +807,37 @@ fn emitir_instr(
                 writeln!(cuerpo, "    {n} = {src}; (void)\"{nombre}\";").unwrap();
             }
         }
-        Operacion::BinOpSegura {
-            op,
-            lhs,
-            rhs,
-            sin_overflow,
-        } => {
+        Operacion::BinOpSegura { op, lhs, rhs } => {
             if let Some(v) = ins.resultado {
                 let n = nombre_val(e, mapa_params, v);
                 let l = nombre_val(e, mapa_params, *lhs);
                 let r = nombre_val(e, mapa_params, *rhs);
-                let o = match op {
-                    OpArit::Add => "+",
-                    OpArit::Sub => "-",
-                    OpArit::Mul => "*",
-                    OpArit::Div => "/",
-                };
-                if *sin_overflow {
-                    writeln!(cuerpo, "    {n} = {l} {o} {r};").unwrap();
-                } else {
-                    // M5: chequeo defensivo (el SMT en M4 marca sin_overflow cuando prueba).
-                    // Para no romper -Werror con sign-compare, emitimos directo + comentario.
-                    writeln!(cuerpo, "    {n} = {l} {o} {r}; /* checked: SMT */").unwrap();
+                match *op {
+                    OpArit::Add => {
+                        writeln!(
+                            cuerpo,
+                            "    {n} = (Entero64)((uint64_t){l} + (uint64_t){r});"
+                        )
+                        .unwrap();
+                    }
+                    OpArit::Sub => {
+                        writeln!(
+                            cuerpo,
+                            "    {n} = (Entero64)((uint64_t){l} - (uint64_t){r});"
+                        )
+                        .unwrap();
+                    }
+                    OpArit::Mul => {
+                        writeln!(
+                            cuerpo,
+                            "    {n} = (Entero64)((uint64_t){l} * (uint64_t){r});"
+                        )
+                        .unwrap();
+                    }
+                    OpArit::Div => {
+                        writeln!(cuerpo, "    if ({r} == 0 || ({l} == (Entero64)INT64_MIN && {r} == -1)) abort();").unwrap();
+                        writeln!(cuerpo, "    {n} = {l} / {r};").unwrap();
+                    }
                 }
             }
         }
