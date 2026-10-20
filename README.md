@@ -1,6 +1,6 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Scheduler Fibras + Canales + TPM 2.0 ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM/eBPF/NVM = Pendientes ⚠️**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras + Canales + TPM 2.0 + E/S Async ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM = implementado sin validar en CI | eBPF = runtime Linux ✅ | NVM/migración = AST/parser ⚠️**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 

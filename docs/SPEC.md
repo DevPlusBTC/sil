@@ -20,7 +20,7 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | VS Code Extension | En proceso | Pendiente de empaquetado |
 | Tests Integración | Listo para probar | 139/139 passing |
 
-**Pendiente para desarrollo:** Arenas persistentes NVM, eBPF kernel, SPIR-V/GPU, M:N scheduler, migración esquemas lazy, superoptimizer, certificaciones militares.
+**Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM, migración de esquemas lazy, SPIR-V/GPU, eBPF (runtime Linux ya implementado; sin soporte en Windows), M:N scheduler, superoptimizer, certificaciones militares.
 
 ---
 

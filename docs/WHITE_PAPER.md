@@ -2,7 +2,7 @@
 
 **Versión de Especificación:** 0.1.0-ALPHA
 **Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
-**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM/eBPF/NVM = Pendientes ⚠️
+**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales + E/S Async ✅ | Z3 (feature `smt`) = ✅ Listo para probar | LLVM = implementado sin validar en CI | eBPF = runtime Linux ✅ | NVM/migración = AST/parser ⚠️
 
 ---
 
@@ -10,24 +10,22 @@
 
 | Componente | Estado | Tests | Notas |
 |------------|--------|-------|-------|
-| **Frontend CNL** (Lexer/Parser) | Listo para probar | 20/20 ✅ | Keywords español, EBNF completo |
+| **Frontend CNL** (Lexer/Parser) | Listo para probar | 13/13 integración ✅ | Keywords español, EBNF completo (tareas, servicios, modelos, memoria, capacidades, módulos, migraciones) |
 | **Causal-IR** (SSA + SMT) | Listo para probar | 21/21 ✅ | SSA, invariantes, lowering |
 | **SMT Intervalos (Rust)** | Listo para probar | 21/21 ✅ | Sound/incompleto, cache SHA3-512 |
 | **SMT Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **Backend C99** | Listo para probar | 13/13 ✅ | `gcc -std=c99 -Wall -Wextra -Werror` |
 | **Backend WASM** | Listo para probar | 13/13 ✅ | WASI imports, binario válido |
-| **Backend LLVM** | Pendiente para desarrollo | 0/0 | Solo stub |
-| **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Solo stub |
+| **Backend LLVM** | Implementado, sin validar en CI | 0/0 | Feature `llvm`; requiere LLVM 17 instalado |
+| **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
 | **Arenas O(1)** | Listo para probar | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
-| **Arenas Persistentes NVM** | Pendiente para desarrollo | 0/0 | Solo AST/IR |
-| **Scheduler Fibras** | Listo para probar | 0/0 | `NotImplemented` |
-| **Canales Lock-Free** | Listo para probar | 0/0 | Solo tipos AST/IR |
-| **Async I/O (io_uring)** | Pendiente para desarrollo | 0/0 | Solo declaración |
+| **Arenas Persistentes NVM** | Pendiente para desarrollo | 0/0 | AST/parser; sin mmap/NVM |
+| **Scheduler Fibras** | Listo para probar | 0/0 | Win32 Fibers / ucontext implementado |
+| **Canales Lock-Free** | Listo para probar | 0/0 | SPSC/MPSC implementados en sil-rt |
+| **Async I/O (io_uring/IOCP)** | Listo para probar (runtime) | 0/0 | Runtime C implementado; falta integrarlo al codegen |
 | **Capacidades (validación)** | Listo para probar | 17/17 ✅ | Permisos, expiración, firma HMAC-SHA256 |
 | **TPM 2.0** | Listo para probar | 0/0 | Framework tipos implementado |
-| **eBPF Kernel** | Pendiente para desarrollo | 0/0 | Solo en paper |
-| **Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
-| **eBPF Kernel** | Pendiente para desarrollo | 0/0 | Solo en paper |
+| **eBPF Kernel** | Listo para probar (Linux) | 0/0 | libbpf implementado; sin soporte en Windows |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | 0/0 | Objetivos de diseño |
 
 ---
@@ -39,8 +37,8 @@
 | **Tests Totales** | **150/150 ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
-| **Estado real** | **Fase 0 (Semilla)** — Frontend+IR+Intervalos+C99/WASM+Capacidades HMAC+TPM 2.0+Scheduler Fibras+Canales ✅ |
-| **Próximo hito real** | LLVM + eBPF |
+| **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
+| **Próximo hito real** | Codegen de servicios/red + NVM/migración; validar LLVM en CI |
 
 ---
 
@@ -131,11 +129,11 @@ No implementado. Sección 3.4 del Whitepaper original = objetivo futuro.
 
 ### 4.3 Arenas Persistentes NVM (Zero-ORM / Zero-Database) — Pendiente para desarrollo
 
-Estructuras definidas en AST/IR, pero sin implementación real de mmap/NVM. Solo AST/IR.
+`definir memoria_persistente` se parsea a AST (campos tipados). Sin implementación real de mmap/NVM ni lowering a arena persistente.
 
 ### 4.4 Migración de Esquemas Zero-Cost (Lazy On-Read) — Pendiente para desarrollo
 
-Solo AST/IR. Sin implementación de migración lazy on-read.
+`migrar ... al acceder_campo ...` se parsea a AST, incluidos el valor predeterminado y las restricciones. Sin implementación de migración lazy on-read en runtime.
 
 ---
 
@@ -149,9 +147,9 @@ Scheduler cooperativo implementado con Win32 Fibers.
 
 SPSC y MPSC con operaciones atómicas, implementados en sil-rt.
 
-### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Pendiente para desarrollo
+### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Runtime listo, integración pendiente
 
-Solo declaración en WHITE_PAPER. Sin código de implementación.
+`sil_aio` implementa Overlapped I/O + IOCP en Windows e io_uring en Linux (con fallback en otras plataformas). `sil_ebpf` carga y adjunta programas con libbpf en Linux; en otras plataformas devuelve `SIL_EBPF_NO_SOPORTADO`. Pendiente: que el codegen emita las llamadas al runtime de red/E/S a partir de las declaraciones `servicio`/`evento`.
 
 ---
 
@@ -172,7 +170,7 @@ Estructura definida con firma HMAC-SHA256 en TPM implementada. `recurso` ligado 
 | Buffer Overflow | ✅ **Inmune** (SMT bounds proof + Arenas) |
 | Use-After-Free / Double Free | ✅ **Inmune** (Arena destruction $O(1)$) |
 | Null Pointer | ✅ **Inmune** (Tipos `Opcion[T]` obligatorios) |
-| Race Conditions | ⚠️ **Parcial** (Canales no implementados) |
+| Race Conditions | ⚠️ **Parcial** (canales SPSC/MPSC implementados; el codegen aún no emite concurrencia) |
 | Command/Code Injection | ✅ **Inmune** (AST fuertemente tipado) |
 | Side-Channel Timing | ⚠️ **Parcial** (Branchless en backend, no verificado exhaustivamente) |
 | Supply-Chain Malware | ❌ **No** (Reproducible builds sí, TPM attestation STUB) |
@@ -198,9 +196,9 @@ Emite C99 estricto compilable con `gcc -std=c99 -Wall -Wextra -Werror`. Runtime 
 
 Emite WASM binario válido con imports WASI.
 
-### 7.5 Backend LLVM / SPIR-V / NVPTX — Pendiente para desarrollo ❌
+### 7.5 Backend LLVM / SPIR-V / NVPTX — Parcial
 
-Solo stubs en `llvm.rs` y `targets.rs`.
+`llvm.rs` implementa la emisión con la feature `llvm` (requiere LLVM 17); no se valida en CI. SPIR-V/NVPTX siguen pendientes (`targets.rs`).
 
 ---
 
@@ -328,24 +326,22 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Backend C99 compilable con `gcc -std=c99 -Wall -Wextra -Werror`
 - Backend WASM binario válido con WASI
 - CLI completo (`build`, `check`, `emit-smt`, `run`)
-- 139 tests pasando
+- 140+ tests pasando
 - Capacidades Zero-Trust con firma HMAC-SHA256
 - TPM 2.0 con comandos TBS reales
 - Scheduler de fibras cooperativas
 - Canales lock-free SPSC y MPSC
 - E/S asíncrona con io_uring (Linux) / IOCP (Windows)
+- eBPF con libbpf (Linux)
 
 **Pendiente para desarrollo:**
-- Verificador Z3 disponible con feature `smt`
-- TPM 2.0 (implementado, listo para pruebas de integración completa)
-- Scheduler de fibras (implementado, listo para pruebas de integración completa)
-- Canales lock-free (implementado, listo para pruebas de integración completa)
-- eBPF kernel integration
-- Backend LLVM / SPIR-V / GPU
-- Arenas persistentes NVM / Migración lazy
+- Codegen de servicios/red y eventos (el parser ya los soporta)
+- Arenas persistentes NVM y migración lazy on-read
+- Backend SPIR-V/GPU
+- Validación del backend LLVM en CI
 - Certificaciones militares (objetivos de diseño)
 
-**Siguiente paso realista:** LLVM + eBPF.
+**Siguiente paso realista:** codegen de servicios/red y NVM.
 
 ---
 
