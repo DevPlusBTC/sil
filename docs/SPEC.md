@@ -16,9 +16,9 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | Backend WASM | Listo para probar | `silc-backend` publicado, magic `\0asm` válido |
 | Runtime FFI | Listo para probar | `silc-runtime` publicado, arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
 | CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
-| LSP Server | Listo para probar | JSON-RPC, diagnostics, completion, hover |
-| VS Code Extension | En proceso | Pendiente de empaquetado |
-| Tests Integración | Listo para probar | 139/139 passing |
+| LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
+| VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
+| Tests Integración | Listo para probar | 140+ tests passing |
 
 **Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM, migración de esquemas lazy, SPIR-V/GPU, eBPF (runtime Linux ya implementado; sin soporte en Windows), M:N scheduler, superoptimizer, certificaciones militares.
 
@@ -134,30 +134,32 @@ Emite SMT-LIB2 (QF_LIA):
 
 ---
 
-## 6. LSP Server (`silc-lsp`)
+## 6. LSP Server (`silc lsp`)
 
-**Protocolo:** JSON-RPC 3.17 sobre stdio
+**Protocolo:** LSP 3.17 (JSON-RPC 2.0 sobre stdio, framing `Content-Length`)
 
-**Capabilities:**
-- `textDocument/didOpen` + `didChange` → Diagnósticos incrementales (2ms)
-- `textDocument/completion` → Trigger `.` → Variables, tareas, tipos
-- `textDocument/hover` → Tipo inferido, contratos, invariantes
-- `textDocument/publishDiagnostics` → Errores en lenguaje natural
-- **Time-Travel Debugger** (core): Navegación grafo causal semántico
+**Capacidades implementadas:**
+- `textDocument/didOpen` / `didChange` / `didClose` → sincronización completa y diagnósticos léxicos y de sintaxis del frontend real
+- `textDocument/completion` → palabras clave y tipos primitivos
+- `textDocument/publishDiagnostics` → mensajes del frontend en lenguaje natural
+- `initialize`, `initialized`, `shutdown`, `exit`
 
-**Iniciar:** `silc-lsp` (stdio) → Configurar en VS Code `settings.json`
+**Iniciar:** `silc lsp` (stdio; los logs van a stderr)
+
+**Pendiente:** hover, definición, formateador, Time-Travel Debugger.
 
 ---
 
 ## 7. VS Code Extension (`silc-vscode` v0.1.0)
 
-**Instalación:** `.vsix` o marketplace
+**Instalación:** `npm install && npm run compile`, luego abrir la carpeta del repositorio como extensión (F5). Requiere `silc` en el `PATH`.
 
 **Features:**
-- Diagnostics en tiempo real (subrayado rojo/amarillo)
-- Completion trigger `.` (variables, tareas, tipos)
-- Hover → Tipo inferido + contratos
-- Comando: `SIL: Toggle Diagnostics` (Ctrl+Shift+P)
+- Cliente LSP contra `silc lsp`: diagnósticos en tiempo real y completion de palabras clave/tipos
+- Comando `SIL: Compilar archivo actual a C99` (`sil.compile`)
+- Comando `SIL: Verificar invariantes SMT del archivo actual` (`sil.verify`)
+
+**Pendiente:** hover, formateador, empaquetado `.vsix`.
 
 ---
 

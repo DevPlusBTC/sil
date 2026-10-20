@@ -242,12 +242,12 @@ Solo en WHITE_PAPER. Sin `sil_security_filter.bpf.c`.
 
 | Herramienta | Estado |
 |-------------|--------|
-| `silc` CLI (build/check/emit-smt/run) | Listo para probar ✅ |
-| `silfmt` (formateador) | Pendiente para desarrollo ❌ |
-| `silpm` (package manager) | Pendiente para desarrollo ❌ |
-| LSP (`sil-lsp`) | Listo para probar ✅ |
+| `silc` CLI (build/check/emit-smt/run/lsp) | Listo para probar ✅ |
+| LSP (`silc lsp`) | Listo para probar ✅ |
+| Extensión VS Code | Compila; cliente LSP + comandos `sil.compile`/`sil.verify` ✅ |
 | Time-Travel Debugger | Pendiente para desarrollo ❌ |
 | `silfmt` (formateador canónico) | Pendiente para desarrollo ❌ |
+| `silpm` (package manager) | Pendiente para desarrollo ❌ |
 
 ---
 

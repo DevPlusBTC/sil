@@ -75,8 +75,8 @@ silc-core/
 ├── silc-contracts/    # Contratos compartidos  ✅
 └── silc-test/         # Tests integración  ✅
 
-silc-lsp/              # Servidor LSP (JSON-RPC)  ✅
-silc-vscode/           # Extensión VS Code  ⚠️ STUB
+silc-core/silc-cli/    # CLI + servidor LSP (`silc lsp`, JSON-RPC sobre stdio)  ✅
+silc-vscode/           # Extensión VS Code (cliente LSP; compila con `npm run compile`)  ✅
 docs/                  # Documentación (WHITE_PAPER actualizado)
 ```
 
