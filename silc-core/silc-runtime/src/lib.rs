@@ -1,7 +1,9 @@
 // silc-runtime: Bindings seguros al runtime C (sil-rt).
-
+//
 // M7: wrappers 100% seguros (cero `unsafe` en API publica) + tests FFI
 // que ejercitan el C real (arenas, fibras, capacidades).
+//
+// trigger: force CI run
 
 // Garantias:
 // - `Arena`: RAII (Drop libera), bump alloc con alineacion, reset O(1).
