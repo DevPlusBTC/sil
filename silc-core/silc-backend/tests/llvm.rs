@@ -2,9 +2,9 @@
 mod tests {
     use silc_backend::llvm::emitir;
     use silc_causal_ir::lower::bajar_tarea;
-    use silc_frontend::parser::parsear;
-    use silc_frontend::lexer::lexear;
     use silc_frontend::ast::Decl;
+    use silc_frontend::lexer::lexear;
+    use silc_frontend::parser::parsear;
 
     #[test]
     fn emit_llvm_simple_task() {
