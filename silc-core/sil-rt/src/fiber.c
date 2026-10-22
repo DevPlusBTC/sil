@@ -1,11 +1,6 @@
-/* sil_fiber.c - Fibras Cooperativas M7 (Windows-only).
- *
- * M7: implementacion real con primativas Win32 Fibers.
- * Stack dedicado de 64KB por fibra, scheduler round-robin single-thread.
- * sil_fibra_yield(): SwitchToFiber(scheduler) — sin syscall de kernel.
- *
- * Disciplina: magic numbers, validacion de punteros, cleanup en destruir.
- * Nota: path Unix (ucontext) no compatibilizado con MSVC; solo Win32.
+/* sil_fiber.c - Fibras Cooperativas M7 (Windows + POSIX).
+ * Windows: Win32 Fibers.
+ * POSIX (macOS, Linux): ucontext API.
  */
 
 #include "sil_fiber.h"
@@ -21,12 +16,12 @@
 #include <windows.h>
 typedef LPVOID FibraHandle_;
 #define FIBRA_NULA 0
+#elif defined(__APPLE__) || defined(__linux__) || defined(__unix__)
+#include <ucontext.h>
+typedef ucontext_t* FibraHandle_;
+#define FIBRA_NULA ((FibraHandle_)0)
 #else
-/* Path MSVC: ucontext no disponible. Tipos placeholder. */
-typedef struct ucontext_t ucontext_t;
-#define getcontext(c) /* no-op */
-#define swapcontext(o,n) /* no-op */
-#define makecontext(c,f,a) /* no-op */
+#error "Unsupported platform for fibers"
 #endif
 
 typedef enum {
@@ -40,9 +35,9 @@ typedef struct FibraControl_ {
     void *arg;
     unsigned magic;
     struct FibraControl_ *siguiente;
-#if defined(_WIN32)
     FibraHandle_ handle;
-#endif
+    ucontext_t ctx;          // only used on POSIX
+    void *stack;             // stack memory for POSIX
 } FibraControl_;
 
 struct SilScheduler {
@@ -63,10 +58,9 @@ static _Thread_local FibraControl_ *fibra_actual_tls = 0;
 static _Thread_local SilScheduler *sched_actual_tls = 0;
 #endif
 
-/* Forward: trampolín de fibra. */
-static void fibra_trampolin_param(void *param);
-
-typedef struct { FibraControl_ *fc; SilScheduler *sched; } TrampolinArg_;
+/* Forward declarations */
+static void fibra_trampolin_win(void *param);
+static void fibra_trampolin_posix(void);
 
 #if defined(_WIN32)
 static void __stdcall fibra_trampolin_win(LPVOID param) {
@@ -77,32 +71,30 @@ static void __stdcall fibra_trampolin_win(LPVOID param) {
     fc->entrada(fc->arg);
     fc->pub_.estado = FIBRA_FINALIZADA;
     sched->finalizadas++;
-    /* Volver al scheduler. La fibra muere (no reusar stack). */
     SwitchToFiber(sched->sched_fiber);
-    /* Inalcanzable. */
     abort();
 }
 #else
-static void fibra_trampolin_unix(void) {
-    /* No-op para MSVC: el scheduler round-robin no se cambia de contexto
-     ucontext en esta plataforma. El yield se hace al thread principal. */
-    (void)sched_actual_tls;
-}
-static void fibra_trampolin_param(void *param) {
-    (void)param;
-    fibra_trampolin_unix();
+static void fibra_trampolin_posix(void) {
+    FibraControl_ *fc = fibra_actual_tls;
+    SilScheduler *sched = sched_actual_tls;
+    fc->entrada(fc->arg);
+    fc->pub_.estado = FIBRA_FINALIZADA;
+    sched->finalizadas++;
+    /* return to scheduler */
+    swapcontext(&fc->ctx, sched->sched_fiber);
 }
 #endif
+
+typedef struct { FibraControl_ *fc; SilScheduler *sched; } TrampolinArg_;
 
 SilScheduler* sil_sched_crear(unsigned n_hilos_os) {
     (void)n_hilos_os;
     SilScheduler *s = (SilScheduler*)calloc(1, sizeof(SilScheduler));
     if (!s) return 0;
 #if defined(_WIN32)
-    /* Convertir el hilo actual en fibra (necesario para SwitchToFiber). */
     s->sched_fiber = ConvertThreadToFiber(0);
     if (!s->sched_fiber) {
-        /* Si ya era fibra (ERROR_ALREADY_FIBER = 0x4E8), obtener la actual. */
         s->sched_fiber = GetCurrentFiber();
         if (!s->sched_fiber) { free(s); return 0; }
         s->hilo_convertido = 0;
@@ -110,8 +102,10 @@ SilScheduler* sil_sched_crear(unsigned n_hilos_os) {
         s->hilo_convertido = 1;
     }
 #else
-    /* MSVC: scheduler en modo lite sin fibras Win32. */
-    (void)n_hilos_os;
+    s->sched_fiber = (FibraHandle_)malloc(sizeof(ucontext_t));
+    if (!s->sched_fiber) { free(s); return 0; }
+    getcontext(s->sched_fiber);
+    s->hilo_convertido = 0;
 #endif
     return s;
 }
@@ -124,18 +118,22 @@ void sil_sched_destruir(SilScheduler *s) {
 #if defined(_WIN32)
         if (c->handle) DeleteFiber(c->handle);
 #else
-        /* Sin stack dedico: nothing explicit to free. */
+        if (c->stack) free(c->stack);
+        if (c->handle) free(c->handle);
 #endif
         free(c);
         c = nx;
     }
+#if !defined(_WIN32)
+    if (s->sched_fiber) free(s->sched_fiber);
+#endif
     free(s);
 }
 
 bool sil_sched_spawn(SilScheduler *s, void (*entrada)(void*), void *arg) {
     if (!s || !entrada) return false;
     if (s->n_fibras >= SIL_FIBRA_MAX) return false;
-    if (s->en_ejecucion) return false; /* No spawn durante ejecuci n (M7). */
+    if (s->en_ejecucion) return false;
 
     FibraControl_ *fc = (FibraControl_*)calloc(1, sizeof(FibraControl_));
     if (!fc) return false;
@@ -154,8 +152,15 @@ bool sil_sched_spawn(SilScheduler *s, void (*entrada)(void*), void *arg) {
         if (!fc->handle) { free(ta); free(fc); return false; }
     }
 #else
-    /* MSVC: no hay CreateFiber; registramos como lista para futuras extensiones. */
-    (void)fc;
+    fc->stack = malloc(SIL_FIBRA_STACK_SIZE);
+    if (!fc->stack) { free(fc); return false; }
+    fc->handle = (FibraHandle_)malloc(sizeof(ucontext_t));
+    if (!fc->handle) { free(fc->stack); free(fc); return false; }
+    getcontext(fc->handle);
+    fc->handle->uc_stack.ss_sp = fc->stack;
+    fc->handle->uc_stack.ss_size = SIL_FIBRA_STACK_SIZE;
+    fc->handle->uc_link = s->sched_fiber;
+    makecontext(fc->handle, (void(*)())fibra_trampolin_posix, 0);
 #endif
 
     fc->siguiente = 0;
@@ -171,29 +176,20 @@ void sil_sched_ejecutar(SilScheduler *s) {
     s->en_ejecucion = 1;
     sched_actual_tls = s;
 
-    /* Round-robin hasta que todas finalicen. */
     while (s->finalizadas < s->n_fibras) {
-        /* Scan lineal: primera no-finalizada. O(n) por pick, n pequeno en M7. */
         FibraControl_ *elegida = 0;
         for (FibraControl_ *fc = s->cabeza; fc; fc = fc->siguiente) {
             if (fc->magic != SIL_FIBRA_MAGIC) break;
             if (fc->pub_.estado == FIBRA_LISTA) { elegida = fc; break; }
         }
-        if (!elegida) break; /* Todas finalizadas. */
+        if (!elegida) break;
 
+        fibra_actual_tls = elegida;
 #if defined(_WIN32)
         SwitchToFiber(elegida->handle);
 #else
-        /* MSVC: yield al thread principal. */
-        (void)elegida;
+        swapcontext(s->sched_fiber, elegida->handle);
 #endif
-        /* Al volver: la fibra hizo yield (sigue LISTA? no: sigue no-finalizada)
-         * o finalizó. Marcar como LISTA para re-pick si no finalizó.
-         * En nuestro protocolo, las fibras no-yieldean a un estado distinto;
-         * yield() solo cede (siguen LISTA hasta que trampolín las finaliza).
-         * Para evitar re-ejecutar una fibra a medias (que con Win32 Fibers
-         * SICorrecto se reanuda correctamente via SwitchToFiber), simplemente
-         * continuamos el loop: si no finaliz, se volver a elegir. */
     }
 
     sched_actual_tls = 0;
@@ -206,7 +202,7 @@ void sil_fibra_yield(void) {
 #if defined(_WIN32)
     SwitchToFiber(s->sched_fiber);
 #else
-    /* MSVC: yield cooperativo al thread principal. */
-    (void)s;
+    FibraControl_ *fc = fibra_actual_tls;
+    swapcontext(&fc->ctx, s->sched_fiber);
 #endif
 }
