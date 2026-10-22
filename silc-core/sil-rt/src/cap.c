@@ -7,6 +7,7 @@
  * - Sin malloc, sin estado global. Clave solo vive en stack y se limpia.
  */
 
+#define _POSIX_C_SOURCE 200809L
 #include "sil_cap.h"
 #include "sil_hmac.h"
 #include <string.h>

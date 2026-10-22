@@ -16,12 +16,11 @@
 #include <windows.h>
 typedef LPVOID FibraHandle_;
 #define FIBRA_NULA 0
-#elif defined(__APPLE__) || defined(__linux__) || defined(__unix__)
+#else
+#define _XOPEN_SOURCE 700
 #include <ucontext.h>
 typedef ucontext_t* FibraHandle_;
 #define FIBRA_NULA ((FibraHandle_)0)
-#else
-#error "Unsupported platform for fibers"
 #endif
 
 typedef enum {
@@ -36,8 +35,10 @@ typedef struct FibraControl_ {
     unsigned magic;
     struct FibraControl_ *siguiente;
     FibraHandle_ handle;
+#if !defined(_WIN32)
     ucontext_t ctx;          // only used on POSIX
     void *stack;             // stack memory for POSIX
+#endif
 } FibraControl_;
 
 struct SilScheduler {
@@ -64,6 +65,7 @@ static void fibra_trampolin_posix(void);
 
 #if defined(_WIN32)
 static void __stdcall fibra_trampolin_win(LPVOID param) {
+    typedef struct { FibraControl_ *fc; SilScheduler *sched; } TrampolinArg_;
     TrampolinArg_ *ta = (TrampolinArg_*)param;
     FibraControl_ *fc = ta->fc;
     SilScheduler *sched = ta->sched;
