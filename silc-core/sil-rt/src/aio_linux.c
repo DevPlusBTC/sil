@@ -11,6 +11,8 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <signal.h>
+#include <fcntl.h>
 
 #if defined(__linux__) && defined(__has_include)
 #if __has_include(<liburing.h>)

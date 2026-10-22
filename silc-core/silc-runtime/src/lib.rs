@@ -747,7 +747,7 @@ impl Capacidad {
 /// Módulo M34: capacidades TPM 2.0 y raíz de confianza.
 /// API Rust segura para operaciones TPM 2.0 con TBS en Windows.
 /// La implementación de hardware real está en m34_tpm2.rs.
-// m34_tpm2 - Módulo TPM 2.0 capabilities
+#[cfg(target_os = "windows")]
 pub mod m34_tpm2;
 
 #[cfg(test)]
