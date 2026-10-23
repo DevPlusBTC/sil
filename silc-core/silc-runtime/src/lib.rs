@@ -3,7 +3,7 @@
 // M7: wrappers 100% seguros (cero `unsafe` en API publica) + tests FFI
 // que ejercitan el C real (arenas, fibras, capacidades).
 //
-// trigger: force CI run
+// trigger CI after C99 helper/label fixes
 
 // Garantias:
 // - `Arena`: RAII (Drop libera), bump alloc con alineacion, reset O(1).
