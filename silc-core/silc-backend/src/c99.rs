@@ -170,8 +170,8 @@ if (hex[64] != 0) return 0;
 for (i = 0; i < 32; i++) { unsigned v = 0; for (j = 0; j < 2; j++) { char c = hex[i*2+j]; v <<= 4; if (c>='0'&&c<='9')v|=(unsigned)(c-'0'); else if (c>='a'&&c<='f')v|=(unsigned)(c-'a'+10); else if (c>='A'&&c<='F')v|=(unsigned)(c-'A'+10); else return 0; } k[i]=(unsigned char)v; }
 return 1;
 }
-static void sil_le64_(unsigned char o[8], unsigned long long v){int i;for(i=0;i<8;i++)o[i]=(unsigned char)(v>>((unsigned)i*8));}
-static void sil_le32_(unsigned char o[4], unsigned int v){int i;for(i=0;i<4;i++)o[i]=(unsigned char)(v>>((unsigned)i*8));}
+static void sil_le64(unsigned char o[8], unsigned long long v){int i;for(i=0;i<8;i++)o[i]=(unsigned char)(v>>((unsigned)i*8));}
+static void sil_le32(unsigned char o[4], unsigned int v){int i;for(i=0;i<4;i++)o[i]=(unsigned char)(v>>((unsigned)i*8));}
 /* Solicita capacidad firmada. Retorna SilCap_ con valida=1, o valida=0 + mensaje en stderr si falta clave. */
 static SilCap_ sil_cap_solicitar_(const char *recurso, unsigned int permisos, unsigned long long ttl) {
 SilCap_ c; unsigned char k[32]; unsigned char rh[32]; unsigned char msg[52]; unsigned long n;
@@ -697,54 +697,78 @@ fn emitir_def_funcion(
     for (i, bid) in bids.iter().enumerate() {
         indice.insert(*bid, i);
     }
-    for bid in bids {
-        let n_blk = indice[&bid];
-        let b: &Bloque = &tarea.bloques[bid];
-        writeln!(cuerpo, "blk_{n_blk}:;").unwrap();
-        // Declarar variables locales de este bloque (las que tienen resultado).
-        for ins in &b.instrs {
-            if let Some(v) = ins.resultado {
-                // Saltar params (ya son parámetros de función).
-                if mapa_params.contains_key(&v) {
-                    continue;
-                }
-                let t = tarea.tipos.get(&v).cloned().unwrap_or(SilType::Entero64);
-                let tc = e.tipo_c(&t)?;
-                let n = e.var(v);
-                writeln!(cuerpo, "    {tc} {n};").unwrap();
-            }
-        }
-        // Emitir instrucciones.
-        for ins in &b.instrs {
-            emitir_instr(&mut e, &mapa_params, tarea, ins, &mut cuerpo, en_programa)?;
-        }
-        // Terminador.
+    // Determine which blocks are jump targets.
+    let mut referenced: std::collections::HashSet<silc_causal_ir::nodes::BlockId> =
+        std::collections::HashSet::new();
+    for bid in &bids {
+        let b = &tarea.bloques[*bid];
         match &b.terminador {
-            Terminador::Retorno(v) => {
-                if let Some(x) = v {
-                    let n = nombre_val(&e, &mapa_params, *x);
-                    writeln!(cuerpo, "    return {n};").unwrap();
-                } else {
-                    writeln!(cuerpo, "    return;").unwrap();
+            Terminador::Salto(d) => {
+                referenced.insert(*d);
+            }
+            Terminador::Rama { entonces, sino, .. } => {
+                referenced.insert(*entonces);
+                referenced.insert(*sino);
+            }
+            _ => {}
+        }
+    }
+    // Ensure entry block (first in order) gets a label.
+    if let Some(entry_bid) = bids.first() {
+        referenced.insert(*entry_bid);
+    }
+    for bid_ref in &bids {
+        let bid = *bid_ref;
+        let n_blk = indice[&bid];
+        // Emit label only if this block is a jump target or the entry block.
+        if referenced.contains(&bid) {
+            let b: &Bloque = &tarea.bloques[bid];
+            writeln!(cuerpo, "blk_{n_blk}:;").unwrap();
+            // Declarar variables locales de este bloque (las que tienen resultado).
+            for ins in &b.instrs {
+                if let Some(v) = ins.resultado {
+                    // Saltar params (ya son parámetros de función).
+                    if mapa_params.contains_key(&v) {
+                        continue;
+                    }
+                    let t = tarea.tipos.get(&v).cloned().unwrap_or(SilType::Entero64);
+                    let tc = e.tipo_c(&t)?;
+                    let n = e.var(v);
+                    writeln!(cuerpo, "    {tc} {n};").unwrap();
                 }
             }
-            Terminador::Salto(d) => {
-                writeln!(cuerpo, "    goto blk_{};", indice[d]).unwrap();
+            // Emitir instrucciones.
+            for ins in &b.instrs {
+                emitir_instr(&mut e, &mapa_params, tarea, ins, &mut cuerpo, en_programa)?;
             }
-            Terminador::Rama {
-                cond,
-                entonces,
-                sino,
-            } => {
-                let c = nombre_val(&e, &mapa_params, *cond);
-                writeln!(
-                    cuerpo,
-                    "    if ({c}) goto blk_{}; else goto blk_{};",
-                    indice[entonces], indice[sino],
-                )
-                .unwrap();
+            // Terminador.
+            match &b.terminador {
+                Terminador::Retorno(v) => {
+                    if let Some(x) = v {
+                        let n = nombre_val(&e, &mapa_params, *x);
+                        writeln!(cuerpo, "    return {n};").unwrap();
+                    } else {
+                        writeln!(cuerpo, "    return;").unwrap();
+                    }
+                }
+                Terminador::Salto(d) => {
+                    writeln!(cuerpo, "    goto blk_{};", indice[d]).unwrap();
+                }
+                Terminador::Rama {
+                    cond,
+                    entonces,
+                    sino,
+                } => {
+                    let c = nombre_val(&e, &mapa_params, *cond);
+                    writeln!(
+                        cuerpo,
+                        "    if ({c}) goto blk_{}; else goto blk_{};",
+                        indice[entonces], indice[sino],
+                    )
+                    .unwrap();
+                }
+                Terminador::Inalcanzable => {}
             }
-            Terminador::Inalcanzable => {}
         }
     }
 
