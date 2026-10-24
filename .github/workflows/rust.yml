@@ -98,7 +98,7 @@ jobs:
           fi
           mkdir -p _examples
           for f in examples/*.sil; do
-            ./silc-core/target/debug/silc.exe build "$f" --target c99 -o "_examples/$(basename $f .sil).c" >/dev/null
+            ./target/debug/silc.exe build "$f" --target c99 -o "_examples/$(basename "$f" .sil).c" >/dev/null
           done
           for f in _examples/*.c; do
             gcc -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
