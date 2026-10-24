@@ -87,6 +87,7 @@ jobs:
       # Reusa el target caliente del build-test.
       - name: Validar ejemplos C99 (gcc/clang)
         if: runner.os == 'Linux'
+        # Los ejemplos están en la raíz del repo, no en silc-core/
         run: |
           set -e
           # Intentar instalar clang si no está disponible
@@ -102,7 +103,7 @@ jobs:
           BIN="./target/debug/silc"
           if [[ "$RUNNER_OS" == "Windows" ]]; then BIN="./target/debug/silc.exe"; fi
 
-          for f in examples/*.sil; do
+          for f in ../examples/*.sil; do
             "$BIN" build "$f" --target c99 -o "_examples/$(basename "$f" .sil).c" >/dev/null
           done
 
