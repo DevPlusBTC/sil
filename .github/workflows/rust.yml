@@ -153,6 +153,16 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
+      # Si un target encuentra un crash, libFuzzer deja el input en artifacts/.
+      # Se sube para poder reproducirlo sin acceso a los logs del runner.
+      - name: Subir artefactos de fuzz
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: silc-core/silc-frontend/fuzz/artifacts
+          if-no-files-found: warn
+
       - name: Run fuzz lexer (30s)
         run: cargo fuzz run fuzz_lexer -- -max_total_time=30
         working-directory: silc-core/silc-frontend/fuzz
