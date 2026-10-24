@@ -89,10 +89,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -e
-          # Instalar clang (ubuntu-latest 24.04 usa clang-18)
-          sudo apt-get update -qq && sudo apt-get install -y -qq clang-18
-          # Crear symlink genérico 'clang' que apunte a clang-18
-          sudo ln -sf /usr/bin/clang-18 /usr/local/bin/clang
+          # Instalar clang (ubuntu-latest 24.04 noble: clang-18 en universe)
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang
           which clang
           clang --version
           mkdir -p _examples
