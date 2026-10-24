@@ -32,6 +32,44 @@ pub enum ErrorC99 {
 // Runtime embebido (idéntico a sil-rt, autocontenido para .c standalone)
 // =============================================================================
 
+/// Macros de feature POSIX que deben preceder a cualquier header del sistema.
+///
+/// Bajo `-std=c99` estricto (GCC define `__STRICT_ANSI__`), glibc/musl y
+/// libSystem de macOS no declaran `sigset_t`, `AT_FDCWD`, `struct timespec`,
+/// `clock_gettime`, `struct addrinfo` ni `getaddrinfo`. El runtime embebido
+/// los usa, así que se piden explícitamente antes de los `#include`.
+const PROLOGO_FEATURES: &str = "\
+/* Feature macros POSIX: necesarias bajo -std=c99 estricto. */
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+";
+
+/// Silencia sólo warnings de "no usado" dentro del runtime embebido.
+///
+/// El runtime es autocontenido: según el programa generado, algunas funciones
+/// de arena/canal/red quedan sin usar. Clang (`gcc` en macOS) lo convierte en
+/// error con `-Werror`, así que se acota el pragma al bloque del runtime y se
+/// restaura después para que el código de usuario siga vigilado.
+const RUNTIME_DIAG_PUSH: &str = "\
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored \"-Wunused-function\"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored \"-Wunused-function\"
+#endif
+";
+
+const RUNTIME_DIAG_POP: &str = "\
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+";
+
 const RUNTIME_ARENA: &str = r#"
 /* --- SIL Runtime: Arenas O(1) (embebido, autocontenido) --- */
 typedef struct SilArenaBloque_ {
@@ -261,8 +299,10 @@ if (!dest || !host || !pto) return 0;
 sep = strrchr(dest, ':'); if (!sep || sep == dest || !sep[1]) return 0;
 lh = (unsigned long)(sep - dest); lp = (unsigned long)strlen(sep + 1);
 if (lh + 1 > hn || lp + 1 > pn) return 0;
-for (i = 0; i < lh; i++) host[i] = dest[i]; host[lh] = 0;
-for (i = 0; i < lp; i++) pto[i] = sep[1+i]; pto[lp] = 0;
+for (i = 0; i < lh; i++) host[i] = dest[i];
+host[lh] = 0;
+for (i = 0; i < lp; i++) pto[i] = sep[1+i];
+pto[lp] = 0;
 return 1;
 }
 static long long sil_red_enviar_(const char *dest, const unsigned char *datos, unsigned long n) {
@@ -459,6 +499,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
 
     // --- 4. Ensamblar archivo ---
     let mut out = String::new();
+    out.push_str(PROLOGO_FEATURES);
     out.push_str("#include <stdio.h>\n");
     out.push_str("#include <stdlib.h>\n");
     out.push_str("#include <string.h>\n");
@@ -466,9 +507,11 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
     if usa_bool {
         out.push_str("#include <stdbool.h>\n");
     }
+    out.push_str(RUNTIME_DIAG_PUSH);
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
+    out.push_str(RUNTIME_DIAG_POP);
     out.push_str(&format!(
         "\n/* Tarea SIL: {} */\n{} {}({}) {{\n(void)__arena;\n{} }}\n",
         tarea.nombre,
@@ -504,13 +547,16 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     }
 
     let mut out = String::new();
+    out.push_str(PROLOGO_FEATURES);
     out.push_str("#include <stdio.h>\n");
     out.push_str("#include <stdlib.h>\n");
     out.push_str("#include <string.h>\n");
     out.push_str("#include <assert.h>\n");
+    out.push_str(RUNTIME_DIAG_PUSH);
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
+    out.push_str(RUNTIME_DIAG_POP);
     if con_main {
         out.push_str("static SilArena_ sil_arena_main_;\n");
         out.push_str("static SilSched_ sil_sched_main_;\n");
@@ -713,62 +759,62 @@ fn emitir_def_funcion(
             _ => {}
         }
     }
-    // Ensure entry block (first in order) gets a label.
-    if let Some(entry_bid) = bids.first() {
-        referenced.insert(*entry_bid);
-    }
+    // No se fuerza etiqueta en el bloque de entrada: si nadie salta a él
+    // (caso habitual), `blk_0:` sería una etiqueta sin uso → -Wunused-label
+    // con -Wall -Werror en gcc/clang.
     for bid_ref in &bids {
         let bid = *bid_ref;
         let n_blk = indice[&bid];
-        // Emit label only if this block is a jump target or the entry block.
+        // Etiqueta sólo si algún goto la referencia; el cuerpo se emite SIEMPRE
+        // (los bloques no referenciados se alcanzan por caída desde el anterior).
         if referenced.contains(&bid) {
-            let b: &Bloque = &tarea.bloques[bid];
             writeln!(cuerpo, "blk_{n_blk}:;").unwrap();
-            // Declarar variables locales de este bloque (las que tienen resultado).
-            for ins in &b.instrs {
-                if let Some(v) = ins.resultado {
-                    // Saltar params (ya son parámetros de función).
-                    if mapa_params.contains_key(&v) {
-                        continue;
-                    }
-                    let t = tarea.tipos.get(&v).cloned().unwrap_or(SilType::Entero64);
-                    let tc = e.tipo_c(&t)?;
-                    let n = e.var(v);
-                    writeln!(cuerpo, "    {tc} {n};").unwrap();
+        }
+        let b: &Bloque = &tarea.bloques[bid];
+        // Declarar variables locales de este bloque (las que tienen resultado).
+        for ins in &b.instrs {
+            if let Some(v) = ins.resultado {
+                // Saltar params (ya son parámetros de función).
+                if mapa_params.contains_key(&v) {
+                    continue;
+                }
+                let t = tarea.tipos.get(&v).cloned().unwrap_or(SilType::Entero64);
+                let tc = e.tipo_c(&t)?;
+                let n = e.var(v);
+                writeln!(cuerpo, "    {tc} {n};").unwrap();
+            }
+        }
+        // Emitir instrucciones.
+        for ins in &b.instrs {
+            emitir_instr(&mut e, &mapa_params, tarea, ins, &mut cuerpo, en_programa)?;
+        }
+        // Terminador.
+        match &b.terminador {
+            Terminador::Retorno(v) => {
+                if let Some(x) = v {
+                    let n = nombre_val(&e, &mapa_params, *x);
+                    writeln!(cuerpo, "    return {n};").unwrap();
+                } else {
+                    writeln!(cuerpo, "    return;").unwrap();
                 }
             }
-            // Emitir instrucciones.
-            for ins in &b.instrs {
-                emitir_instr(&mut e, &mapa_params, tarea, ins, &mut cuerpo, en_programa)?;
+            Terminador::Salto(d) => {
+                writeln!(cuerpo, "    goto blk_{};", indice[d]).unwrap();
             }
-            // Terminador.
-            match &b.terminador {
-                Terminador::Retorno(v) => {
-                    if let Some(x) = v {
-                        let n = nombre_val(&e, &mapa_params, *x);
-                        writeln!(cuerpo, "    return {n};").unwrap();
-                    } else {
-                        writeln!(cuerpo, "    return;").unwrap();
-                    }
-                }
-                Terminador::Salto(d) => {
-                    writeln!(cuerpo, "    goto blk_{};", indice[d]).unwrap();
-                }
-                Terminador::Rama {
-                    cond,
-                    entonces,
-                    sino,
-                } => {
-                    let c = nombre_val(&e, &mapa_params, *cond);
-                    writeln!(
-                        cuerpo,
-                        "    if ({c}) goto blk_{}; else goto blk_{};",
-                        indice[entonces], indice[sino],
-                    )
-                    .unwrap();
-                }
-                Terminador::Inalcanzable => {}
+            Terminador::Rama {
+                cond,
+                entonces,
+                sino,
+            } => {
+                let c = nombre_val(&e, &mapa_params, *cond);
+                writeln!(
+                    cuerpo,
+                    "    if ({c}) goto blk_{}; else goto blk_{};",
+                    indice[entonces], indice[sino],
+                )
+                .unwrap();
             }
+            Terminador::Inalcanzable => {}
         }
     }
 
@@ -840,26 +886,26 @@ fn emitir_instr(
                     OpArit::Add => {
                         writeln!(
                             cuerpo,
-                            "    {n} = (Entero64)((uint64_t){l} + (uint64_t){r});"
+                            "    {n} = (int64_t)((uint64_t){l} + (uint64_t){r});"
                         )
                         .unwrap();
                     }
                     OpArit::Sub => {
                         writeln!(
                             cuerpo,
-                            "    {n} = (Entero64)((uint64_t){l} - (uint64_t){r});"
+                            "    {n} = (int64_t)((uint64_t){l} - (uint64_t){r});"
                         )
                         .unwrap();
                     }
                     OpArit::Mul => {
                         writeln!(
                             cuerpo,
-                            "    {n} = (Entero64)((uint64_t){l} * (uint64_t){r});"
+                            "    {n} = (int64_t)((uint64_t){l} * (uint64_t){r});"
                         )
                         .unwrap();
                     }
                     OpArit::Div => {
-                        writeln!(cuerpo, "    if ({r} == 0 || ({l} == (Entero64)INT64_MIN && {r} == -1)) abort();").unwrap();
+                        writeln!(cuerpo, "    if ({r} == 0 || ({l} == (int64_t)INT64_MIN && {r} == -1)) abort();").unwrap();
                         writeln!(cuerpo, "    {n} = {l} / {r};").unwrap();
                     }
                 }
@@ -1123,8 +1169,12 @@ mod tests {
     }
 
     fn compila_gcc(codigo: &str) -> Result<(), String> {
+        // Nombre único: los tests corren en paralelo dentro del mismo proceso,
+        // un nombre fijo por PID provoca carreras (uno borra el .c del otro).
+        static CONTADOR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = CONTADOR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut path = std::env::temp_dir();
-        path.push(format!("sil_test_{}.c", std::process::id()));
+        path.push(format!("sil_test_{}_{}.c", std::process::id(), n));
         std::fs::write(&path, codigo).map_err(|e| e.to_string())?;
         let out = std::process::Command::new("gcc")
             .args(["-std=c99", "-Wall", "-Wextra", "-Werror", "-fsyntax-only"])
@@ -1251,9 +1301,30 @@ mod tests {
     #[test]
     fn ramas_con_goto_real() {
         // Terminadores Rama/Salto emiten goto con etiquetas, no TODO.
+        // Y un bloque sin gotos hacia él no lleva etiqueta (evita -Wunused-label).
         let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
         let c = emitir(&ir).unwrap();
         assert!(!c.contains("TODO(M6)"), "queda TODO:\n{c}");
-        assert!(c.contains("blk_0:"), "sin etiqueta de bloque:\n{c}");
+        assert!(c.contains("return x;"), "cuerpo no emitido:\n{c}");
+        assert!(!c.contains("blk_0:"), "etiqueta sin uso:\n{c}");
+    }
+
+    #[test]
+    fn aritmetica_emite_casts_c() {
+        // Los casts deben ser de tipos C, no del lenguaje SIL (Entero64 no existe en C).
+        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    let y: Entero64 = x * 2\n    retornar x + y\n");
+        let c = emitir(&ir).unwrap();
+        assert!(!c.contains("(Entero64)"), "cast a tipo SIL:\n{c}");
+        assert!(c.contains("(int64_t)"), "sin cast C:\n{c}");
+    }
+
+    #[test]
+    fn prologo_posix_antes_de_includes() {
+        // Bajo -std=c99 estricto hacen falta las feature macros POSIX.
+        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let c = emitir(&ir).unwrap();
+        let pos = c.find("_POSIX_C_SOURCE").expect("sin _POSIX_C_SOURCE");
+        let inc = c.find("#include").expect("sin include");
+        assert!(pos < inc, "feature macro después de un include:\n{c}");
     }
 }

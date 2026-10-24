@@ -60,8 +60,11 @@ static _Thread_local SilScheduler *sched_actual_tls = 0;
 #endif
 
 /* Forward declarations */
+#if defined(_WIN32)
 static void fibra_trampolin_win(void *param);
+#else
 static void fibra_trampolin_posix(void);
+#endif
 
 #if defined(_WIN32)
 static void __stdcall fibra_trampolin_win(LPVOID param) {

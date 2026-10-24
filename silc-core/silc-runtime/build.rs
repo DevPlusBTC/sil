@@ -19,7 +19,14 @@ fn main() {
     if target.contains("msvc") {
         build.flag("/O2").flag("/W0");
     } else {
-        build.flag("-std=c99").flag("-O2").flag("-Wall");
+        // `_GNU_SOURCE` antes de cualquier header: con -std=c99 (__STRICT_ANSI__)
+        // glibc no declara sigset_t / AT_FDCWD / struct addrinfo, y liburing.h
+        // (y getaddrinfo/clock_gettime en el resto de sil-rt) fallan al compilar.
+        build
+            .flag("-D_GNU_SOURCE")
+            .flag("-std=c99")
+            .flag("-O2")
+            .flag("-Wall");
     }
 
     build.compile("sil_rt");
