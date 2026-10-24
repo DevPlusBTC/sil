@@ -89,13 +89,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -e
-          # Diagnosticar e instalar clang si no está disponible
+          # Instalar clang probando varias versiones disponibles en Ubuntu 24.04
           if ! command -v clang &> /dev/null; then
             echo "clang no encontrado, instalando..."
-            sudo apt-get update -qq && sudo apt-get install -y -qq clang || {
-              echo "Falló instalación de clang, intentando clang-14..."
-              sudo apt-get install -y -qq clang-14 && sudo ln -sf /usr/bin/clang-14 /usr/local/bin/clang
-            }
+            sudo apt-get update -qq && sudo apt-get install -y -qq clang-18 2>/dev/null ||             sudo apt-get install -y -qq clang-17 2>/dev/null ||             sudo apt-get install -y -qq clang-16 2>/dev/null ||             sudo apt-get install -y -qq clang-15 2>/dev/null ||             sudo apt-get install -y -qq clang-14 2>/dev/null ||             sudo apt-get install -y -qq clang
+            # Crear symlink genérico 'clang' que apunte a la versión instalada
+            for v in 18 17 16 15 14; do
+              if command -v clang-$v &> /dev/null; then
+                sudo ln -sf /usr/bin/clang-$v /usr/local/bin/clang
+                break
+              fi
+            done
           fi
           which clang
           clang --version
