@@ -14,7 +14,11 @@
 #include <signal.h>
 #include <fcntl.h>
 
-#if defined(__linux__) && defined(__has_include)
+/* io_uring es opt-in: se activa compilando con -DSIL_IO_URING (o
+ * SIL_IO_URING=1 en el entorno de cargo). Por defecto se usa pread/pwrite,
+ * así el build no depende de liburing ni de los macros POSIX de cada distro.
+ */
+#if defined(__linux__) && defined(SIL_IO_URING) && defined(__has_include)
 #if __has_include(<liburing.h>)
 #include <liburing.h>
 #define SIL_AIO_USAR_IO_URING 1

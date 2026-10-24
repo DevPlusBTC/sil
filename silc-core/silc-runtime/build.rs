@@ -16,6 +16,12 @@ fn main() {
         .warnings(false);
 
     let target = std::env::var("TARGET").unwrap_or_default();
+    // io_uring opt-in: `SIL_IO_URING=1` al compilar activa la ruta io_uring
+    // (requiere liburing-dev). Sin la variable se usa pread/pwrite.
+    if std::env::var("SIL_IO_URING").is_ok() {
+        build.define("SIL_IO_URING", None);
+        println!("cargo:rerun-if-env-changed=SIL_IO_URING");
+    }
     if target.contains("msvc") {
         build.flag("/O2").flag("/W0");
     } else {
