@@ -73,6 +73,12 @@ jobs:
         run: cargo test -p silc-runtime -p silc-test --locked
         working-directory: silc-core
 
+      # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
+      # Si alguien añade tests y no lo regenera, este paso falla con el total real.
+      - name: Docs al día (conteos de tests)
+        if: runner.os == 'Linux'
+        run: python3 scripts/test_counts.py --check
+
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
         working-directory: silc-core

@@ -28,6 +28,10 @@
   cuando un target falla.
 
 ### Añadido
+- `scripts/test_counts.py`: cuenta los tests reales (`cargo test --workspace
+  --no-run --message-format=json` + `--list` por binario, más los `def test_` de
+  los scripts Python) y reescribe los conteos en README, SPEC y WHITE_PAPER.
+  `--check` falla si hay deriva; la CI lo ejecuta en el job de Linux.
 - Sub-arenas cíclicas en `sil-rt` (`sil_arena_ciclo_*`): pila de 16 ciclos
   anidados, reclamo O(1) en bytes y contabilidad de bytes por ciclo. Cuatro
   tests FFI nuevos en `silc-runtime` (anidamiento, reclamo/reuso de offset,

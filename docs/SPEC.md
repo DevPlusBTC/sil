@@ -206,4 +206,24 @@ Emite SMT-LIB2 (QF_LIA):
 
 ---
 
+## 9. Tests por crate (autogenerado)
+
+Conteo generado con `python3 scripts/test_counts.py`; la CI ejecuta
+`--check` y falla si los documentos quedan desfasados.
+
+<!-- generado-por: scripts/test_counts.py -->
+| Crate | Tests |
+|---|---|
+| `silc-backend` | 23 |
+| `silc-causal-ir` | 33 |
+| `silc-cli` | 17 |
+| `silc-contracts` | 17 |
+| `silc-frontend` | 30 |
+| `silc-runtime` | 8 |
+| `silc-test` | 39 |
+| **Total** | **167** |
+<!-- /generado -->
+
+---
+
 *Ver [WHITE_PAPER.md](WHITE_PAPER.md) para especificación completa aspiracional (EAL7, TPM, eBPF, GPU, etc.)*
