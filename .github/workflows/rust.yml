@@ -89,10 +89,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -e
-          # clang no siempre está en el PATH del runner; instalar si falta
-          if ! command -v clang &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y clang
-          fi
+          # Instalar clang si no está (ubuntu-latest puede no tenerlo en PATH)
+          sudo apt-get update && sudo apt-get install -y clang
           mkdir -p _examples
           for f in examples/*.sil; do
             ./silc-core/target/debug/silc.exe build "$f" --target c99 -o "_examples/$(basename $f .sil).c" >/dev/null
