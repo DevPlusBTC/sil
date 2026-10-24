@@ -90,10 +90,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install CMake
-        uses: lukka/get-cmake@v3
-        with:
-          cmake-version: '3.25.0'
+      # cmake viene preinstalado en ubuntu-latest (z3-sys lo necesita).
+      - name: Versión de CMake
+        run: cmake --version
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -204,14 +203,14 @@ jobs:
 
       - name: Build 1 (locked, frozen)
         run: |
-          cargo build --locked --frozen -p silc-cli --release
+          cargo build --locked -p silc-cli --release
           sha256sum target/release/silc | tee /tmp/hash1.txt
         working-directory: silc-core
 
       - name: Limpiar y Build 2
         run: |
           cargo clean -p silc-cli
-          cargo build --locked --frozen -p silc-cli --release
+          cargo build --locked -p silc-cli --release
           sha256sum target/release/silc | tee /tmp/hash2.txt
         working-directory: silc-core
 
