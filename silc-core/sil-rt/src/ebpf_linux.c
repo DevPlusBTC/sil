@@ -11,7 +11,11 @@
 #include <stdint.h>
 #include <errno.h>
 
-#if defined(__linux__)
+/* eBPF es opt-in: se compila con -DSIL_EBPF (o SIL_EBPF=1 en el entorno de
+ * cargo) y requiere libbpf-dev. Sin la macro se emiten los stubs de abajo:
+ * el runtime compila en cualquier Linux sin headers de libbpf.
+ */
+#if defined(__linux__) && defined(SIL_EBPF)
 #include <unistd.h>
 #include <sys/resource.h>
 #include <sys/utsname.h>

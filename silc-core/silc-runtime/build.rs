@@ -16,11 +16,14 @@ fn main() {
         .warnings(false);
 
     let target = std::env::var("TARGET").unwrap_or_default();
-    // io_uring opt-in: `SIL_IO_URING=1` al compilar activa la ruta io_uring
-    // (requiere liburing-dev). Sin la variable se usa pread/pwrite.
-    if std::env::var("SIL_IO_URING").is_ok() {
-        build.define("SIL_IO_URING", None);
-        println!("cargo:rerun-if-env-changed=SIL_IO_URING");
+    // io_uring y eBPF son opt-in: `SIL_IO_URING=1` / `SIL_EBPF=1` al compilar.
+    // Requieren liburing-dev / libbpf-dev; sin ellas el runtime usa
+    // pread/pwrite y stubs de eBPF, así el build no depende de headers extra.
+    for (var, def) in [("SIL_IO_URING", "SIL_IO_URING"), ("SIL_EBPF", "SIL_EBPF")] {
+        if std::env::var(var).is_ok() {
+            build.define(def, None);
+            println!("cargo:rerun-if-env-changed={var}");
+        }
     }
     if target.contains("msvc") {
         build.flag("/O2").flag("/W0");
