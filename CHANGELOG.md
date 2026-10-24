@@ -38,7 +38,7 @@
 - `WHITE_PAPER` recupera las secciones que decían «ver versión anterior» (EBNF
   implementado, ADTs, contratos SMT, arenas) y corrige el estado real: eBPF y
   io_uring opt-in, TPM sólo Windows, fibras POSIX, sub-arenas cíclicas sin
-  implementar, 163 tests.
+  implementar, 167 tests.
 
 ### Corregido (v0.1.0)
 - `silc build` emite una biblioteca (sin `main`/`start`) cuando la última tarea

@@ -34,7 +34,7 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Totales** | **163/163 Rust + 31 Python ✅** |
+| **Tests Totales** | **167/167 Rust + 31 Python ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
@@ -475,22 +475,24 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Compilación SIL → C99/WASM con verificación SMT (intervalos o Z3)
 - Arenas $O(1)$ con sub-arenas cíclicas y promoción zero-copy
 - Verificación de contratos (`asumir`/`demostrar`) con contraejemplos
-- Backend C99 con salida estándar (la compilación del C generado no se valida en CI)
+- Backend C99 validado: los tests compilan el C emitido con `gcc`/`clang -Wall -Wextra -Werror` en Linux y macOS
 - Backend WASM binario válido con WASI
-- CLI completo (`build`, `check`, `emit-smt`, `run`)
-- 161 tests Rust + 31 Python pasando
+- CLI completo (`build`, `check`, `emit-smt`, `run`, `lsp`)
+- 167 tests Rust + 31 Python pasando, CI verde en los 3 OS (incluye fuzz y reproducibilidad)
 - Capacidades Zero-Trust con firma HMAC-SHA256
-- TPM 2.0: tipos y framework (sin pruebas en hardware)
-- Scheduler de fibras cooperativas
+- TPM 2.0: tipos y framework, sólo Windows (sin pruebas en hardware)
+- Scheduler de fibras cooperativas (Win32 Fibers / ucontext)
 - Canales lock-free SPSC y MPSC
-- E/S asíncrona con io_uring (Linux), IOCP (Windows) o `pread`/`pwrite` (POSIX sin liburing)
-- eBPF con libbpf (Linux)
+- E/S asíncrona: `pread`/`pwrite` (POSIX), IOCP (Windows); `io_uring` opt-in
+- eBPF: rama libbpf opt-in (`SIL_EBPF=1`), escrita contra libbpf 0.x
 
 **Pendiente para desarrollo:**
 - Codegen de servicios/red y eventos (el parser ya los soporta)
+- Codegen de ADTs (`estructura`/`variante`/`modelo`): hoy son metadatos del AST
 - Arenas persistentes NVM y migración lazy on-read
 - Backend SPIR-V/GPU
 - Validación del backend LLVM en CI
+- Migración de eBPF a la API de libbpf 1.x
 - Certificaciones militares (objetivos de diseño)
 
 **Siguiente paso realista:** codegen de servicios/red y NVM.
