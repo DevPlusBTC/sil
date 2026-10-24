@@ -56,9 +56,15 @@ const RUNTIME_DIAG_PUSH: &str = "\
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored \"-Wunused-function\"
+#pragma clang diagnostic ignored \"-Wunused-parameter\"
+#pragma clang diagnostic ignored \"-Wunused-variable\"
+#pragma clang diagnostic ignored \"-Wunused-but-set-variable\"
 #elif defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored \"-Wunused-function\"
+#pragma GCC diagnostic ignored \"-Wunused-parameter\"
+#pragma GCC diagnostic ignored \"-Wunused-variable\"
+#pragma GCC diagnostic ignored \"-Wunused-but-set-variable\"
 #endif
 ";
 
@@ -511,7 +517,6 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
-    out.push_str(RUNTIME_DIAG_POP);
     out.push_str(&format!(
         "\n/* Tarea SIL: {} */\n{} {}({}) {{\n(void)__arena;\n{} }}\n",
         tarea.nombre,
@@ -520,6 +525,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
         params_c,
         cuerpo
     ));
+    out.push_str(RUNTIME_DIAG_POP);
 
     // Postcondición: código generado no vacío
     ensure(!out.is_empty(), "código C generado vacío");
@@ -556,7 +562,6 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
-    out.push_str(RUNTIME_DIAG_POP);
     if con_main {
         out.push_str("static SilArena_ sil_arena_main_;\n");
         out.push_str("static SilSched_ sil_sched_main_;\n");
@@ -615,14 +620,18 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     if usa_bool {
         out.push_str("#include <stdbool.h>\n");
     }
-    for (nombre, ret_c, params_decl, cuerpo) in &defs {
+
+    // Prototipos: los wrappers de fibra y los `generar X` referencian funciones
+    // que se definen más abajo en el archivo.
+    for (nombre, ret_c, params_decl, _) in &defs {
         out.push_str(&format!(
-            "\n/* Tarea SIL: {nombre} */\n{ret_c} {}({params_decl}) {{\n(void)__arena;\n{cuerpo}}}\n",
-            c_nombre_fn(nombre),
+            "{ret_c} {}({params_decl});\n",
+            c_nombre_fn(nombre)
         ));
     }
 
-    // Wrappers de fibra para las tareas aptas.
+    // Wrappers de fibra para las tareas aptas (antes de las definiciones:
+    // `generar X` dentro de otra tarea los usa).
     if con_main {
         for nombre in &aptas {
             let f = c_nombre_fn(nombre);
@@ -630,8 +639,17 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
                 "static void sil_fibra_{f}(void *ctx) {{ (void)ctx; (void){f}(&sil_arena_main_); }}\n",
             ));
         }
+    }
 
-        // main: arena global, principal, scheduler, impresión del retorno.
+    for (nombre, ret_c, params_decl, cuerpo) in &defs {
+        out.push_str(&format!(
+            "\n/* Tarea SIL: {nombre} */\n{ret_c} {}({params_decl}) {{\n(void)__arena;\n{cuerpo}}}\n",
+            c_nombre_fn(nombre),
+        ));
+    }
+
+    // main: arena global, principal, scheduler, impresión del retorno.
+    if con_main {
         let fp = c_nombre_fn(&principal.nombre);
         let llamada = match &principal.retorno {
             SilType::Void => format!("{fp}(&sil_arena_main_);"),
@@ -663,6 +681,7 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
 
         ensure(out.contains("int main(void)"), "main no generado");
     }
+    out.push_str(RUNTIME_DIAG_POP);
     Ok(out)
 }
 
@@ -792,8 +811,14 @@ fn emitir_def_funcion(
         match &b.terminador {
             Terminador::Retorno(v) => {
                 if let Some(x) = v {
-                    let n = nombre_val(&e, &mapa_params, *x);
-                    writeln!(cuerpo, "    return {n};").unwrap();
+                    if ret_c == "void" {
+                        // Tarea sin tipo de retorno: no se puede devolver valor.
+                        let n = nombre_val(&e, &mapa_params, *x);
+                        writeln!(cuerpo, "    (void){n};\n    return;").unwrap();
+                    } else {
+                        let n = nombre_val(&e, &mapa_params, *x);
+                        writeln!(cuerpo, "    return {n};").unwrap();
+                    }
                 } else {
                     writeln!(cuerpo, "    return;").unwrap();
                 }
