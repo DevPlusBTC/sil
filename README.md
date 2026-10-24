@@ -1,6 +1,6 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Parser completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR de tareas + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) ✅ | CI verde en ubuntu/macos/windows (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas, NVM y migración = declaradas en AST, sin runtime**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Parser completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR de tareas + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) ✅ | CI verde en ubuntu/macos/windows (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas ✅ (16 niveles, reclamo O(1)); NVM y migración = declaradas en AST, sin runtime**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
@@ -67,7 +67,7 @@ silc-core/
 ├── silc-frontend/     # Lexer + Parser CNL → AST  ✅
 ├── silc-causal-ir/    # Causal-IR + SMT (Intervalos; Z3 por defecto)  ✅
 ├── silc-backend/      # Codegen C99, WASM; LLVM con feature `llvm` (sin validar en CI)  ✅
-├── silc-runtime/      # Arenas O(1), Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales  ✅
+├── silc-runtime/      # Arenas O(1) + ciclos, Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales  ✅
 ├── silc-cli/          # CLI + servidor LSP (`silc lsp`, JSON-RPC sobre stdio)  ✅
 ├── silc-contracts/    # Contratos compartidos  ✅
 └── silc-test/         # Tests integración  ✅

@@ -141,7 +141,23 @@ pub struct SilArena {
     pub asignado_total: size_t,
     pub ciclo_actual: u32,
     pub ciclo_contador: u32,
+    pub ciclos: [SilArenaCiclo; SIL_ARENA_MAX_CICLOS],
+    pub ciclos_abiertos: u32,
 }
+
+/// Espejo de `SilArenaCiclo` (sil-rt/include/sil_arena.h). Debe mantener el
+/// layout exacto: el struct se devuelve por valor desde C.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SilArenaCiclo {
+    pub bloque: *mut SilArenaBloque,
+    pub usado: size_t,
+    pub id: u32,
+    pub bytes: size_t,
+}
+
+/// Pila máxima de ciclos anidados (SIL_ARENA_MAX_CICLOS en el header).
+pub const SIL_ARENA_MAX_CICLOS: usize = 16;
 
 #[repr(C)]
 pub struct SilArenaBloque {
@@ -803,5 +819,112 @@ mod tests_capacidad {
         let rc = unsafe { sil_cap_validar(&cap.inner, c_recurso.as_ptr(), LEER_ARCHIVO.0, 0) };
         assert_ne!(rc, 0);
         std::env::remove_var("SIL_CAP_KEY");
+    }
+}
+
+/// Tests FFI de sub-arenas ciclicas: ejercitan el C real (arena.c), no mocks.
+#[cfg(test)]
+mod tests_arena_ciclos {
+    use super::*;
+
+    unsafe fn asignar(arena: *mut SilArena, n: usize) -> *mut u8 {
+        sil_arena_asignar(arena, n, 8) as *mut u8
+    }
+
+    #[test]
+    fn ciclo_reclama_en_o1_y_reutiliza_el_offset() {
+        unsafe {
+            let mut arena = sil_arena_crear(1024);
+            let p1 = asignar(&mut arena, 32);
+            assert!(!p1.is_null());
+
+            let c = sil_arena_ciclo_iniciar(&mut arena);
+            assert_ne!(c, 0, "debe abrir un ciclo");
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), c);
+
+            let p2 = asignar(&mut arena, 64);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c), 64);
+
+            sil_arena_ciclo_finalizar(&mut arena);
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), 0);
+            // El ciclo cerrado ya no reporta bytes: su memoria fue reclamada.
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c), 0);
+
+            // El offset volvio a la marca: la siguiente asignacion reusa p2.
+            let p3 = asignar(&mut arena, 64);
+            assert_eq!(p3, p2, "finalizar debe restaurar el offset de la marca");
+
+            // Lo asignado antes del ciclo sigue intacto.
+            assert_eq!(
+                p1,
+                arena
+                    .inicio
+                    .cast::<SilArenaBloque>()
+                    .as_ref()
+                    .unwrap()
+                    .memoria
+            );
+            sil_arena_destruir(&mut arena);
+        }
+    }
+
+    #[test]
+    fn ciclos_anidados_conservan_la_contabilidad_exterior() {
+        unsafe {
+            let mut arena = sil_arena_crear(4096);
+
+            let c1 = sil_arena_ciclo_iniciar(&mut arena);
+            let _ = asignar(&mut arena, 16);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c1), 16);
+
+            let c2 = sil_arena_ciclo_iniciar(&mut arena);
+            assert_ne!(c2, c1);
+            let _ = asignar(&mut arena, 48);
+
+            let mut abiertos = 0u32;
+            let mut bytes_actual = 0usize;
+            sil_arena_ciclo_estadisticas(&mut arena, &mut abiertos, &mut bytes_actual);
+            assert_eq!(abiertos, 2);
+            assert_eq!(bytes_actual, 48, "el interno sólo cuenta lo suyo");
+
+            sil_arena_ciclo_finalizar(&mut arena); // cierra c2
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), c1);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c1), 16);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c2), 0);
+
+            sil_arena_ciclo_finalizar(&mut arena); // cierra c1
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), 0);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c1), 0);
+            sil_arena_destruir(&mut arena);
+        }
+    }
+
+    #[test]
+    fn finalizar_sin_ciclo_abierto_es_noop() {
+        unsafe {
+            let mut arena = sil_arena_crear(256);
+            sil_arena_ciclo_finalizar(&mut arena);
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), 0);
+            let (mut abiertos, mut bytes) = (9u32, 9usize);
+            sil_arena_ciclo_estadisticas(&mut arena, &mut abiertos, &mut bytes);
+            assert_eq!((abiertos, bytes), (0, 0));
+            sil_arena_destruir(&mut arena);
+        }
+    }
+
+    #[test]
+    fn reset_descarta_los_ciclos() {
+        unsafe {
+            let mut arena = sil_arena_crear(256);
+            let c = sil_arena_ciclo_iniciar(&mut arena);
+            let _ = asignar(&mut arena, 8);
+            sil_arena_reset(&mut arena);
+            assert_eq!(sil_arena_ciclo_actual(&mut arena), 0);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c), 0);
+            // El contador de ids es monotono: un ciclo nuevo no reusa el id.
+            let c2 = sil_arena_ciclo_iniciar(&mut arena);
+            assert!(c2 > c, "ids monotonos: {c2} debe ser > {c}");
+            sil_arena_destruir(&mut arena);
+        }
     }
 }

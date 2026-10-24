@@ -14,14 +14,13 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | Causal-IR + SMT | Listo para probar | Intervalos + Z3 |
 | Backend C99 | Listo para probar | Emite C99; los tests lo compilan con gcc/clang `-Wall -Wextra -Werror` en Linux/macOS |
 | Backend WASM | Listo para probar | Magic `\0asm` válido |
-| Runtime FFI | Listo para probar | Arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
+| Runtime FFI | Listo para probar | Arena O(1) + sub-arenas cíclicas (16 niveles), cap. HMAC, TPM 2.0, fibras, canales |
 | CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
 | Tests | Listo para probar | 163 Rust + 31 Python |
 
-**Pendiente para desarrollo:** Codegen de servicios/red, sub-arenas cíclicas
-(API declarada en `sil_arena.h`, sin implementar), arenas persistentes NVM,
+**Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM,
 migración de esquemas lazy, SPIR-V/GPU, eBPF (opt-in `SIL_EBPF=1`; la rama
 libbpf 0.x no compila con libbpf 1.x), M:N scheduler, superoptimizer,
 certificaciones militares.

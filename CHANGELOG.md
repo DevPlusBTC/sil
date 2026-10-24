@@ -27,6 +27,13 @@
 - CI de fuzz: los artefactos y los `*.log` se suben y se publican como anotación
   cuando un target falla.
 
+### Añadido
+- Sub-arenas cíclicas en `sil-rt` (`sil_arena_ciclo_*`): pila de 16 ciclos
+  anidados, reclamo O(1) en bytes y contabilidad de bytes por ciclo. Cuatro
+  tests FFI nuevos en `silc-runtime` (anidamiento, reclamo/reuso de offset,
+  `reset`, no-op sin ciclo abierto). Las funciones estaban declaradas en
+  `sil_arena.h` y sin definir en `arena.c` desde v0.1.0.
+
 ### Documentación
 - `WHITE_PAPER` recupera las secciones que decían «ver versión anterior» (EBNF
   implementado, ADTs, contratos SMT, arenas) y corrige el estado real: eBPF y

@@ -230,13 +230,35 @@ es la misma estructura, con `sil_arena_crear_` / `sil_arena_asignar_` /
 reencadena *todos* los bloques del origen al destino (promoción a nivel de
 arena, no de objeto). Es lo que usa la migración zero-cost.
 
-### 4.2 Sub-Arenas Cíclicas $O(1)$ — API declarada, sin implementación ❌
+### 4.2 Sub-Arenas Cíclicas $O(1)$ — Implementado ✅ (`sil-rt/src/arena.c`)
 
-`sil_arena.h` declara `sil_arena_ciclo_iniciar`, `sil_arena_ciclo_finalizar`,
-`sil_arena_ciclo_actual`, `sil_arena_ciclo_bytes` y
-`sil_arena_ciclo_estadisticas`, pero **ninguna está definida en `arena.c`**:
-enlazarlas hoy da `undefined reference`. El modelo de ciclos (generaciones por
-época, liberación O(1) por ciclo) está especificado pero no implementado.
+Un ciclo es una marca dentro de la arena (bloque + offset). Al cerrarlo se
+reclama todo lo asignado desde la marca: **O(1) en bytes** y O(n) en el número
+de bloques creados dentro del ciclo.
+
+```c
+uint32_t sil_arena_ciclo_iniciar(SilArena *a);      /* abre, devuelve id > 0 */
+void     sil_arena_ciclo_finalizar(SilArena *a);    /* cierra el más interno */
+uint32_t sil_arena_ciclo_actual(SilArena *a);       /* 0 si no hay ciclo abierto */
+size_t   sil_arena_ciclo_bytes(SilArena *a, uint32_t ciclo);
+void     sil_arena_ciclo_estadisticas(SilArena *a, uint32_t *abiertos, size_t *bytes);
+```
+
+Semántica exacta (verificada por 4 tests FFI en `silc-runtime`):
+
+| Aspecto | Comportamiento |
+|---|---|
+| Anidamiento | pila de hasta `SIL_ARENA_MAX_CICLOS` (16); `finalizar` cierra el más interno |
+| Ids | monótonos (`ciclo_contador`), nunca se reutilizan; `0` = sin ciclo |
+| Reclamo | restaura `actual->usado` de la marca y libera los bloques añadidos después |
+| Contabilidad | `bytes` sólo suma lo asignado dentro del ciclo; el ciclo externo conserva lo suyo |
+| Tras cerrar | `sil_arena_ciclo_bytes(id)` devuelve 0 (memoria ya reclamada) |
+| `reset` / `promover` | descartan la pila de ciclos abiertos |
+| Desbordamiento | con 16 ciclos abiertos, `iniciar` devuelve 0 y no altera la arena |
+
+El runtime embebido en el C generado (`RUNTIME_ARENA` en `silc-backend/src/c99.rs`)
+sólo lleva arena + asignación + destrucción: los ciclos son API del runtime
+nativo, no del código emitido.
 
 ### 4.3 Arenas Persistentes NVM (Zero-ORM / Zero-Database) — Pendiente para desarrollo
 
