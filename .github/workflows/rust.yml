@@ -102,9 +102,11 @@ jobs:
             exit 1
           fi
 
+          # El binario está en silc-core/target/debug/
+          BIN="$REPO_ROOT/silc-core/target/debug/silc"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN="$REPO_ROOT/silc-core/target/debug/silc.exe"; fi
+
           mkdir -p "$REPO_ROOT/_examples"
-          BIN="$REPO_ROOT/target/debug/silc"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN="$REPO_ROOT/target/debug/silc.exe"; fi
 
           for f in "${EXAMPLES[@]}"; do
             "$BIN" build "$f" --target c99 -o "$REPO_ROOT/_examples/$(basename "${f%.sil}").c" >/dev/null
