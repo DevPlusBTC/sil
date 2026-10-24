@@ -93,26 +93,23 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Raíz del repo (fuera de silc-core)
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          EXAMPLES=("$REPO_ROOT/examples"/*.sil)
+          # Los ejemplos están en la raíz del repo (../examples/*.sil desde silc-core/)
+          # El binario está en ./target/debug/silc (relativo a working-directory)
+          EXAMPLES=(../examples/*.sil)
 
           if [ "${#EXAMPLES[@]}" -eq 0 ]; then
-            echo "No hay archivos .sil en $REPO_ROOT/examples"
+            echo "No hay archivos .sil en ../examples"
             exit 1
           fi
 
-          # El binario está en silc-core/target/debug/
-          BIN="$REPO_ROOT/silc-core/target/debug/silc"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then BIN="$REPO_ROOT/silc-core/target/debug/silc.exe"; fi
-
-          mkdir -p "$REPO_ROOT/_examples"
+          mkdir -p _examples
+          BIN="./target/debug/silc"
 
           for f in "${EXAMPLES[@]}"; do
-            "$BIN" build "$f" --target c99 -o "$REPO_ROOT/_examples/$(basename "${f%.sil}").c" >/dev/null
+            "./target/debug/silc" build "$f" --target c99 -o "_examples/$(basename "${f%.sil}").c" >/dev/null
           done
 
-          for f in "$REPO_ROOT/_examples"/*.c; do
+          for f in _examples/*.c; do
             gcc -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
             if command -v clang >/dev/null 2>&1; then
               clang -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
