@@ -38,6 +38,9 @@ struct Ctx {
     arenas: slotmap::SlotMap<ArenaId, ArenaInfo>,
     arena_local: ArenaId,
     vars: HashMap<String, ValueId>,
+    /// Tipo de retorno de la tarea que se está bajando (None = Void).
+    /// Necesario para rechazar `retornar X` en tareas void (F3).
+    retorno: SilType,
 }
 
 impl Ctx {
@@ -50,6 +53,7 @@ impl Ctx {
         });
         bloques[entrada].id = entrada;
         let mut arenas = slotmap::SlotMap::with_key();
+        let retorno = SilType::Void;
         let arena_local = arenas.insert(ArenaInfo {
             kind: ArenaKind::TareaLocal,
             nombre: "arena_tarea".into(),
@@ -62,6 +66,7 @@ impl Ctx {
             arenas,
             arena_local,
             vars: HashMap::new(),
+            retorno,
         }
     }
 
@@ -366,6 +371,12 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
                 Some(e) => Some(bajar_expr(ctx, e)?),
                 None => None,
             };
+            // F3: `retornar X` en una tarea `void` es un error, no un (void)X silencioso.
+            if v.is_some() && ctx.retorno == SilType::Void {
+                return Err(ErrorBajada::TipoNoSoportado(
+                    "retornar valor en tarea void: la tarea no tiene tipo de retorno".into(),
+                ));
+            }
             ctx.emitir(InstrCausal {
                 resultado: None,
                 op: Operacion::Retornar { valor: v },
@@ -606,6 +617,10 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
     require_valid_ident(&tarea.nombre.nombre, 64, "identificador de tarea inválido");
 
     let mut ctx = Ctx::new();
+    ctx.retorno = match &tarea.retorno {
+        Some(t) => bajar_tipo(t)?,
+        None => SilType::Void,
+    };
 
     // 1. Parámetros → nodos Param + registro en vars.
     let mut params = Vec::new();
@@ -652,11 +667,7 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         })
         .collect();
 
-    // 5. Tipo de retorno.
-    let retorno = match &tarea.retorno {
-        Some(t) => bajar_tipo(t)?,
-        None => SilType::Void,
-    };
+    // 5. Tipo de retorno (ya calculado en ctx al iniciar, para F3).
 
     // 6. Recolectar tipos/nombres.
     let mut tipos = HashMap::new();
@@ -667,7 +678,7 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
     let ir = TareaIR {
         nombre: tarea.nombre.nombre.clone(),
         params,
-        retorno,
+        retorno: ctx.retorno,
         bloques: ctx.bloques,
         entrada: ctx.actual,
         tipos,
@@ -714,6 +725,29 @@ mod tests {
     use super::*;
     use silc_frontend::lexer::lexear;
     use silc_frontend::parser::parsear;
+
+    #[test]
+    fn rechaza_retornar_en_void() {
+        let src = "definir tarea f():\n    let x: Entero64 = 1\n    retornar x\n";
+        let prog = parsear(&lexear(src)).expect("parse OK");
+        let A::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
+        let r = bajar_tarea(t);
+        assert!(r.is_err(), "retornar X en void debe fallar, no silenciar");
+    }
+
+    #[test]
+    fn permite_retornar_sin_expr_en_void() {
+        let src =
+            "definir tarea f():\n    asumir verdadero\n    demostrar verdadero\n    retornar\n";
+        let prog = parsear(&lexear(src)).expect("parse OK");
+        let A::Decl::Tarea(t) = &prog.defs[0] else {
+            panic!()
+        };
+        let ir = bajar_tarea(t).expect("lower OK");
+        assert_eq!(ir.retorno, SilType::Void);
+    }
 
     fn bajar(src: &str) -> TareaIR {
         let prog = parsear(&lexear(src)).expect("parse OK");

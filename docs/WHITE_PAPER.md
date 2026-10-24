@@ -34,7 +34,7 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Totales** | **167/167 Rust + 31 Python ✅** |
+| **Tests Totales** | **169/169 Rust + 31 Python ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
@@ -478,7 +478,7 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Backend C99 validado: los tests compilan el C emitido con `gcc`/`clang -Wall -Wextra -Werror` en Linux y macOS
 - Backend WASM binario válido con WASI
 - CLI completo (`build`, `check`, `emit-smt`, `run`, `lsp`)
-- 167 tests Rust + 31 Python pasando, CI verde en los 3 OS (incluye fuzz y reproducibilidad)
+- 169 tests Rust + 31 Python pasando, CI verde en los 3 OS (incluye fuzz y reproducibilidad)
 - Capacidades Zero-Trust con firma HMAC-SHA256
 - TPM 2.0: tipos y framework, sólo Windows (sin pruebas en hardware)
 - Scheduler de fibras cooperativas (Win32 Fibers / ucontext)

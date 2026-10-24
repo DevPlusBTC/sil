@@ -8,7 +8,7 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Rust** | **167/167 ✅** |
+| **Tests Rust** | **169/169 ✅** |
 | **Tests Python** | **31/31 ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
