@@ -3,6 +3,37 @@
 ## Unreleased
 
 ### Corregido
+- CI: el job `build+test` ahora pasa en las tres plataformas. Causas reales:
+  - `-std=c99` estricto ocultaba `sigset_t`/`AT_FDCWD`/`struct timespec`/
+    `getaddrinfo`; se define `_GNU_SOURCE` en `silc-runtime/build.rs` y
+    `_POSIX_C_SOURCE 200809L` al inicio del C emitido.
+  - `ebpf_linux.c` usa la API de libbpf 0.x y no compila con libbpf 1.x.
+  - `io_uring`/eBPF pasan a ser opt-in (`SIL_IO_URING=1`, `SIL_EBPF=1`): el
+    build por defecto ya no necesita `liburing-dev` ni `libbpf-dev`.
+  - `fiber.c` declaraba el trampolín Win32 también en POSIX (`-Wunused-function`).
+- Backend C99: `(Entero64)` sustituido por `(int64_t)` en `BinOpSegura` (no
+  compilaba: `Entero64` no existe en C); se emiten etiquetas `blk_N` sólo si
+  algún `goto` las referencia y el cuerpo del bloque se emite siempre (antes los
+  bloques sin `goto` perdían instrucciones); `retornar X` en tarea `void` emite
+  `(void)X; return;`.
+- Backend C99: prototipos de todas las tareas y wrappers `sil_fibra_*` antes de
+  las definiciones (`generar X` usaba un wrapper no declarado).
+- Tests C99: nombre de archivo temporal único por test (los tests en paralelo se
+  pisaban el `.c`).
+- CI: `lukka/get-cmake@v3` no existe (el job `smt` nunca arrancaba); el job de
+  reproducibilidad usaba `--frozen` sin cache de crates; el job de fuzz elegía
+  la toolchain estable de `rust-toolchain.toml` y fallaba con
+  “the option `Z` is only accepted on the nightly compiler”.
+- CI de fuzz: los artefactos y los `*.log` se suben y se publican como anotación
+  cuando un target falla.
+
+### Documentación
+- `WHITE_PAPER` recupera las secciones que decían «ver versión anterior» (EBNF
+  implementado, ADTs, contratos SMT, arenas) y corrige el estado real: eBPF y
+  io_uring opt-in, TPM sólo Windows, fibras POSIX, sub-arenas cíclicas sin
+  implementar, 163 tests.
+
+### Corregido (v0.1.0)
 - `silc build` emite una biblioteca (sin `main`/`start`) cuando la última tarea
   tiene parámetros, en vez de abortar.
 - `silc run` detecta bibliotecas y falla con un mensaje claro.

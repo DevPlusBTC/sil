@@ -12,15 +12,19 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 |------------|--------------|-------|
 | Frontend (Lexer/Parser CNL) | Listo para probar | Crate del workspace |
 | Causal-IR + SMT | Listo para probar | Intervalos + Z3 |
-| Backend C99 | Listo para probar | Emite C99 válido |
+| Backend C99 | Listo para probar | Emite C99; los tests lo compilan con gcc/clang `-Wall -Wextra -Werror` en Linux/macOS |
 | Backend WASM | Listo para probar | Magic `\0asm` válido |
 | Runtime FFI | Listo para probar | Arena O(1), cap. HMAC, TPM 2.0, fibras, canales |
 | CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
-| Tests | Listo para probar | 161 Rust + 31 Python |
+| Tests | Listo para probar | 163 Rust + 31 Python |
 
-**Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM, migración de esquemas lazy, SPIR-V/GPU, eBPF (runtime Linux ya implementado; sin soporte en Windows), M:N scheduler, superoptimizer, certificaciones militares.
+**Pendiente para desarrollo:** Codegen de servicios/red, sub-arenas cíclicas
+(API declarada en `sil_arena.h`, sin implementar), arenas persistentes NVM,
+migración de esquemas lazy, SPIR-V/GPU, eBPF (opt-in `SIL_EBPF=1`; la rama
+libbpf 0.x no compila con libbpf 1.x), M:N scheduler, superoptimizer,
+certificaciones militares.
 
 ---
 
@@ -111,7 +115,7 @@ silc build prog.sil --target c99 -o prog.c
 ```
 - Emite C99. `silc build --cc` compila con `-std=c99 -O2 -Wall`; `silc run` con `-std=c99 -O2`
 - Runtime embebido: `sil_arena_*`, tipos `SilTexto_`, `SilCap_`, `Entero64`
-- Pensado para GCC/Clang; la compilación no se valida en CI (los runners no traen compilador C)
+- Pensado para GCC/Clang; los tests compilan el C emitido con `-std=c99 -Wall -Wextra -Werror` en Linux y macOS (en Windows se saltan: no hay `gcc`)
 - Sin `main` si la última tarea tiene parámetros: se emite una biblioteca
 
 ### 4.2 Target WASM (`--target wasm`)

@@ -1,6 +1,6 @@
 # SIL - Source Implementation Language
 
-**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Frontend completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras + Canales + TPM 2.0 + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | LLVM = implementado sin validar en CI | eBPF = runtime Linux ✅ | migración = metadatos AST/parser ⚠️**
+**Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Parser completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR de tareas + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) ✅ | CI verde en ubuntu/macos/windows (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas, NVM y migración = declaradas en AST, sin runtime**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
@@ -8,12 +8,12 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Rust** | **161/161 ✅** |
+| **Tests Rust** | **163/163 ✅** |
 | **Tests Python** | **31/31 ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |
-| **Próximo hito** | Codegen de servicios/red; validar LLVM en CI |
+| **Próximo hito** | Codegen de servicios/red; decidir LLVM (job de CI o experimental); validar eBPF con libbpf 1.x |
 
 ---
 
