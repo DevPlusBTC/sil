@@ -89,9 +89,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -e
-          # Instalar clang (ubuntu-latest 24.04 noble: clang-18 en universe)
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq clang
+          # Ubuntu 24.04 (noble) instala clang-18 en /usr/lib/llvm-18/bin/clang
+          # Añadir al PATH para que `clang` esté disponible
+          export PATH="/usr/lib/llvm-18/bin:$PATH"
+          # Verificar que clang existe
+          if ! command -v clang &> /dev/null; then
+            echo "clang no encontrado en PATH, intentando instalar..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq clang
+          fi
           which clang
           clang --version
           mkdir -p _examples
