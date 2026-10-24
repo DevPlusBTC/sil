@@ -95,7 +95,7 @@ jobs:
           done
           for f in _examples/*.c; do
             gcc -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
-            clang-14 -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
+            clang -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
           done
         working-directory: silc-core
 
