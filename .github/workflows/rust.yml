@@ -186,6 +186,18 @@ jobs:
             silc-core/silc-frontend/fuzz/*.log
           if-no-files-found: warn
 
+      # Las anotaciones del run sí son públicas: se publica el final de cada log
+      # como ::error:: para poder diagnosticar sin token de GitHub.
+      - name: Publicar salida de fuzz en anotaciones
+        if: failure()
+        shell: bash
+        run: |
+          for f in silc-core/silc-frontend/fuzz/*.log; do
+            [ -f "$f" ] || continue
+            msg=$(tail -c 1200 "$f" | tr '\r' ' ' | tr '\n' '|' | sed 's/%/%25/g')
+            echo "::error title=fuzz $(basename "$f")::${msg}"
+          done
+
   # --- 5. Python prototipo (no romper Fase -1) ---
   python-proto:
     name: python prototipo (31 tests)
