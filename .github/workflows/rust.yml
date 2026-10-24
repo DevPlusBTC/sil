@@ -153,27 +153,38 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
-      # Si un target encuentra un crash, libFuzzer deja el input en artifacts/.
-      # Se sube para poder reproducirlo sin acceso a los logs del runner.
+      # Si un target falla, se suben el input del crash (artifacts/) y la salida
+      # completa (*.log) para poder reproducirlo sin acceso a los logs del runner.
+      - name: Run fuzz lexer (30s)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fuzz run fuzz_lexer -- -max_total_time=30 2>&1 | tee fuzz_lexer.log
+        working-directory: silc-core/silc-frontend/fuzz
+
+      - name: Run fuzz parser (30s)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fuzz run fuzz_parser -- -max_total_time=30 2>&1 | tee fuzz_parser.log
+        working-directory: silc-core/silc-frontend/fuzz
+
+      - name: Run fuzz roundtrip (30s)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo fuzz run fuzz_roundtrip -- -max_total_time=30 2>&1 | tee fuzz_roundtrip.log
+        working-directory: silc-core/silc-frontend/fuzz
+
       - name: Subir artefactos de fuzz
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-artifacts
-          path: silc-core/silc-frontend/fuzz/artifacts
+          path: |
+            silc-core/silc-frontend/fuzz/artifacts
+            silc-core/silc-frontend/fuzz/*.log
           if-no-files-found: warn
-
-      - name: Run fuzz lexer (30s)
-        run: cargo fuzz run fuzz_lexer -- -max_total_time=30
-        working-directory: silc-core/silc-frontend/fuzz
-
-      - name: Run fuzz parser (30s)
-        run: cargo fuzz run fuzz_parser -- -max_total_time=30
-        working-directory: silc-core/silc-frontend/fuzz
-
-      - name: Run fuzz roundtrip (30s)
-        run: cargo fuzz run fuzz_roundtrip -- -max_total_time=30
-        working-directory: silc-core/silc-frontend/fuzz
 
   # --- 5. Python prototipo (no romper Fase -1) ---
   python-proto:
