@@ -83,9 +83,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
         working-directory: silc-core
 
-      # V1: validar que los 13 ejemplos compilan con gcc/clang -Werror
+      # V1: validar que los ejemplos válidos compilan con gcc/clang -Werror
       # Reusa el target caliente del build-test.
-      - name: Validar ejemplos C99 (gcc/clang)
+      - name: Validar ejemplos C99 (solo ejemplos válidos)
         if: runner.os == 'Linux'
         shell: bash
         working-directory: silc-core
@@ -93,12 +93,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Los ejemplos están en la raíz del repo (../examples/*.sil desde silc-core/)
-          # El binario está en ./target/debug/silc (relativo a working-directory)
-          EXAMPLES=(../examples/*.sil)
+          # Ejemplos válidos están en ../examples/valid/
+          EXAMPLES=(../examples/valid/*.sil)
 
           if [ "${#EXAMPLES[@]}" -eq 0 ]; then
-            echo "No hay archivos .sil en ../examples"
+            echo "No hay archivos .sil en ../examples/valid"
             exit 1
           fi
 
@@ -115,6 +114,38 @@ jobs:
               clang -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
             fi
           done
+
+      # V1b: validar que los ejemplos inválidos fallan como se espera
+      - name: Validar ejemplos inválidos (deben fallar)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: silc-core
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Ejemplos inválidos están en ../examples/invalid/
+          INVALID_EXAMPLES=(../examples/invalid/*.sil)
+
+          if [ "${#INVALID_EXAMPLES[@]}" -eq 0 ]; then
+            echo "No hay archivos .sil en ../examples/invalid"
+            exit 1
+          fi
+
+          mkdir -p _examples_invalid
+          BIN="./target/debug/silc"
+
+          for f in "${INVALID_EXAMPLES[@]}"; do
+            echo "Validando que $f falle como se espera..."
+            if "$BIN" build "$f" --target c99 -o "/dev/null" 2>&1; then
+              echo "ERROR: $f debería haber fallado pero compiló exitosamente"
+              exit 1
+            fi
+            echo "OK: $f falló como se esperaba"
+          done
+
+          echo "Todos los ejemplos inválidos fallaron como se esperaba"
+
 
   # --- 3. Feature SMT (Z3) - requiere Python + CMake ---
   smt-test:
