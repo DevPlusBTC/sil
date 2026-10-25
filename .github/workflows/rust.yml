@@ -287,7 +287,7 @@ jobs:
       - name: Install LLVM 17
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-17 llvm-17-dev clang-17 lld-17
+          sudo apt-get install -y llvm-17 llvm-17-dev clang-17 lld-17 libpolly-17-dev
           echo "/usr/lib/llvm-17/lib" | sudo tee /etc/ld.so.conf.d/llvm-17.conf
           sudo ldconfig
 
@@ -318,6 +318,24 @@ jobs:
         working-directory: silc-core
         env:
           LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+
+  # --- 4. Fuzzing (Linux only - ASan required) ---
+  fuzz:
+    name: fuzz (ubuntu-latest, nightly)
+    runs-on: ubuntu-latest
+    needs: [build-test]
+    timeout-minutes: 30
+    # El repo fija rust-toolchain.toml (stable) y el fuzz vive dentro del repo,
+    # así que rustup elegía estable y `-Zsanitizer` fallaba. La variable de
+    # entorno gana sobre el archivo de toolchain, también en los subprocesos
+    # que lanza cargo-fuzz.
+    env:
+      RUSTUP_TOOLCHAIN: nightly
+    # Si el job no necesita el backend LLVM, desactiva la feature llvm para
+    # evitar que el build falle por falta de libpolly y headers del sistema.
+    # Si se necesita el backend LLVM, descomenta el job llvm-test a continuación.
+    # Si no se necesita el backend LLVM, desactívalo descomentando la feature llvm
+    # en silc-cli/Cargo.toml y descomentando el job llvm-test a continuación.
 
   # --- 5. Python prototipo (no romper Fase -1) ---
   python-proto:
