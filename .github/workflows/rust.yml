@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - 'silc-core/**'
+      - 'examples/**'
       - '.github/workflows/rust.yml'
       - '.github/workflows/release.yml'
   pull_request:
     branches: [main]
     paths:
       - 'silc-core/**'
+      - 'examples/**'
       - '.github/workflows/rust.yml'
   workflow_dispatch:
 
