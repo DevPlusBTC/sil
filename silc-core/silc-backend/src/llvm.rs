@@ -20,6 +20,12 @@ pub enum ErrorLLVM {
     #[error("Variable no definida: {0}")]
     VariableNoDefinida(String),
 }
+impl From<inkwell::builder::BuilderError> for ErrorLLVM {
+    fn from(e: inkwell::builder::BuilderError) -> Self {
+        ErrorLLVM::Llvm(e.to_string())
+    }
+}
+
 
 /// Emite módulo LLVM IR desde TareaIR.
 pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
@@ -83,7 +89,7 @@ fn declarar_funciones_runtime(module: &Module, context: &Context) -> Result<(), 
     use inkwell::AddressSpace;
 
     // void* sil_arena_asignar(void* arena, size_t size, size_t align)
-    let ptr_type = context.ptr_type(AddressSpace::default());
+    let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
     let size_type = context.i64_type();
     let arena_alloc_type = ptr_type.fn_type(
         &[ptr_type.into(), size_type.into(), size_type.into()],
@@ -105,9 +111,7 @@ fn declarar_funciones_runtime(module: &Module, context: &Context) -> Result<(), 
     module.add_function("sil_canal_enviar", canal_enviar_type, None);
 
     // bool sil_canal_recibir(void* canal, void** msg)
-    let ptr_ptr_type = context
-        .ptr_type(AddressSpace::default())
-        .ptr_type(AddressSpace::default());
+    let ptr_ptr_type = context.i8_type().ptr_type(AddressSpace::default()).ptr_type(AddressSpace::default());
     let canal_recibir_type = bool_type.fn_type(&[ptr_type.into(), ptr_ptr_type.into()], false);
     module.add_function("sil_canal_recibir", canal_recibir_type, None);
 
@@ -252,7 +256,7 @@ fn generar_instruccion(
                 .copied()
                 .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", canal)))?;
             // Allocate space for the output pointer
-            let ptr_type = context.ptr_type(inkwell::AddressSpace::default());
+            let ptr_type = context.i8_type().ptr_type(inkwell::AddressSpace::default());
             let msg_ptr = builder.build_alloca(ptr_type, "msg_ptr")?;
             let call = builder.build_call(fn_val, &[canal_val.into(), msg_ptr.into()], "recv")?;
             if let Some(dest) = instr.resultado {
@@ -324,7 +328,7 @@ fn generar_constante(
         Entero(n) => Ok(context.i64_type().const_int(*n as u64, false).into()),
         Flotante(f) => Ok(context.f64_type().const_float(*f).into()),
         Booleano(b) => Ok(context.bool_type().const_int(*b as u64, false).into()),
-        Unit => Ok(context.void_type().const_zero().into()),
+        Unit => Ok(context.i8_type().const_int(0, false).into()), // unit placeholder
     }
 }
 
