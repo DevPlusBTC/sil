@@ -20,6 +20,7 @@ pub enum ErrorLLVM {
     #[error("Variable no definida: {0}")]
     VariableNoDefinida(String),
 }
+#[cfg(feature = "llvm")]
 impl From<inkwell::builder::BuilderError> for ErrorLLVM {
     fn from(e: inkwell::builder::BuilderError) -> Self {
         ErrorLLVM::Llvm(e.to_string())
