@@ -228,8 +228,8 @@ jobs:
         with:
           workspaces: silc-core
 
-      - name: Install cargo-fuzz (pin version)
-        run: cargo install cargo-fuzz --locked --version 0.11.6
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
 
       # Si un target falla, se suben el input del crash (artifacts/) y la salida
       # completa (*.log) para poder reproducirlo sin acceso a los logs del runner.
