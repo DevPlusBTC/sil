@@ -27,7 +27,6 @@ impl From<inkwell::builder::BuilderError> for ErrorLLVM {
     }
 }
 
-
 /// Emite módulo LLVM IR desde TareaIR.
 pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
     #[cfg(feature = "llvm")]
@@ -112,7 +111,10 @@ fn declarar_funciones_runtime(module: &Module, context: &Context) -> Result<(), 
     module.add_function("sil_canal_enviar", canal_enviar_type, None);
 
     // bool sil_canal_recibir(void* canal, void** msg)
-    let ptr_ptr_type = context.i8_type().ptr_type(AddressSpace::default()).ptr_type(AddressSpace::default());
+    let ptr_ptr_type = context
+        .i8_type()
+        .ptr_type(AddressSpace::default())
+        .ptr_type(AddressSpace::default());
     let canal_recibir_type = bool_type.fn_type(&[ptr_type.into(), ptr_ptr_type.into()], false);
     module.add_function("sil_canal_recibir", canal_recibir_type, None);
 
