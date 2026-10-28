@@ -237,21 +237,21 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          timeout 35 cargo fuzz run fuzz_lexer -- -max_total_time=30 2>&1 | tee fuzz_lexer.log
+          timeout 120 cargo fuzz run fuzz_lexer -- -max_total_time=30 2>&1 | tee fuzz_lexer.log
         working-directory: silc-core/silc-frontend/fuzz
 
       - name: Run fuzz parser (30s)
         shell: bash
         run: |
           set -o pipefail
-          timeout 35 cargo fuzz run fuzz_parser -- -max_total_time=30 2>&1 | tee fuzz_parser.log
+          timeout 120 cargo fuzz run fuzz_parser -- -max_total_time=30 2>&1 | tee fuzz_parser.log
         working-directory: silc-core/silc-frontend/fuzz
 
       - name: Run fuzz roundtrip (30s)
         shell: bash
         run: |
           set -o pipefail
-          timeout 35 cargo fuzz run fuzz_roundtrip -- -max_total_time=30 2>&1 | tee fuzz_roundtrip.log
+          timeout 120 cargo fuzz run fuzz_roundtrip -- -max_total_time=30 2>&1 | tee fuzz_roundtrip.log
         working-directory: silc-core/silc-frontend/fuzz
 
       - name: Subir artefactos de fuzz
