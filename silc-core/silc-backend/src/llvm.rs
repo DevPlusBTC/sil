@@ -319,8 +319,7 @@ mod llvm_impl {
             OpArit::Add => builder.build_int_add(l, r, "add")?.into(),
             OpArit::Sub => builder.build_int_sub(l, r, "sub")?.into(),
             OpArit::Mul => builder.build_int_mul(l, r, "mul")?.into(),
-            OpArit::Div => builder.build_int_signed_div(l, r, "div")?.into(),
-            OpArit::Mod => builder.build_int_signed_rem(l, r, "mod")?.into(),
+            OpArit::Div => builder.build_int_signed_div(l_int, r_int, "div")?.into(),
         })
     }
 
