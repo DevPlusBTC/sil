@@ -1,8 +1,8 @@
 //! Emisión LLVM IR vía inkwell (LLVM 17).
 //! Requiere feature `llvm` + LLVM 17 instalado.
 
-use thiserror::Error;
 use silc_causal_ir::nodes::TareaIR;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ErrorLLVM {
@@ -42,7 +42,14 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
         let mut vars_llvm = std::collections::HashMap::new();
 
         for bloque in tarea.bloques.values() {
-            generar_bloque(&context, &module, &builder, bloque, &mut vars_llvm, function)?;
+            generar_bloque(
+                &context,
+                &module,
+                &builder,
+                bloque,
+                &mut vars_llvm,
+                function,
+            )?;
         }
 
         if let Err(e) = module.verify() {
@@ -51,7 +58,10 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
         Ok(module.to_string())
     }
     #[cfg(not(feature = "llvm"))]
-    { let _ = tarea; Err(ErrorLLVM::NoDisponible) }
+    {
+        let _ = tarea;
+        Err(ErrorLLVM::NoDisponible)
+    }
 }
 
 #[cfg(feature = "llvm")]
@@ -62,37 +72,63 @@ mod llvm_impl {
     use inkwell::module::Module;
     use inkwell::values::{BasicValueEnum, FunctionValue};
     use inkwell::AddressSpace;
-    use silc_causal_ir::nodes::{Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Operacion, SilType, Terminador, ValueId};
+    use silc_causal_ir::nodes::{
+        Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Operacion, SilType, Terminador,
+        ValueId,
+    };
 
     // Lifetime explícito para Module/Context (Module<'ctx> es invariante)
     pub(super) fn declarar_funciones_runtime<'a>(
-        module: &Module<'a>, context: &'a Context
+        module: &Module<'a>,
+        context: &'a Context,
     ) -> Result<(), ErrorLLVM> {
         let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
         let size_type = context.i64_type();
 
-        module.add_function("sil_arena_asignar",
-            ptr_type.fn_type(&[ptr_type.into(), size_type.into(), size_type.into()], false), None);
-        module.add_function("sil_arena_reset",
-            context.void_type().fn_type(&[ptr_type.into()], false), None);
-        module.add_function("sil_canal_crear",
-            ptr_type.fn_type(&[ptr_type.into(), size_type.into()], false), None);
+        module.add_function(
+            "sil_arena_asignar",
+            ptr_type.fn_type(
+                &[ptr_type.into(), size_type.into(), size_type.into()],
+                false,
+            ),
+            None,
+        );
+        module.add_function(
+            "sil_arena_reset",
+            context.void_type().fn_type(&[ptr_type.into()], false),
+            None,
+        );
+        module.add_function(
+            "sil_canal_crear",
+            ptr_type.fn_type(&[ptr_type.into(), size_type.into()], false),
+            None,
+        );
 
         let bool_type = context.bool_type();
-        module.add_function("sil_canal_enviar",
-            bool_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
+        module.add_function(
+            "sil_canal_enviar",
+            bool_type.fn_type(&[ptr_type.into(), ptr_type.into()], false),
+            None,
+        );
 
-        let ptr_ptr_type = context.i8_type()
+        let ptr_ptr_type = context
+            .i8_type()
             .ptr_type(AddressSpace::default())
             .ptr_type(AddressSpace::default());
-        module.add_function("sil_canal_recibir",
-            bool_type.fn_type(&[ptr_type.into(), ptr_ptr_type.into()], false), None);
+        module.add_function(
+            "sil_canal_recibir",
+            bool_type.fn_type(&[ptr_type.into(), ptr_ptr_type.into()], false),
+            None,
+        );
         Ok(())
     }
 
     pub(super) fn generar_bloque(
-        context: &Context, module: &Module, builder: &Builder,
-        bloque: &Bloque, vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
+        context: &Context,
+        module: &Module,
+        builder: &Builder,
+        bloque: &Bloque,
+        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
         function: FunctionValue,
     ) -> Result<(), ErrorLLVM> {
         // BlockId no implementa Display → usar {:?}
@@ -107,8 +143,11 @@ mod llvm_impl {
     }
 
     pub(super) fn generar_instruccion(
-        context: &Context, module: &Module, builder: &Builder,
-        instr: &InstrCausal, vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
+        context: &Context,
+        module: &Module,
+        builder: &Builder,
+        instr: &InstrCausal,
+        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
     ) -> Result<(), ErrorLLVM> {
         use silc_causal_ir::nodes::Operacion::*;
         match &instr.op {
@@ -119,49 +158,106 @@ mod llvm_impl {
             }
             BinOpSegura { op, lhs, rhs } => {
                 if let Some(dest) = instr.resultado {
-                    let l = vars_llvm.get(lhs).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", lhs)))?;
-                    let r = vars_llvm.get(rhs).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", rhs)))?;
-                    vars_llvm.insert(dest, generar_binop(context, builder, *op, l, r)?);  // deref *
+                    let l = vars_llvm
+                        .get(lhs)
+                        .copied()
+                        .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", lhs)))?;
+                    let r = vars_llvm
+                        .get(rhs)
+                        .copied()
+                        .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", rhs)))?;
+                    vars_llvm.insert(dest, generar_binop(context, builder, *op, l, r)?);
+                    // deref *
                 }
             }
             Comparar { op, lhs, rhs } => {
                 if let Some(dest) = instr.resultado {
-                    let l = vars_llvm.get(lhs).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", lhs)))?;
-                    let r = vars_llvm.get(rhs).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", rhs)))?;
-                    vars_llvm.insert(dest, generar_cmp(context, builder, *op, l, r)?);  // deref *
+                    let l = vars_llvm
+                        .get(lhs)
+                        .copied()
+                        .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", lhs)))?;
+                    let r = vars_llvm
+                        .get(rhs)
+                        .copied()
+                        .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", rhs)))?;
+                    vars_llvm.insert(dest, generar_cmp(context, builder, *op, l, r)?);
+                    // deref *
                 }
             }
             Retornar { valor } => {
                 if let Some(v) = valor {
-                    builder.build_return(Some(&vars_llvm.get(v).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", v)))?))?;
-                } else { builder.build_return(None)?; }
+                    builder.build_return(Some(
+                        &vars_llvm
+                            .get(v)
+                            .copied()
+                            .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", v)))?,
+                    ))?;
+                } else {
+                    builder.build_return(None)?;
+                }
             }
-            InvocarIO { operacion, args, .. } => {
+            InvocarIO {
+                operacion, args, ..
+            } => {
                 let fn_name = match operacion {
                     OpIO::LeerArchivo => "sil_io_leer_archivo",
                     OpIO::EscribirArchivo => "sil_io_escribir_archivo",
                     OpIO::EnviarRed => "sil_io_enviar_red",
                     OpIO::RecibirRed => "sil_io_recibir_red",
                 };
-                let fn_val = module.get_function(fn_name).ok_or_else(|| ErrorLLVM::Llvm(format!("Función runtime no encontrada: {}", fn_name)))?;
-                let args: Vec<_> = args.iter().map(|a| vars_llvm.get(a).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", a))).unwrap().into()).collect();
+                let fn_val = module.get_function(fn_name).ok_or_else(|| {
+                    ErrorLLVM::Llvm(format!("Función runtime no encontrada: {}", fn_name))
+                })?;
+                let args: Vec<_> = args
+                    .iter()
+                    .map(|a| {
+                        vars_llvm
+                            .get(a)
+                            .copied()
+                            .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", a)))
+                            .unwrap()
+                            .into()
+                    })
+                    .collect();
                 if let Some(dest) = instr.resultado {
-                    if let Some(val) = builder.build_call(fn_val, &args, "call_io")?.try_as_basic_value().left() {
+                    if let Some(val) = builder
+                        .build_call(fn_val, &args, "call_io")?
+                        .try_as_basic_value()
+                        .left()
+                    {
                         vars_llvm.insert(dest, val);
                     }
                 }
             }
             EnviarCanal { canal, valor } => {
-                let fn_val = module.get_function("sil_canal_enviar").ok_or_else(|| ErrorLLVM::Llvm("sil_canal_enviar no encontrado".into()))?;
-                let call = builder.build_call(fn_val, &[vars_llvm[canal].into(), vars_llvm[valor].into()], "send")?;
-                if let Some(dest) = instr.resultado { if let Some(v) = call.try_as_basic_value().left() { vars_llvm.insert(dest, v); } }
+                let fn_val = module
+                    .get_function("sil_canal_enviar")
+                    .ok_or_else(|| ErrorLLVM::Llvm("sil_canal_enviar no encontrado".into()))?;
+                let call = builder.build_call(
+                    fn_val,
+                    &[vars_llvm[canal].into(), vars_llvm[valor].into()],
+                    "send",
+                )?;
+                if let Some(dest) = instr.resultado {
+                    if let Some(v) = call.try_as_basic_value().left() {
+                        vars_llvm.insert(dest, v);
+                    }
+                }
             }
             RecibirCanal { canal } => {
-                let fn_val = module.get_function("sil_canal_recibir").ok_or_else(|| ErrorLLVM::Llvm("sil_canal_recibir no encontrado".into()))?;
+                let fn_val = module
+                    .get_function("sil_canal_recibir")
+                    .ok_or_else(|| ErrorLLVM::Llvm("sil_canal_recibir no encontrado".into()))?;
                 let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
                 let msg_ptr = builder.build_alloca(ptr_type, "msg_ptr")?;
-                let call = builder.build_call(fn_val, &[vars_llvm[canal].into(), msg_ptr.into()], "recv")?;
-                if let Some(dest) = instr.resultado { vars_llvm.insert(dest, builder.build_load(ptr_type, msg_ptr, "msg")?); }
+                let call = builder.build_call(
+                    fn_val,
+                    &[vars_llvm[canal].into(), msg_ptr.into()],
+                    "recv",
+                )?;
+                if let Some(dest) = instr.resultado {
+                    vars_llvm.insert(dest, builder.build_load(ptr_type, msg_ptr, "msg")?);
+                }
             }
             _ => {}
         }
@@ -169,21 +265,39 @@ mod llvm_impl {
     }
 
     pub(super) fn generar_terminador(
-        _context: &Context, builder: &Builder, terminador: &Terminador,
+        _context: &Context,
+        builder: &Builder,
+        terminador: &Terminador,
         vars_llvm: &std::collections::HashMap<ValueId, BasicValueEnum>,
     ) -> Result<(), ErrorLLVM> {
         use silc_causal_ir::nodes::Terminador::*;
         match terminador {
-            Retorno(v) => { if let Some(v) = v { builder.build_return(Some(&vars_llvm[v]))?; } else { builder.build_return(None)?; } }
+            Retorno(v) => {
+                if let Some(v) = v {
+                    builder.build_return(Some(&vars_llvm[v]))?;
+                } else {
+                    builder.build_return(None)?;
+                }
+            }
             Salto(_) => {}
-            Rama { cond, entonces: _, sino: _ } => { let _ = vars_llvm[cond].into_int_value(); }
-            Inalcanzable => { builder.build_unreachable()?; }
+            Rama {
+                cond,
+                entonces: _,
+                sino: _,
+            } => {
+                let _ = vars_llvm[cond].into_int_value();
+            }
+            Inalcanzable => {
+                builder.build_unreachable()?;
+            }
         }
         Ok(())
     }
 
     pub(super) fn generar_constante(
-        context: &Context, _: &Builder, c: &Constante,
+        context: &Context,
+        _: &Builder,
+        c: &Constante,
     ) -> Result<BasicValueEnum, ErrorLLVM> {
         Ok(match c {
             Constante::Entero(n) => context.i64_type().const_int(*n as u64, false).into(),
@@ -194,7 +308,11 @@ mod llvm_impl {
     }
 
     pub(super) fn generar_binop(
-        _: &Context, builder: &Builder, op: OpArit, l: BasicValueEnum, r: BasicValueEnum
+        _: &Context,
+        builder: &Builder,
+        op: OpArit,
+        l: BasicValueEnum,
+        r: BasicValueEnum,
     ) -> Result<BasicValueEnum, ErrorLLVM> {
         let (l, r) = (l.into_int_value(), r.into_int_value());
         Ok(match op {
@@ -207,7 +325,11 @@ mod llvm_impl {
     }
 
     pub(super) fn generar_cmp(
-        _: &Context, builder: &Builder, op: OpCmp, l: BasicValueEnum, r: BasicValueEnum
+        _: &Context,
+        builder: &Builder,
+        op: OpCmp,
+        l: BasicValueEnum,
+        r: BasicValueEnum,
     ) -> Result<BasicValueEnum, ErrorLLVM> {
         let (l, r) = (l.into_int_value(), r.into_int_value());
         let pred = match op {
