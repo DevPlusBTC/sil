@@ -2,10 +2,7 @@
 //! Requiere feature `llvm` + LLVM 17 instalado.
 
 use thiserror::Error;
-use silc_causal_ir::nodes::{
-    Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Operacion, SilType, TareaIR, Terminador,
-    ValueId,
-};
+use silc_causal_ir::nodes::TareaIR;
 
 #[derive(Debug, Error)]
 pub enum ErrorLLVM {
@@ -65,7 +62,7 @@ mod llvm_impl {
     use inkwell::module::Module;
     use inkwell::values::{BasicValueEnum, FunctionValue};
     use inkwell::AddressSpace;
-    use silc_causal_ir::nodes::{Constante, OpArit, OpCmp, Terminador};
+    use silc_causal_ir::nodes::{Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Operacion, SilType, Terminador, ValueId};
 
     // Lifetime explícito para Module/Context (Module<'ctx> es invariante)
     pub(super) fn declarar_funciones_runtime<'a>(
@@ -147,22 +144,16 @@ mod llvm_impl {
                     OpIO::RecibirRed => "sil_io_recibir_red",
                 };
                 let fn_val = module.get_function(fn_name).ok_or_else(|| ErrorLLVM::Llvm(format!("Función runtime no encontrada: {}", fn_name)))?;
-                let mut llvm_args = Vec::new();
-                for arg in args {
-                    let val = vars_llvm.get(arg).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", arg)))?;
-                    llvm_args.push(val.into());
-                }
-                let call = builder.build_call(fn_val, &llvm_args, "call_io")?;
+                let args: Vec<_> = args.iter().map(|a| vars_llvm.get(a).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", a))).unwrap().into()).collect();
                 if let Some(dest) = instr.resultado {
-                    if let Some(val) = call.try_as_basic_value().left() {
+                    if let Some(val) = builder.build_call(fn_val, &args, "call_io")?.try_as_basic_value().left() {
                         vars_llvm.insert(dest, val);
                     }
                 }
             }
             EnviarCanal { canal, valor } => {
-                let c_val = vars_llvm.get(canal).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", canal)))?;
-                let v_val = vars_llvm.get(valor).copied().ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", valor)))?;
-                let call = builder.build_call(fn_val, &[c_val.into(), v_val.into()], "send")?;
+                let fn_val = module.get_function("sil_canal_enviar").ok_or_else(|| ErrorLLVM::Llvm("sil_canal_enviar no encontrado".into()))?;
+                let call = builder.build_call(fn_val, &[vars_llvm[canal].into(), vars_llvm[valor].into()], "send")?;
                 if let Some(dest) = instr.resultado { if let Some(v) = call.try_as_basic_value().left() { vars_llvm.insert(dest, v); } }
             }
             RecibirCanal { canal } => {
