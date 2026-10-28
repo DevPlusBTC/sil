@@ -302,7 +302,9 @@ jobs:
           workspaces: silc-core
 
       - name: Build with LLVM feature
-        run: cargo build --workspace --locked --features llvm
+        run: |
+          cargo clean -p silc-backend
+          cargo build --workspace --locked --features llvm
         working-directory: silc-core
         env:
           LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
