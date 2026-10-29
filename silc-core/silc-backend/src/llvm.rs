@@ -300,10 +300,10 @@ mod llvm_impl {
         c: &Constante,
     ) -> Result<BasicValueEnum, ErrorLLVM> {
         Ok(match c {
-            Constante::Entero(n) => context.i64_type().const_int(*n as u64, false).into(),
-            Constante::Flotante(f) => context.f64_type().const_float(*f).into(),
-            Constante::Booleano(b) => context.bool_type().const_int(*b as u64, false).into(),
-            Constante::Unit => context.i8_type().const_int(0, false).into(),
+            Constante::Int(n) => context.i64_type().const_int(*n as u64, false).into(),
+            Constante::Float(f) => context.f64_type().const_float(*f).into(),
+            Constante::Bool(b) => context.bool_type().const_int(*b as u64, false).into(),
+            Constante::Texto(_) => context.i8_type().const_int(0, false).into(),
         })
     }
 
@@ -319,7 +319,7 @@ mod llvm_impl {
             OpArit::Add => builder.build_int_add(l, r, "add")?.into(),
             OpArit::Sub => builder.build_int_sub(l, r, "sub")?.into(),
             OpArit::Mul => builder.build_int_mul(l, r, "mul")?.into(),
-            OpArit::Div => builder.build_int_signed_div(l_int, r_int, "div")?.into(),
+            OpArit::Div => builder.build_int_signed_div(l, r, "div")?.into(),
         })
     }
 
