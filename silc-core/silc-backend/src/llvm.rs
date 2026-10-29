@@ -3,7 +3,9 @@
 
 #[cfg(feature = "llvm")]
 use inkwell::types::BasicType;
-use silc_causal_ir::nodes::{Operacion, SilType, TareaIR};
+use silc_causal_ir::nodes::TareaIR;
+#[cfg(feature = "llvm")]
+use silc_causal_ir::nodes::{Operacion, SilType};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
