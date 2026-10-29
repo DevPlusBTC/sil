@@ -27,7 +27,7 @@ impl From<inkwell::builder::BuilderError> for ErrorLLVM {
 pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
     #[cfg(feature = "llvm")]
     {
-        use crate::llvm_impl::*;
+        use self::llvm_impl::*;
         let context = inkwell::context::Context::create();
         let module = context.create_module(&tarea.nombre);
         let builder = context.create_builder();
@@ -73,7 +73,7 @@ mod llvm_impl {
     use inkwell::values::{BasicValueEnum, FunctionValue};
     use inkwell::AddressSpace;
     use silc_causal_ir::nodes::{
-        Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Operacion, SilType, Terminador,
+        Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Terminador,
         ValueId,
     };
 
@@ -128,8 +128,8 @@ mod llvm_impl {
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         bloque: &Bloque,
-        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
-        function: FunctionValue,
+        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum<'ctx>>,
+        function: FunctionValue<'ctx>,
     ) -> Result<(), ErrorLLVM> {
         // BlockId no implementa Display → usar {:?}
         let block = context.append_basic_block(function, &format!("bloque_{:?}", bloque.id));
@@ -147,7 +147,7 @@ mod llvm_impl {
         module: &Module<'ctx>,
         builder: &Builder<'ctx>,
         instr: &InstrCausal,
-        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
+        vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum<'ctx>>,
     ) -> Result<(), ErrorLLVM> {
         use silc_causal_ir::nodes::Operacion::*;
         match &instr.op {
@@ -250,7 +250,7 @@ mod llvm_impl {
                     .ok_or_else(|| ErrorLLVM::Llvm("sil_canal_recibir no encontrado".into()))?;
                 let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
                 let msg_ptr = builder.build_alloca(ptr_type, "msg_ptr")?;
-                let call = builder.build_call(
+                builder.build_call(
                     fn_val,
                     &[vars_llvm[canal].into(), msg_ptr.into()],
                     "recv",
@@ -268,7 +268,7 @@ mod llvm_impl {
         _context: &'ctx Context,
         builder: &Builder<'ctx>,
         terminador: &Terminador,
-        vars_llvm: &std::collections::HashMap<ValueId, BasicValueEnum>,
+        vars_llvm: &std::collections::HashMap<ValueId, BasicValueEnum<'ctx>>,
     ) -> Result<(), ErrorLLVM> {
         use silc_causal_ir::nodes::Terminador::*;
         match terminador {
@@ -294,11 +294,11 @@ mod llvm_impl {
         Ok(())
     }
 
-    pub(super) fn generar_constante(
-        context: &Context,
-        _: &Builder,
+    pub(super) fn generar_constante<'ctx>(
+        context: &'ctx Context,
+        _builder: &Builder<'ctx>,
         c: &Constante,
-    ) -> Result<BasicValueEnum, ErrorLLVM> {
+    ) -> Result<BasicValueEnum<'ctx>, ErrorLLVM> {
         Ok(match c {
             Constante::Int(n) => context.i64_type().const_int(*n as u64, false).into(),
             Constante::Float(f) => context.f64_type().const_float(*f).into(),
@@ -307,13 +307,13 @@ mod llvm_impl {
         })
     }
 
-    pub(super) fn generar_binop(
-        _: &Context,
-        builder: &Builder,
+    pub(super) fn generar_binop<'ctx>(
+        _context: &'ctx Context,
+        builder: &Builder<'ctx>,
         op: OpArit,
-        l: BasicValueEnum,
-        r: BasicValueEnum,
-    ) -> Result<BasicValueEnum, ErrorLLVM> {
+        l: BasicValueEnum<'ctx>,
+        r: BasicValueEnum<'ctx>,
+    ) -> Result<BasicValueEnum<'ctx>, ErrorLLVM> {
         let (l, r) = (l.into_int_value(), r.into_int_value());
         Ok(match op {
             OpArit::Add => builder.build_int_add(l, r, "add")?.into(),
@@ -323,13 +323,13 @@ mod llvm_impl {
         })
     }
 
-    pub(super) fn generar_cmp(
-        _: &Context,
-        builder: &Builder,
+    pub(super) fn generar_cmp<'ctx>(
+        _context: &'ctx Context,
+        builder: &Builder<'ctx>,
         op: OpCmp,
-        l: BasicValueEnum,
-        r: BasicValueEnum,
-    ) -> Result<BasicValueEnum, ErrorLLVM> {
+        l: BasicValueEnum<'ctx>,
+        r: BasicValueEnum<'ctx>,
+    ) -> Result<BasicValueEnum<'ctx>, ErrorLLVM> {
         let (l, r) = (l.into_int_value(), r.into_int_value());
         let pred = match op {
             OpCmp::Eq => inkwell::IntPredicate::EQ,
