@@ -1,7 +1,9 @@
 //! Emisión LLVM IR vía inkwell (LLVM 17).
 //! Requiere feature `llvm` + LLVM 17 instalado.
 
-use silc_causal_ir::nodes::TareaIR;
+#[cfg(feature = "llvm")]
+use inkwell::types::BasicType;
+use silc_causal_ir::nodes::{Operacion, SilType, TareaIR};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -34,12 +36,31 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
 
         declarar_funciones_runtime(&module, &context)?;
 
-        let fn_type = context.void_type().fn_type(&[], false);
+        let param_types = tarea
+            .params
+            .iter()
+            .map(|(_, tipo)| tipo_llvm(&context, tipo).map(Into::into))
+            .collect::<Result<Vec<_>, _>>()?;
+        let fn_type = match &tarea.retorno {
+            SilType::Void => context.void_type().fn_type(&param_types, false),
+            tipo => tipo_llvm(&context, tipo)?.fn_type(&param_types, false),
+        };
         let function = module.add_function(&tarea.nombre, fn_type, None);
-        let entry_block = context.append_basic_block(function, "entry");
-        builder.position_at_end(entry_block);
 
         let mut vars_llvm = std::collections::HashMap::new();
+        let mut indice_param = 0u32;
+        for bloque in tarea.bloques.values() {
+            for instr in &bloque.instrs {
+                if matches!(instr.op, Operacion::Param { .. }) {
+                    if let (Some(destino), Some(arg)) =
+                        (instr.resultado, function.get_nth_param(indice_param))
+                    {
+                        vars_llvm.insert(destino, arg);
+                    }
+                    indice_param += 1;
+                }
+            }
+        }
 
         for bloque in tarea.bloques.values() {
             generar_bloque(
@@ -70,12 +91,32 @@ mod llvm_impl {
     use inkwell::builder::Builder;
     use inkwell::context::Context;
     use inkwell::module::Module;
+    use inkwell::types::BasicTypeEnum;
     use inkwell::values::{BasicValueEnum, FunctionValue};
     use inkwell::AddressSpace;
     use silc_causal_ir::nodes::{
-        Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Terminador,
-        ValueId,
+        Bloque, Constante, InstrCausal, OpArit, OpCmp, OpIO, Terminador, ValueId,
     };
+
+    pub(super) fn tipo_llvm<'ctx>(
+        context: &'ctx Context,
+        tipo: &SilType,
+    ) -> Result<BasicTypeEnum<'ctx>, ErrorLLVM> {
+        Ok(match tipo {
+            SilType::Entero64 | SilType::USD | SilType::EUR | SilType::CapacidadHardware => {
+                context.i64_type().into()
+            }
+            SilType::Flotante64 => context.f64_type().into(),
+            SilType::Booleano => context.bool_type().into(),
+            SilType::Texto => context.i8_type().ptr_type(AddressSpace::default()).into(),
+            SilType::Void => {
+                return Err(ErrorLLVM::TipoNoSoportado(
+                    "Void no es un tipo de valor".into(),
+                ))
+            }
+            otro => return Err(ErrorLLVM::TipoNoSoportado(format!("{otro:?}"))),
+        })
+    }
 
     // Lifetime explícito para Module/Context (Module<'ctx> es invariante)
     pub(super) fn declarar_funciones_runtime<'ctx>(
@@ -184,17 +225,8 @@ mod llvm_impl {
                     // deref *
                 }
             }
-            Retornar { valor } => {
-                if let Some(v) = valor {
-                    builder.build_return(Some(
-                        &vars_llvm
-                            .get(v)
-                            .copied()
-                            .ok_or_else(|| ErrorLLVM::VariableNoDefinida(format!("{:?}", v)))?,
-                    ))?;
-                } else {
-                    builder.build_return(None)?;
-                }
+            Retornar { .. } => {
+                // El terminador del bloque emite el return; aquí no se duplica.
             }
             InvocarIO {
                 operacion, args, ..
@@ -250,11 +282,7 @@ mod llvm_impl {
                     .ok_or_else(|| ErrorLLVM::Llvm("sil_canal_recibir no encontrado".into()))?;
                 let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
                 let msg_ptr = builder.build_alloca(ptr_type, "msg_ptr")?;
-                builder.build_call(
-                    fn_val,
-                    &[vars_llvm[canal].into(), msg_ptr.into()],
-                    "recv",
-                )?;
+                builder.build_call(fn_val, &[vars_llvm[canal].into(), msg_ptr.into()], "recv")?;
                 if let Some(dest) = instr.resultado {
                     vars_llvm.insert(dest, builder.build_load(ptr_type, msg_ptr, "msg")?);
                 }
