@@ -78,9 +78,9 @@ mod llvm_impl {
     };
 
     // Lifetime explícito para Module/Context (Module<'ctx> es invariante)
-    pub(super) fn declarar_funciones_runtime<'a>(
-        module: &Module<'a>,
-        context: &'a Context,
+    pub(super) fn declarar_funciones_runtime<'ctx>(
+        module: &Module<'ctx>,
+        context: &'ctx Context,
     ) -> Result<(), ErrorLLVM> {
         let ptr_type = context.i8_type().ptr_type(AddressSpace::default());
         let size_type = context.i64_type();
@@ -123,10 +123,10 @@ mod llvm_impl {
         Ok(())
     }
 
-    pub(super) fn generar_bloque(
-        context: &Context,
-        module: &Module,
-        builder: &Builder,
+    pub(super) fn generar_bloque<'ctx>(
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
         bloque: &Bloque,
         vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
         function: FunctionValue,
@@ -142,10 +142,10 @@ mod llvm_impl {
         Ok(())
     }
 
-    pub(super) fn generar_instruccion(
-        context: &Context,
-        module: &Module,
-        builder: &Builder,
+    pub(super) fn generar_instruccion<'ctx>(
+        context: &'ctx Context,
+        module: &Module<'ctx>,
+        builder: &Builder<'ctx>,
         instr: &InstrCausal,
         vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum>,
     ) -> Result<(), ErrorLLVM> {
@@ -264,9 +264,9 @@ mod llvm_impl {
         Ok(())
     }
 
-    pub(super) fn generar_terminador(
-        _context: &Context,
-        builder: &Builder,
+    pub(super) fn generar_terminador<'ctx>(
+        _context: &'ctx Context,
+        builder: &Builder<'ctx>,
         terminador: &Terminador,
         vars_llvm: &std::collections::HashMap<ValueId, BasicValueEnum>,
     ) -> Result<(), ErrorLLVM> {
