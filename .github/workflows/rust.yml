@@ -6,6 +6,7 @@ on:
     paths:
       - 'silc-core/**'
       - 'examples/**'
+      - 'scripts/**'
       - '.github/workflows/rust.yml'
       - '.github/workflows/release.yml'
   pull_request:
@@ -13,6 +14,7 @@ on:
     paths:
       - 'silc-core/**'
       - 'examples/**'
+      - 'scripts/**'
       - '.github/workflows/rust.yml'
   workflow_dispatch:
 
@@ -275,6 +277,24 @@ jobs:
             msg=$(tail -c 1200 "$f" | tr '\r' ' ' | tr '\n' '|' | sed 's/%/%25/g')
             echo "::error title=fuzz $(basename "$f")::${msg}"
           done
+
+  # --- 4c. Runtime C (sil-rt) + runtime que emite el backend C99 ---
+  #
+  # Los tests de Rust del crate `silc-runtime` solo cubren arenas y
+  # capacidades; canales, fibras, HMAC y el runtime embebido en el C emitido
+  # no tenian ninguna prueba ejecutable. Este job compila cada fuente con
+  # -std=c99 -pedantic-errors -Wall -Wextra -Werror y ejecuta la suite con
+  # AddressSanitizer/UBSan y ThreadSanitizer, ademas de compilar la extraccion
+  # verbatim del runtime de silc-backend (scripts/extraer_runtime_c.py).
+  runtime-c:
+    name: runtime C (estricto + ASan/UBSan/TSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilador
+        run: cc --version
+      - name: Suite del runtime C
+        run: ./scripts/run_c_tests.sh
 
   # --- 5. Feature LLVM (backend LLVM 17) ---
   llvm-test:

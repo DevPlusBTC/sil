@@ -1,260 +1,242 @@
+/* sil_channel.c - Canales tipados de capacidad acotada, libres de bloqueos.
+ *
+ * Implementacion: anillo de ranuras con numero de secuencia por ranura
+ * (D. Vyukov, "Bounded MPMC queue"). Se evita el patron anterior de lista
+ * enlazada (que ademas hacia CAS con el operando esperado equivocado, lo que
+ * provocaba un SEGV en el primer envio) y se elimina el malloc por mensaje:
+ * todas las ranuras viven en la arena del canal.
+ *
+ * Modelo de memoria (C11 / builtins __atomic de GCC y Clang):
+ *   el productor escribe `dato` y publica con una store release de `secuencia`;
+ *   el consumidor hace load acquire de `secuencia` antes de leer `dato`. El
+ *   avance de `cola` (productores) y `cabeza` (consumidor) usa release; en el
+ *   caso MPSC la reserva de posicion usa CAS acq_rel.
+ *
+ * Un unico consumidor en ambos canales es parte del contrato: es lo que
+ * permite consumir sin CAS.
+ */
+
 #include "sil_channel.h"
-#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
-#include <stddef.h>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
-#pragma intrinsic(_InterlockedCompareExchangePointer)
-#pragma intrinsic(_InterlockedExchangePointer)
-#pragma intrinsic(_InterlockedIncrement64)
-#pragma intrinsic(_InterlockedDecrement64)
-#pragma intrinsic(_InterlockedExchangeAdd64)
-#pragma intrinsic(_InterlockedExchange)
-#define ATOMIC_LOAD(ptr) (*(volatile void **)(ptr))
-#define ATOMIC_STORE(ptr, val) (*(volatile void **)(ptr) = (val))
-#define ATOMIC_CAS(ptr, old, new) (_InterlockedCompareExchangePointer((volatile void **)(ptr), (void *)(new), (void *)(old)) == (void *)(old))
-#define ATOMIC_EXCHANGE(ptr, val) _InterlockedExchangePointer((volatile void **)(ptr), (void *)(val))
-#define ATOMIC_FETCH_ADD(ptr, val) _InterlockedExchangeAdd64((volatile long long *)(ptr), (val))
-#define ATOMIC_FETCH_SUB(ptr, val) _InterlockedExchangeAdd64((volatile long long *)(ptr), -(val))
-#define ATOMIC_EXCHANGE_INT(ptr, val) _InterlockedExchange((volatile long *)(ptr), (long)(val))
+
+static size_t carga_size(volatile size_t *p) {
+#if defined(_WIN64)
+    return (size_t)_InterlockedCompareExchange64((volatile __int64 *)p, 0, 0);
 #else
-#include <stdatomic.h>
-#define ATOMIC_LOAD(ptr) atomic_load_explicit((_Atomic(void *)*)(ptr), memory_order_acquire)
-#define ATOMIC_STORE(ptr, val) atomic_store_explicit((_Atomic(void *)*)(ptr), (val), memory_order_release)
-#define ATOMIC_CAS(ptr, old, new) atomic_compare_exchange_weak_explicit((_Atomic(void *)*)(ptr), (void **)(old), (void *)(new), memory_order_release, memory_order_relaxed)
-#define ATOMIC_EXCHANGE(ptr, val) atomic_exchange_explicit((_Atomic(void *)*)(ptr), (val), memory_order_acq_rel)
-#define ATOMIC_FETCH_ADD(ptr, val) atomic_fetch_add_explicit((_Atomic(size_t)*)(ptr), (val), memory_order_release)
-#define ATOMIC_FETCH_SUB(ptr, val) atomic_fetch_sub_explicit((_Atomic(size_t)*)(ptr), (val), memory_order_release)
-#define ATOMIC_EXCHANGE_INT(ptr, val) atomic_exchange_explicit((_Atomic(int)*)(ptr), (val), memory_order_acq_rel)
+    return (size_t)_InterlockedCompareExchange((volatile long *)p, 0, 0);
+#endif
+}
+static void almacena_size(volatile size_t *p, size_t v) {
+#if defined(_WIN64)
+    _InterlockedExchange64((volatile __int64 *)p, (__int64)v);
+#else
+    _InterlockedExchange((volatile long *)p, (long)v);
+#endif
+}
+static int cas_size(volatile size_t *p, size_t *esperado, size_t nuevo) {
+#if defined(_WIN64)
+    size_t visto = (size_t)_InterlockedCompareExchange64(
+        (volatile __int64 *)p, (__int64)nuevo, (__int64)*esperado);
+#else
+    size_t visto = (size_t)_InterlockedCompareExchange(
+        (volatile long *)p, (long)nuevo, (long)*esperado);
+#endif
+    if (visto == *esperado) return 1;
+    *esperado = visto;
+    return 0;
+}
+#else
+/* GCC/Clang: builtins __atomic, disponibles tambien con -std=c99 (sin
+ * depender de <stdatomic.h> ni del calificador _Atomic). */
+static size_t carga_size(volatile size_t *p) {
+    return __atomic_load_n((size_t *)p, __ATOMIC_ACQUIRE);
+}
+static void almacena_size(volatile size_t *p, size_t v) {
+    __atomic_store_n((size_t *)p, v, __ATOMIC_RELEASE);
+}
+static int cas_size(volatile size_t *p, size_t *esperado, size_t nuevo) {
+    return __atomic_compare_exchange_n((size_t *)p, esperado, nuevo, 1,
+                                       __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+}
 #endif
 
-/* Lock-free single-producer, single-consumer channel
-   Michael & Scott non-blocking queue algorithm
-   Uses C11 atomics on GCC/Clang, Interlocked intrinsics on MSVC */
+static size_t redondear_potencia_dos(size_t v) {
+    size_t p = 1;
+    while (p < v) p <<= 1;
+    return p;
+}
 
-SilChannel *sil_channel_crear(SilArena *arena, size_t capacidad_inicial) {
-    (void)capacidad_inicial;
-    
-    SilChannel *canal = (SilChannel *)sil_arena_asignar(arena, sizeof(SilChannel), 8);
+/* Reserva el nucleo y las ranuras en la arena del canal. */
+static int canal_inicializar(SilCanalNucleo *c, SilArena *arena, size_t capacidad) {
+    size_t i;
+    SilCanalRanura *ranuras;
+    size_t bytes;
+
+    if (!c || !arena) return 0;
+    if (capacidad == 0) capacidad = SIL_CANAL_CAPACIDAD_DEFECTO;
+    if (capacidad > SIL_CANAL_CAPACIDAD_MAXIMA) return 0;
+    capacidad = redondear_potencia_dos(capacidad);
+    /* capacidad <= 2^24 -> el producto no desborda size_t en 32/64 bits. */
+    bytes = capacidad * sizeof(SilCanalRanura);
+    if (bytes / sizeof(SilCanalRanura) != capacidad) return 0;
+
+    ranuras = (SilCanalRanura *)sil_arena_asignar(arena, bytes, 64);
+    if (!ranuras) return 0;
+    if (((uintptr_t)ranuras & 63u) != 0) return 0; /* alineacion de linea de cache */
+
+    for (i = 0; i < capacidad; i++) {
+        ranuras[i].secuencia = i;
+        ranuras[i].dato = NULL;
+    }
+    c->ranuras = ranuras;
+    c->capacidad = capacidad;
+    c->mascara = capacidad - 1;
+    c->cabeza = 0;
+    c->cola = 0;
+    c->cerrado = 0;
+    return 1;
+}
+
+/* Productor unico: no necesita CAS para reservar posicion. */
+static int canal_encolar_spsc(SilCanalNucleo *c, void *dato) {
+    size_t pos = carga_size(&c->cola);
+    SilCanalRanura *r = &c->ranuras[pos & c->mascara];
+    if ((ptrdiff_t)(carga_size(&r->secuencia) - pos) != 0) return 0; /* lleno */
+    r->dato = dato;
+    almacena_size(&r->secuencia, pos + 1);
+    almacena_size(&c->cola, pos + 1);
+    return 1;
+}
+
+/* N productores: CAS sobre `cola` para reservar la ranura. */
+static int canal_encolar_mpsc(SilCanalNucleo *c, void *dato) {
+    size_t pos = carga_size(&c->cola);
+    for (;;) {
+        SilCanalRanura *r = &c->ranuras[pos & c->mascara];
+        ptrdiff_t dif = (ptrdiff_t)(carga_size(&r->secuencia) - pos);
+        if (dif == 0) {
+            if (cas_size(&c->cola, &pos, pos + 1)) {
+                r->dato = dato;
+                almacena_size(&r->secuencia, pos + 1);
+                return 1;
+            }
+            /* cas_size deja en `pos` el valor observado: reintentar. */
+        } else if (dif < 0) {
+            return 0; /* lleno */
+        } else {
+            pos = carga_size(&c->cola);
+        }
+    }
+}
+
+/* Consumidor unico: reserva la posicion sin CAS. */
+static int canal_desencolar(SilCanalNucleo *c, void **dato) {
+    size_t pos = carga_size(&c->cabeza);
+    SilCanalRanura *r = &c->ranuras[pos & c->mascara];
+    if ((ptrdiff_t)(carga_size(&r->secuencia) - (pos + 1)) != 0) return 0; /* vacio */
+    *dato = r->dato;
+    almacena_size(&r->secuencia, pos + c->mascara + 1);
+    almacena_size(&c->cabeza, pos + 1);
+    return 1;
+}
+
+static size_t canal_contar(const SilCanalNucleo *c) {
+    size_t cabeza, cola;
+    if (!c) return 0;
+    cabeza = carga_size((volatile size_t *)&c->cabeza);
+    cola = carga_size((volatile size_t *)&c->cola);
+    return cola > cabeza ? cola - cabeza : 0;
+}
+
+static void canal_cerrar(SilCanalNucleo *c) {
+    if (c) almacena_size(&c->cerrado, 1);
+}
+
+static int canal_esta_cerrado(const SilCanalNucleo *c) {
+    return c ? carga_size((volatile size_t *)&c->cerrado) != 0 : 0;
+}
+
+/* ------------------------------------------------------------------ SPSC --- */
+
+SilChannel *sil_channel_crear(SilArena *arena, size_t capacidad) {
+    SilChannel *canal = arena ? (SilChannel *)sil_arena_asignar(arena, sizeof(SilChannel), 64) : NULL;
     if (!canal) return NULL;
-    
-    /* Nodo dummy inicial para evitar casos especiales */
-    SilChannelNode *nodo_inicial = (SilChannelNode *)sil_arena_asignar(arena, sizeof(SilChannelNode), 8);
-    if (!nodo_inicial) return NULL;
-    
-    nodo_inicial->data = NULL;
-    nodo_inicial->next = NULL;
-    
-    ATOMIC_STORE(&canal->queue.head, nodo_inicial);
-    ATOMIC_STORE(&canal->queue.tail, nodo_inicial);
-    canal->arena = arena;
-    canal->item_count = 0;
-    canal->closed = 0;
-    
+    if (!canal_inicializar(&canal->nucleo, arena, capacidad)) return NULL;
     return canal;
 }
 
 void sil_channel_destruir(SilChannel *canal) {
+    /* La memoria es de la arena: basta con cerrar el canal (drenable) para que
+     * ningun envio nuevo lo use. */
     if (!canal) return;
-    
-    SilChannelNode *actual = (SilChannelNode *)ATOMIC_LOAD(&canal->queue.head);
-    while (actual) {
-        SilChannelNode *siguiente = actual->next;
-        /* Nodos se liberan via arena, no free() */
-        actual = siguiente;
-    }
-    ATOMIC_STORE(&canal->queue.head, NULL);
-    ATOMIC_STORE(&canal->queue.tail, NULL);
+    canal_cerrar(&canal->nucleo);
 }
 
 bool sil_channel_enviar(SilChannel *canal, void *mensaje) {
     if (!canal || !mensaje) return false;
-    if (canal->closed) return false;
-    
-    SilChannelNode *nuevo = (SilChannelNode *)sil_arena_asignar(canal->arena, sizeof(SilChannelNode), 8);
-    if (!nuevo) return false;
-    
-    nuevo->data = mensaje;
-    nuevo->next = NULL;
-    
-    /* Michael & Scott lock-free enqueue:
-       1. CAS tail->next from NULL to new node
-       2. CAS tail from old tail to new node */
-    while (1) {
-        SilChannelNode *tail = (SilChannelNode *)ATOMIC_LOAD(&canal->queue.tail);
-        SilChannelNode *next = tail->next;
-        
-        if (next != NULL) {
-            /* Tail está adelantado, ayudar a avanzarlo */
-            ATOMIC_CAS(&canal->queue.tail, tail, next);
-            continue;
-        }
-        
-        /* Intentar enlazar el nuevo nodo */
-        if (ATOMIC_CAS(&tail->next, next, nuevo)) {
-            /* Enlazado exitoso, ahora avanzar tail */
-            ATOMIC_CAS(&canal->queue.tail, tail, nuevo);
-            break;
-        }
-        /* CAS falló, reintentar */
-    }
-    
-    ATOMIC_FETCH_ADD(&canal->item_count, 1);
-    return true;
+    if (canal_esta_cerrado(&canal->nucleo)) return false;
+    return canal_encolar_spsc(&canal->nucleo, mensaje) != 0;
 }
 
 bool sil_channel_recibir(SilChannel *canal, void **mensaje) {
     if (!canal || !mensaje) return false;
-    
-    while (1) {
-        SilChannelNode *head = (SilChannelNode *)ATOMIC_LOAD(&canal->queue.head);
-        SilChannelNode *tail = (SilChannelNode *)ATOMIC_LOAD(&canal->queue.tail);
-        SilChannelNode *next = head->next;
-        
-        if (head == tail) {
-            if (next == NULL) {
-                return false;  /* Cola vacía */
-            }
-            /* Tail se quedó atrás, ayudar a avanzarlo */
-            ATOMIC_CAS(&canal->queue.tail, tail, next);
-            continue;
-        }
-        
-        /* Obtener el mensaje del siguiente nodo */
-        void *msg = next->data;
-        if (msg == NULL) {
-            return false;
-        }
-        
-        /* Intentar avanzar head */
-        if (ATOMIC_CAS(&canal->queue.head, head, next)) {
-            *mensaje = msg;
-            /* Nodo dummy viejo se deja para arena cleanup */
-            ATOMIC_FETCH_SUB(&canal->item_count, 1);
-            return true;
-        }
-        /* CAS falló, reintentar */
-    }
+    return canal_desencolar(&canal->nucleo, mensaje) != 0;
 }
 
-void sil_channel_cerrar(SilChannel *canal) {
-    if (!canal) return;
-    canal->closed = 1;
-}
+void sil_channel_cerrar(SilChannel *canal) { if (canal) canal_cerrar(&canal->nucleo); }
 
-size_t sil_channel_contar(SilChannel *canal) {
-    if (!canal) return 0;
-    return (size_t)canal->item_count;
-}
+size_t sil_channel_contar(SilChannel *canal) { return canal ? canal_contar(&canal->nucleo) : 0; }
 
-bool sil_channel_esta_vacio(SilChannel *canal) {
-    if (!canal) return true;
-    return canal->item_count == 0;
-}
+size_t sil_channel_capacidad(SilChannel *canal) { return canal ? canal->nucleo.capacidad : 0; }
 
-bool sil_channel_esta_cerrado(SilChannel *canal) {
-    if (!canal) return false;
-    return canal->closed != 0;
-}
+bool sil_channel_esta_vacio(SilChannel *canal) { return canal ? canal_contar(&canal->nucleo) == 0 : true; }
 
-/* MPSC (Multi-Producer, Single-Consumer) Channel
-   Based on Dmitry Vyukov's MPSC queue algorithm */
+bool sil_channel_esta_cerrado(SilChannel *canal) { return canal ? canal_esta_cerrado(&canal->nucleo) != 0 : false; }
 
-SilChannelMPSC *sil_channel_mpsc_crear(SilArena *arena, size_t capacidad_inicial) {
-    (void)capacidad_inicial;
-    
-    SilChannelMPSC *canal = (SilChannelMPSC *)sil_arena_asignar(arena, sizeof(SilChannelMPSC), 8);
+/* ------------------------------------------------------------------ MPSC --- */
+
+SilChannelMPSC *sil_channel_mpsc_crear(SilArena *arena, size_t capacidad) {
+    SilChannelMPSC *canal =
+        arena ? (SilChannelMPSC *)sil_arena_asignar(arena, sizeof(SilChannelMPSC), 64) : NULL;
     if (!canal) return NULL;
-    
-    /* Nodo dummy inicial */
-    SilChannelNode *nodo_inicial = (SilChannelNode *)sil_arena_asignar(arena, sizeof(SilChannelNode), 8);
-    if (!nodo_inicial) return NULL;
-    
-    nodo_inicial->data = NULL;
-    nodo_inicial->next = NULL;
-    
-    ATOMIC_STORE(&canal->head, nodo_inicial);
-    ATOMIC_STORE(&canal->tail, nodo_inicial);
-    canal->arena = arena;
-    canal->item_count = 0;
-    canal->closed = 0;
-    
+    if (!canal_inicializar(&canal->nucleo, arena, capacidad)) return NULL;
     return canal;
 }
 
 void sil_channel_mpsc_destruir(SilChannelMPSC *canal) {
     if (!canal) return;
-    
-    SilChannelNode *actual = (SilChannelNode *)ATOMIC_LOAD(&canal->head);
-    while (actual) {
-        SilChannelNode *siguiente = actual->next;
-        actual = siguiente;
-    }
-    ATOMIC_STORE(&canal->head, NULL);
-    ATOMIC_STORE(&canal->tail, NULL);
+    canal_cerrar(&canal->nucleo);
 }
 
 bool sil_channel_mpsc_enviar(SilChannelMPSC *canal, void *mensaje) {
     if (!canal || !mensaje) return false;
-    if (canal->closed) return false;
-    
-    SilChannelNode *nuevo = (SilChannelNode *)sil_arena_asignar(canal->arena, sizeof(SilChannelNode), 8);
-    if (!nuevo) return false;
-    
-    nuevo->data = mensaje;
-    nuevo->next = NULL;
-    
-    /* Vyukov MPSC enqueue:
-       1. Atomically swap tail with new node (returns old tail)
-       2. Link old tail->next to new node */
-    SilChannelNode *prev_tail = (SilChannelNode *)ATOMIC_EXCHANGE(&canal->tail, nuevo);
-    
-    prev_tail->next = nuevo;
-    ATOMIC_FETCH_ADD(&canal->item_count, 1);
-    
-    return true;
+    if (canal_esta_cerrado(&canal->nucleo)) return false;
+    return canal_encolar_mpsc(&canal->nucleo, mensaje) != 0;
 }
 
 bool sil_channel_mpsc_recibir(SilChannelMPSC *canal, void **mensaje) {
     if (!canal || !mensaje) return false;
-    
-    SilChannelNode *head = (SilChannelNode *)ATOMIC_LOAD(&canal->head);
-    SilChannelNode *next = head->next;
-    
-    if (next == NULL) {
-        return false;  /* Cola vacía */
-    }
-    
-    void *msg = next->data;
-    if (msg == NULL) {
-        return false;
-    }
-    
-    /* Avanzar head al siguiente nodo */
-    ATOMIC_STORE(&canal->head, next);
-    
-    *mensaje = msg;
-    ATOMIC_FETCH_SUB(&canal->item_count, 1);
-    return true;
+    return canal_desencolar(&canal->nucleo, mensaje) != 0;
 }
 
-void sil_channel_mpsc_cerrar(SilChannelMPSC *canal) {
-    if (!canal) return;
-    canal->closed = 1;
-}
+void sil_channel_mpsc_cerrar(SilChannelMPSC *canal) { if (canal) canal_cerrar(&canal->nucleo); }
 
 size_t sil_channel_mpsc_contar(SilChannelMPSC *canal) {
-    if (!canal) return 0;
-    return (size_t)canal->item_count;
+    return canal ? canal_contar(&canal->nucleo) : 0;
+}
+
+size_t sil_channel_mpsc_capacidad(SilChannelMPSC *canal) {
+    return canal ? canal->nucleo.capacidad : 0;
 }
 
 bool sil_channel_mpsc_esta_vacio(SilChannelMPSC *canal) {
-    if (!canal) return true;
-    return canal->item_count == 0;
+    return canal ? canal_contar(&canal->nucleo) == 0 : true;
 }
 
 bool sil_channel_mpsc_esta_cerrado(SilChannelMPSC *canal) {
-    if (!canal) return false;
-    return canal->closed != 0;
+    return canal ? canal_esta_cerrado(&canal->nucleo) != 0 : false;
 }

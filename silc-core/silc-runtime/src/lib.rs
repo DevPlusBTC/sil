@@ -1,9 +1,8 @@
 // silc-runtime: Bindings seguros al runtime C (sil-rt).
 //
-// M7: wrappers 100% seguros (cero `unsafe` en API publica) + tests FFI
-// que ejercitan el C real (arenas, fibras, capacidades).
-//
-// trigger CI after C99 helper/label fixes
+// M7: wrappers seguros sobre el runtime C + tests FFI que ejercitan el C real
+// (arenas, canales, fibras, capacidades). Unica excepcion documentada:
+// `Scheduler::spawn` es `unsafe` porque recibe un puntero de contexto crudo.
 
 // Garantias:
 // - `Arena`: RAII (Drop libera), bump alloc con alineacion, reset O(1).
@@ -343,7 +342,11 @@ impl Channel {
     /// - Post: Retorna Channel con buffer inicial
     pub fn nuevo(capacidad_inicial: usize) -> Result<Self, &'static str> {
         require(capacidad_inicial > 0, "capacidad debe ser > 0");
-        let mut arena = Arena::nueva(capacidad_inicial * 64); // suficiente para nodos
+        // El canal reserva un anillo acotado (capacidad redondeada a potencia
+        // de dos) de ranuras de 16 B; la arena crece por paginas si hace falta.
+        // Anillo acotado de capacidad redondeada a potencia de dos (16 B por
+        // ranura); la arena crece por paginas si la estimacion se queda corta.
+        let mut arena = Arena::nueva(capacidad_inicial * 64);
         let ptr = unsafe { sil_channel_crear(arena.as_ptr(), capacidad_inicial) };
         require_non_null(ptr, "sil_channel_crear falló");
         Ok(Self { inner: ptr, arena })
@@ -356,7 +359,15 @@ impl Channel {
     /// - Post: Retorna true si enviado exitosamente
     pub fn enviar<T>(&self, mensaje: Box<T>) -> bool {
         let ptr = Box::into_raw(mensaje) as *mut c_void;
-        unsafe { sil_channel_enviar(self.inner, ptr) }
+        let enviado = unsafe { sil_channel_enviar(self.inner, ptr) };
+        if !enviado {
+            // Contrapresion (canal lleno) o canal cerrado: se recupera la
+            // propiedad del mensaje en vez de filtrar la caja.
+            // SAFETY: `ptr` viene de un `Box::into_raw` de este mismo metodo y
+            // no se ha liberado; el C no lo tomo porque devolvio false.
+            drop(unsafe { Box::from_raw(ptr as *mut T) });
+        }
+        enviado
     }
 
     /// Recibir mensaje (solo consumidor)
@@ -423,6 +434,8 @@ impl ChannelMPSC {
     /// - Post: Retorna ChannelMPSC con buffer inicial
     pub fn nuevo(capacidad_inicial: usize) -> Result<Self, &'static str> {
         require(capacidad_inicial > 0, "capacidad debe ser > 0");
+        // Anillo acotado de capacidad redondeada a potencia de dos (16 B por
+        // ranura); la arena crece por paginas si la estimacion se queda corta.
         let mut arena = Arena::nueva(capacidad_inicial * 64);
         let ptr = unsafe { sil_channel_mpsc_crear(arena.as_ptr(), capacidad_inicial) };
         require_non_null(ptr, "sil_channel_mpsc_crear falló");
@@ -436,7 +449,12 @@ impl ChannelMPSC {
     /// - Post: Retorna true si enviado exitosamente
     pub fn enviar<T>(&self, mensaje: Box<T>) -> bool {
         let ptr = Box::into_raw(mensaje) as *mut c_void;
-        unsafe { sil_channel_mpsc_enviar(self.inner, ptr) }
+        let enviado = unsafe { sil_channel_mpsc_enviar(self.inner, ptr) };
+        if !enviado {
+            // SAFETY: idem SPSC: la caja no fue aceptada por el canal.
+            drop(unsafe { Box::from_raw(ptr as *mut T) });
+        }
+        enviado
     }
 
     /// Recibir mensaje (único consumidor)

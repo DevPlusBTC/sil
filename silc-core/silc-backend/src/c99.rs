@@ -77,60 +77,105 @@ const RUNTIME_DIAG_POP: &str = "\
 ";
 
 const RUNTIME_ARENA: &str = r#"
-/* --- SIL Runtime: Arenas O(1) (embebido, autocontenido) --- */
+/* --- SIL Runtime: Arenas O(1) (embebido, autocontenido) ---
+ * Contrato (verificado por scripts/run_c_tests.sh contra este mismo texto):
+ *  - toda asignacion devuelve un puntero alineado a `al` o 0;
+ *  - `al` debe ser potencia de dos (0 = alineacion natural);
+ *  - nunca desborda un bloque: si no cabe, encadena uno nuevo dimensionado;
+ *  - una arena sin bloques (creacion fallida o tras destruir) crea el primero
+ *    de forma perezosa en la siguiente asignacion. */
+#include <stdint.h>
+#include <stddef.h>
+
 typedef struct SilArenaBloque_ {
     unsigned char *memoria;
-    unsigned long capacidad;
-    unsigned long usado;
+    size_t capacidad;
+    size_t usado;
     struct SilArenaBloque_ *siguiente;
 } SilArenaBloque_;
 
 typedef struct {
     SilArenaBloque_ *inicio;
     SilArenaBloque_ *actual;
-    unsigned long asignado_total;
+    size_t asignado_total;
 } SilArena_;
 
-#define SIL_ARENA_PAGE_ 65536UL
+#define SIL_ARENA_PAGE_ ((size_t)65536)
+#define SIL_ARENA_ALINEACION_DEFECTO_ ((size_t)8)
 
-static SilArena_ sil_arena_crear_(unsigned long cap_inicial) {
-    SilArena_ a;
-    unsigned long cap = cap_inicial > 0 ? cap_inicial : SIL_ARENA_PAGE_;
+static SilArenaBloque_ *sil_arena_bloque_nuevo_(size_t capacidad) {
     SilArenaBloque_ *b = (SilArenaBloque_*)malloc(sizeof(SilArenaBloque_));
-    b->memoria = (unsigned char*)malloc(cap);
-    b->capacidad = cap;
+    if (!b) return 0;
+    b->memoria = (unsigned char*)malloc(capacidad);
+    if (!b->memoria) { free(b); return 0; }
+    b->capacidad = capacidad;
     b->usado = 0;
     b->siguiente = 0;
+    return b;
+}
+
+static SilArena_ sil_arena_crear_(size_t cap_inicial) {
+    SilArena_ a;
+    size_t cap = cap_inicial > 0 ? cap_inicial : SIL_ARENA_PAGE_;
+    SilArenaBloque_ *b;
+    a.inicio = 0;
+    a.actual = 0;
+    a.asignado_total = 0;
+    b = sil_arena_bloque_nuevo_(cap);
+    if (!b) return a; /* la primera asignacion reintenta */
     a.inicio = b;
     a.actual = b;
     a.asignado_total = cap;
     return a;
 }
 
-static void *sil_arena_asignar_(SilArena_ *arena, unsigned long n, unsigned long al) {
-    unsigned long a = (n + (al - 1)) & ~(al - 1);
-    SilArenaBloque_ *b = arena->actual;
-    if (b->usado + a > b->capacidad) {
-        unsigned long nc = a > SIL_ARENA_PAGE_ ? a : SIL_ARENA_PAGE_;
-        SilArenaBloque_ *nn = (SilArenaBloque_*)malloc(sizeof(SilArenaBloque_));
-        nn->memoria = (unsigned char*)malloc(nc);
-        nn->capacidad = nc;
-        nn->usado = 0;
-        nn->siguiente = 0;
-        b->siguiente = nn;
-        arena->actual = nn;
-        arena->asignado_total += nc;
-        b = nn;
+static void *sil_arena_asignar_(SilArena_ *arena, size_t n, size_t al) {
+    if (!arena) return 0;
+    if (al == 0) al = SIL_ARENA_ALINEACION_DEFECTO_;
+    if ((al & (al - 1)) != 0) return 0; /* solo potencias de dos */
+    if (n == 0) n = 1;
+    if (n > (size_t)-1 - al) return 0;  /* `n + al` no debe desbordar */
+    for (;;) {
+        SilArenaBloque_ *b = arena->actual;
+        uintptr_t base, inicio, fin;
+        if (!b) {
+            size_t cap = n + al;
+            if (cap < SIL_ARENA_PAGE_) cap = SIL_ARENA_PAGE_;
+            b = sil_arena_bloque_nuevo_(cap);
+            if (!b) return 0;
+            arena->inicio = b;
+            arena->actual = b;
+            arena->asignado_total += cap;
+        }
+        base = (uintptr_t)b->memoria;
+        fin = base + b->capacidad;
+        inicio = (base + (uintptr_t)b->usado + (uintptr_t)al - 1u) & ~((uintptr_t)al - 1u);
+        if (inicio >= base + (uintptr_t)b->usado && inicio <= fin &&
+            n <= (size_t)(fin - inicio)) {
+            b->usado = (size_t)(inicio - base) + n;
+            return (void*)inicio;
+        }
+        {
+            size_t cap = n + al;
+            SilArenaBloque_ *nn;
+            if (cap < SIL_ARENA_PAGE_) cap = SIL_ARENA_PAGE_;
+            nn = sil_arena_bloque_nuevo_(cap);
+            if (!nn) return 0;
+            b->siguiente = nn;
+            arena->actual = nn;
+            arena->asignado_total += cap;
+        }
     }
-    void *p = &b->memoria[b->usado];
-    b->usado += a;
-    return p;
 }
 
 static void sil_arena_destruir_(SilArena_ *arena) {
-    SilArenaBloque_ *c = arena->inicio;
+    SilArenaBloque_ *c;
+    if (!arena) return;
+    c = arena->inicio;
     while (c) { SilArenaBloque_ *s = c->siguiente; free(c->memoria); free(c); c = s; }
-    arena->inicio = 0; arena->actual = 0; arena->asignado_total = 0;
+    arena->inicio = 0;
+    arena->actual = 0;
+    arena->asignado_total = 0;
 }
 "#;
 
@@ -254,10 +299,14 @@ typedef struct { long long *buf; unsigned long cap; unsigned long cabeza; unsign
 static SilCanal_ sil_canales_[SIL_CANALES_MAX_] = {{0,0,0,0,0,0,0}};
 static long long sil_canal_crear_(unsigned long capacidad) {
 unsigned long i; unsigned long cap = capacidad ? capacidad : SIL_CANAL_DEF_;
+if (cap > (1UL << 24)) return -1; /* cota: 2^24 * 8 B = 128 MiB */
 for (i = 0; i < SIL_CANALES_MAX_; i++) {
-if (sil_canales_[i].en_uso) continue;
+if (sil_canales_[i].en_uso && !sil_canales_[i].cerrado) continue;
+/* Ranura libre, o canal ya cerrado y sin pendientes: se recicla. */
+if (sil_canales_[i].en_uso && sil_canales_[i].n != 0) continue;
+free(sil_canales_[i].buf);
 sil_canales_[i].buf = (long long*)malloc(sizeof(long long) * cap);
-if (!sil_canales_[i].buf) return -1;
+if (!sil_canales_[i].buf) { sil_canales_[i].en_uso = 0; return -1; }
 sil_canales_[i].cap = cap; sil_canales_[i].cabeza = 0; sil_canales_[i].cola = 0;
 sil_canales_[i].n = 0; sil_canales_[i].cerrado = 0; sil_canales_[i].en_uso = 1;
 return (long long)i;
@@ -281,6 +330,7 @@ if (!c || !v || c->n == 0) return 0;
 return 1;
 }
 static void sil_canal_cerrar_(long long h) { SilCanal_ *c = sil_canal_(h); if (c) c->cerrado = 1; }
+static void sil_canal_destruir_(long long h) { SilCanal_ *c = sil_canal_(h); if (!c) return; free(c->buf); c->buf = 0; c->cap = 0; c->cabeza = 0; c->cola = 0; c->n = 0; c->cerrado = 1; c->en_uso = 0; }
 /* --- Red TCP minima (cliente). Destino "host:puerto". --- */
 #if defined(_WIN32)
 #pragma comment(lib, "ws2_32")

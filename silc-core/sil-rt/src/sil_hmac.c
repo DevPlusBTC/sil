@@ -69,6 +69,7 @@ static void sha256_init(Sha256Ctx_ *ctx) {
 }
 
 static void sha256_update(Sha256Ctx_ *ctx, const uint8_t *msg, size_t len) {
+    if (!msg) return; /* contrato: sin mensaje no hay bytes que absorber */
     for (size_t i = 0; i < len; i++) {
         ctx->datos[ctx->len_datos++] = msg[i];
         if (ctx->len_datos == 64) {
@@ -100,9 +101,16 @@ static void sha256_final(Sha256Ctx_ *ctx, uint8_t digesto[32]) {
 
 void sil_sha256(const uint8_t *msg, size_t len, uint8_t digesto[SIL_SHA256_DIGESTO]) {
     Sha256Ctx_ ctx;
+    if (!digesto) return;
+    /* Entrada invalida (puntero nulo con longitud): se emite un digesto nulo
+     * en vez de dejar la salida sin definir, que es lo que observaria el
+     * llamador como "basura" no reproducible. */
+    if (!msg && len != 0) {
+        memset(digesto, 0, SIL_SHA256_DIGESTO);
+        return;
+    }
     sha256_init(&ctx);
-    if (msg && len) sha256_update(&ctx, msg, len);
-    else if (!msg && len) return;
+    if (len) sha256_update(&ctx, msg, len);
     sha256_final(&ctx, digesto);
     memset(&ctx, 0, sizeof(ctx));
 }
@@ -111,6 +119,11 @@ void sil_hmac_sha256(const uint8_t *clave, size_t clave_len,
                      const uint8_t *msg, size_t msg_len,
                      uint8_t mac[SIL_SHA256_DIGESTO]) {
     uint8_t k[SIL_SHA256_BLOQUE];
+    if (!mac) return;
+    if (!clave && clave_len != 0) {
+        memset(mac, 0, SIL_SHA256_DIGESTO);
+        return;
+    }
     memset(k, 0, sizeof(k));
     if (clave_len > sizeof(k)) {
         sil_sha256(clave, clave_len, k);

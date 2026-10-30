@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+### Corregido — runtime C (auditoría 2026-10-30, ver `docs/AUDITORIA.md`)
+- **Canales**: `sil_channel_enviar` hacía SEGV en el primer envío. El macro
+  `ATOMIC_CAS` pasaba *el valor* del puntero como dirección del valor esperado
+  (`(void **)(old)` en vez de `&old`), así que `atomic_compare_exchange`
+  desreferenciaba `NULL`. Reescritos SPSC/MPSC como anillo acotado con número de
+  secuencia por ranura (Vyukov): memoria O(capacidad), cero reservas por
+  mensaje, sin ABA, contrapresión real (`enviar` falla con el canal lleno) y
+  cierre que permite drenar. `capacidad` deja de ignorarse (0 = 1024, se
+  redondea a potencia de dos, tope 2^24).
+- **Fibras**: cada `yield` reiniciaba la fibra (el scheduler reanudaba el
+  contexto de `makecontext`, no el guardado por `swapcontext`), lo que producía
+  un bucle infinito; además el scheduler siempre elegía la primera fibra lista
+  (sin round-robin). Ahora el contexto propio es la única fuente de verdad y el
+  reparto usa un cursor circular. TLS portable (`__thread`/`__declspec(thread)`)
+  en lugar de `_Thread_local`, que no es C99 y `build.rs` compila con `-std=c99`.
+- **Arenas**: se alineaba el tamaño en vez de la dirección (un `asignar(16, 16)`
+  tras un `asignar(1, 8)` devolvía memoria desalineada); una petición cercana a
+  `SIZE_MAX` desbordaba `usado + alineado` y devolvía un puntero dentro del
+  bloque; tras `destruir` la siguiente asignación desreferenciaba `NULL`;
+  `promover(a, a, …)` auto-enlazaba la lista (ciclo en `destruir`). Corregido con
+  alineación sobre la dirección absoluta, guardas de desbordamiento, creación
+  perezosa de bloque y guardas de `promover`.
+- **Runtime C emitido (`silc-backend` `RUNTIME_ARENA`)**: `sil_arena_asignar_(a,
+  n, 0)` calculaba `a = 0` y devolvía siempre el mismo puntero **sin reservar
+  memoria**; tampoco alineaba ni comprobaba desbordamientos. Reescrito con el
+  mismo contrato que el runtime nativo.
+- **SHA-256/HMAC**: `sil_sha256(NULL, len>0, out)` retornaba sin escribir `out`
+  (salida indefinida). Ahora emite digesto nulo determinista; `sha256_update`
+  ignora mensajes nulos y `sil_hmac_sha256` rechaza clave nula con longitud.
+- **Capacidades**: se aceptaba `permisos = 0` al solicitar y `requerido = 0` al
+  validar (capacidad «vacía» que valida); la comprobación de bits desconocidos
+  era redundante; la clave fijada se publicaba sin orden de memoria. Corregido.
+- **Rust** (`silc-runtime`): `Channel::enviar` y `ChannelMPSC::enviar` filtraban
+  la caja (`Box::into_raw` sin recuperación) cuando el envío fallaba por
+  contrapresión o cierre. Ahora se recupera la propiedad y se libera.
+
+### Añadido — verificación del runtime C
+- `silc-core/sil-rt/tests/`: 40 casos y 222 comprobaciones escritas (≈4.700
+  ejecutadas por los bucles) para arenas, canales (incluido SPSC de 200.000
+  mensajes y MPSC 4P/1C con detección de duplicados y pérdidas), fibras,
+  SHA-256/HMAC (vectores FIPS 180-4 y RFC 4231) y capacidades.
+- `scripts/run_c_tests.sh`: compilación estricta de `sil-rt`
+  (`-std=c99 -pedantic-errors -Wall -Wextra -Werror`), ejecución con
+  AddressSanitizer/UBSan, pasada de ThreadSanitizer y `--bench` con medidas
+  reproducibles (arena 3,5 ns/op; anillo 3,1 ns por par enviar+recibir).
+- `scripts/extraer_runtime_c.py`: extrae *verbatim* el runtime C embebido en
+  `silc-backend/src/c99.rs` (soporta raw strings y literales con escapes y
+  continuaciones de línea) para compilarlo y ejecutarlo. Si el fuente Rust
+  cambia de forma incompatible, la extracción falla.
+- CI: job `runtime-c` (ubuntu-latest) y `scripts/**` añadido a los filtros de
+  `paths`, que antes no disparaban CI al cambiar herramientas.
+- `scripts/test_counts.py`: cuenta también los casos C y sincroniza la nueva
+  fila/filas en README, SPEC y WHITE_PAPER; modo `TEST_COUNTS_FAKE_RUST` para
+  trabajar sin toolchain de Rust (documentado y nunca usado en CI).
+- `docs/AUDITORIA.md`: auditoría completa con hallazgos (C-01…C-07 corregidos,
+  R-01…R-11 abiertos con prioridad y plan), medidas de rendimiento, decisiones
+  de diseño y definición de «verificado».
+
 ### Corregido
 - CI: el job `build+test` ahora pasa en las tres plataformas. Causas reales:
   - `-std=c99` estricto ocultaba `sigset_t`/`AT_FDCWD`/`struct timespec`/

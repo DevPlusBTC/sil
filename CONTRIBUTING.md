@@ -27,15 +27,22 @@ Para proponer nuevas características o mejoras:
 4. Asegúrate de que todos los tests pasen: `cargo test --workspace`
 5. Asegúrate de que el código pase clippy: `cargo clippy --workspace --all-targets`
 6. Asegúrate de que el código esté formateado: `cargo fmt --check`
-7. Haz commit de tus cambios: `git commit -m "feat: descripción del cambio"`
-8. Sube tu rama: `git push origin feature/nombre-de-la-feature`
-9. Abre un Pull Request
+7. Si tocas el runtime C (`sil-rt`) o el runtime emitido (`c99.rs`), ejecuta
+   `scripts/run_c_tests.sh` (compilación estricta + ASan/UBSan/TSan + runtime
+   emitido extraído de `c99.rs`)
+8. Regenera los conteos de tests si añadiste casos: `python3 scripts/test_counts.py`
+9. Haz commit de tus cambios: `git commit -m "feat: descripción del cambio"`
+10. Sube tu rama: `git push origin feature/nombre-de-la-feature`
+11. Abre un Pull Request
 
 ### 4. Estándares de código
 
 - Sigue las convenciones de Rust (`rustfmt`, `clippy`)
 - Escribe documentación para todas las funciones públicas
 - Escribe pruebas para toda la nueva funcionalidad
+- Una capacidad solo se documenta como «✅ Listo para probar» si existe un test
+  que la **ejecute** y falle al romperla (los tests que comparan subcadenas no
+  cuentan como verificación de comportamiento)
 - Usa comentarios en español para el código SIL, inglés para comentarios técnicos internos
 
 ## Estructura del repositorio

@@ -35,12 +35,37 @@ typedef struct {
     uint32_t ciclos_abiertos;
 } SilArena;
 
+/* Crea una arena con al menos `capacidad_inicial` bytes (0 = pagina de 64 KiB).
+ * Nunca falla: si no hay memoria devuelve una arena vacia y la primera
+ * asignacion reintenta crear el bloque. */
 SilArena sil_arena_crear(size_t capacidad_inicial);
+
+/* Reserva `tamanio` bytes alineados a `alineacion`.
+ *
+ * Contrato:
+ *  - `alineacion` debe ser potencia de dos (0 = 8). Si no lo es, devuelve NULL.
+ *  - Devuelve un puntero alineado de verdad: la alineacion se aplica sobre la
+ *    direccion, no sobre el tamanio.
+ *  - Si `tamanio + alineacion` desbordaria size_t, o si no hay memoria,
+ *    devuelve NULL sin modificar la arena.
+ *  - `tamanio == 0` reserva 1 byte (nunca se devuelve el mismo puntero dos
+ *    veces).
+ *  - Crea un bloque nuevo de forma perezosa si la arena esta vacia. */
 void* sil_arena_asignar(SilArena *arena, size_t tamanio, size_t alineacion);
+
+/* Libera todos los bloques. La arena queda reutilizable (creacion perezosa). */
 void sil_arena_destruir(SilArena *arena);
+
+/* Reinicia los offsets conservando las paginas: O(n bloques) con n acotado. */
 void sil_arena_reset(SilArena *arena);
+
+/* Transfiere TODOS los bloques del origen al destino sin copiar datos.
+ * `ptr`/`tamanio` se mantienen por compatibilidad ABI (la promocion es a nivel
+ * de arena). No hace nada si `origen == destino` (evita ciclos en la lista). */
 void sil_arena_promover(SilArena *origen, SilArena *destino, void *ptr, size_t tamanio);
 
+/* Sub-arenas ciclicas: `iniciar` abre un ciclo (id > 0, 0 = desbordamiento) y
+ * `finalizar` reclama en O(1) en bytes todo lo asignado desde la marca. */
 uint32_t sil_arena_ciclo_iniciar(SilArena *arena);
 void sil_arena_ciclo_finalizar(SilArena *arena);
 uint32_t sil_arena_ciclo_actual(SilArena *arena);

@@ -20,8 +20,8 @@
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
 | **Arenas O(1)** | Listo para probar | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
 | **Arenas Persistentes NVM** | Pendiente para desarrollo | 0/0 | AST/parser; sin mmap/NVM |
-| **Scheduler Fibras** | Listo para probar | 0/0 | Win32 Fibers (Windows) y `ucontext` (Linux/macOS/BSD); sin tests dedicados |
-| **Canales Lock-Free** | Listo para probar | 0/0 | SPSC/MPSC implementados en sil-rt |
+| **Scheduler Fibras** | Listo para probar | 6 casos C ✅ | Win32 Fibers (Windows) y `ucontext` (Linux/macOS/BSD); round-robin con cursor y `yield` que reanuda el contexto propio (verificado en `sil-rt/tests/test_fiber.c`) |
+| **Canales Lock-Free** | Listo para probar | 6 casos C ✅ | Anillo acotado con secuencia por ranura (SPSC y MPSC), memoria O(capacidad) y cero `malloc` por mensaje; verificado bajo ASan y TSan |
 | **Async I/O (io_uring/IOCP/POSIX)** | Listo para probar (runtime) | 1/1 ✅ | Por defecto `pread`/`pwrite` (POSIX) e IOCP (Windows); `io_uring` sólo con `SIL_IO_URING=1`; falta integrarlo al codegen |
 | **Capacidades (validación)** | Listo para probar | 17/17 ✅ | Permisos, expiración, firma HMAC-SHA256 |
 | **TPM 2.0** | Listo para probar (sólo Windows) | 0/0 | Módulo `m34_tpm2` bajo `#[cfg(target_os = "windows")]` (TBS); en Linux/macOS no se compila |
@@ -34,7 +34,7 @@
 
 | Métrica | Valor |
 |---------|-------|
-| **Tests Totales** | **169/169 Rust + 31 Python ✅** |
+| **Tests Totales** | **169/169 Rust + 31 Python + 40 C ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
@@ -218,8 +218,8 @@ typedef struct { SilArenaBloque *inicio, *actual; size_t asignado_total; } SilAr
 | Operación | Coste | Notas |
 |---|---|---|
 | `sil_arena_crear(cap)` | O(1) | página mínima `SIL_ARENA_PAGE_SIZE` (64 KiB) |
-| `sil_arena_asignar(a, n, al)` | O(1) | alinea a `al` (def. 8); si no cabe, encadena página nueva |
-| `sil_arena_reset(a)` | O(1) | conserva bloques, pone `usado = 0` |
+| `sil_arena_asignar(a, n, al)` | O(1) | alinea **la dirección** a `al` (def. 8; solo potencias de dos), no el tamaño; si no cabe, encadena página nueva. Rechaza `n` que desbordaría el bloque y alineaciones inválidas devolviendo `NULL` |
+| `sil_arena_reset(a)` | O(n bloques) | conserva las páginas (no vuelve al SO), pone `usado = 0` |
 | `sil_arena_destruir(a)` | O(n bloques) | libera la cadena completa |
 
 El runtime embebido en el C generado (`silc-backend/src/c99.rs`, `RUNTIME_ARENA`)
@@ -281,12 +281,27 @@ Scheduler cooperativo con dos implementaciones en `sil-rt/src/fiber.c`:
 | Windows | Win32 Fibers (`ConvertThreadToFiber`, `SwitchToFiber`) | compila y pasa CI |
 | Linux / macOS / BSD | `ucontext.h` (`getcontext`/`makecontext`/`swapcontext`) | compila y pasa CI |
 
-Sin tests dedicados (0/0): la cobertura viene del ejemplo `fibra_basica.sil`,
-que se compila a C99 y se ejecuta en la validación local, no en `cargo test`.
+Cubierto por 6 casos C (`sil-rt/tests/test_fiber.c`): orden de ejecución,
+round-robin con tres fibras que ceden, preservación del estado local a través de
+`yield` (el defecto anterior reiniciaba la fibra), 1.000 fibras, y `yield` sin
+scheduler como no-op.
 
-### 5.2 Canales Tipados Lock-Free — Listo para probar ✅
+El scheduler del C **emitido** es otra cosa: ejecuta cada tarea hasta retornar,
+sin cesión de control (ver `docs/AUDITORIA.md`, R-03).
 
-SPSC y MPSC con operaciones atómicas, implementados en sil-rt.
+### 5.2 Canales Tipados de Capacidad Acotada — Listo para probar ✅
+
+Anillo de ranuras con número de secuencia por ranura (Vyukov) en `sil-rt/src/channel.c`:
+
+| Propiedad | Comportamiento |
+|---|---|
+| Memoria | O(capacidad) ranuras reservadas una vez en la arena; **cero reservas por mensaje** |
+| Productores | 1 (SPSC, sin CAS) o N (MPSC, CAS sobre la cola) |
+| Consumidores | 1 en ambos canales (es lo que permite consumir sin CAS) |
+| Capacidad | `0` = 1024 por defecto; se redondea a la potencia de dos superior; máximo 2^24 |
+| Contrapresión | `enviar` devuelve `false` con el canal lleno o cerrado |
+| Cierre | `cerrar` impide enviar y **permite drenar** lo pendiente |
+| Verificación | 6 casos C: FIFO, contrapresión, cierre, 200.000 mensajes SPSC y 4×25.000 MPSC bajo ASan/UBSan y TSan |
 
 ### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Runtime listo, integración pendiente
 
@@ -453,14 +468,14 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo ❌ | |
 | **Arenas / Sub-Arenas** | Listo para probar ✅ | 100% |
 | **Arenas Persistentes NVM** | Pendiente para desarrollo ⚠️ | Solo AST/IR |
-| **Scheduler Fibras** | Listo para probar ✅ | Implementado |
-| **Canales Lock-Free** | Listo para probar ✅ | Implementado |
+| **Scheduler Fibras** | Listo para probar ✅ | 6 casos C (round-robin + `yield` con estado preservado) |
+| **Canales Lock-Free** | Listo para probar ✅ | 6 casos C (FIFO, contrapresión, SPSC 200k, MPSC 4P/1C) |
 | **Capacidades (validación)** | Listo para probar ✅ | 100% |
 | **Capacidades (firma TPM)** | Listo para probar ✅ | HMAC-SHA256 implementado |
 | **TPM 2.0** | Listo para probar ✅ | Framework implementado |
 | **eBPF Kernel** | Pendiente para desarrollo ❌ | |
-| **Scheduler Fibras** | Listo para probar ✅ | Implementado |
-| **Canales Lock-Free** | Listo para probar ✅ | Implementado |
+| **Scheduler Fibras** | Listo para probar ✅ | 6 casos C (round-robin + `yield` con estado preservado) |
+| **Canales Lock-Free** | Listo para probar ✅ | 6 casos C (FIFO, contrapresión, SPSC 200k, MPSC 4P/1C) |
 | **Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **eBPF Kernel** | Pendiente para desarrollo ❌ | |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | |
@@ -478,7 +493,7 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Backend C99 validado: los tests compilan el C emitido con `gcc`/`clang -Wall -Wextra -Werror` en Linux y macOS
 - Backend WASM binario válido con WASI
 - CLI completo (`build`, `check`, `emit-smt`, `run`, `lsp`)
-- 169 tests Rust + 31 Python pasando, CI verde en los 3 OS (incluye fuzz y reproducibilidad)
+- 169 tests Rust + 31 Python + 40 casos C (222 comprobaciones) pasando; CI verde en los 3 OS (incluye fuzz y reproducibilidad)
 - Capacidades Zero-Trust con firma HMAC-SHA256
 - TPM 2.0: tipos y framework, sólo Windows (sin pruebas en hardware)
 - Scheduler de fibras cooperativas (Win32 Fibers / ucontext)

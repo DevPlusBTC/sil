@@ -10,12 +10,29 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 |---------|-------|
 | **Tests Rust** | **169/169 ✅** |
 | **Tests Python** | **31/31 ✅** |
+| **Tests C (runtime)** | **40 casos / 222 comprobaciones ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |
 | **Próximo hito** | Codegen de servicios/red; decidir LLVM (job de CI o experimental); validar eBPF con libbpf 1.x |
 
 ---
+
+## Verificación del runtime (sin toolchain de Rust)
+
+El runtime nativo (`sil-rt`, C99) y el runtime que **emite** el backend C99 se
+compilan y ejecutan en local y en CI:
+
+```bash
+scripts/run_c_tests.sh            # estricto + ASan/UBSan + TSan + runtime emitido
+scripts/run_c_tests.sh --bench    # medidas reproducibles (arena y canales)
+```
+
+Cubre arenas (alineación, desbordamiento, ciclos, promoción), canales SPSC/MPSC
+(contrapresión, concurrencia real), fibras (round-robin, `yield`), SHA-256/HMAC
+contra vectores FIPS 180-4 y RFC 4231, capacidades Zero-Trust y el runtime
+embebido que `silc build --target c99` inyecta en cada programa.
+Estado, hallazgos y hoja de ruta: [`docs/AUDITORIA.md`](docs/AUDITORIA.md).
 
 ## Instalación
 

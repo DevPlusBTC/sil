@@ -4,7 +4,10 @@
  *   con clave de 32 bytes en SIL_CAP_KEY (hex). Liga la capacidad al recurso.
  * - sil_cap_validar(): recalcula y compara en tiempo constante + permisos +
  *   expiracion estricta con reloj monotonico (vDSO/QPC, ~20ns).
- * - Sin malloc, sin estado global. Clave solo vive en stack y se limpia.
+ * - Sin malloc. La unica pieza de estado global es la clave fijada por el
+ *   propio proceso (sil_cap_fijar_clave); se publica con una store release y
+ *   se lee con acquire, y por contrato se fija una sola vez durante el
+ *   arranque (antes de emitir capacidades).
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -17,10 +20,15 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 #define SIL_CAP_MAGIC 0xC4A981E5u
 #define SIL_CAP_MAX_RECURSO 1024u
 #define SIL_CAP_TTL_DEFECTO_NS 500000000ull /* 500ms */
+/* Bits de permiso definidos en sil_cap.h (LEER|ESCRIBIR|RED|EXEC). */
+#define SIL_CAP_PERMISOS_VALIDOS 0x0Fu
 
 static unsigned long long ahora_monotonico_ns(void) {
 #if defined(_WIN32)
@@ -43,19 +51,32 @@ static unsigned long long ahora_monotonico_ns(void) {
 #endif
 }
 
-/* Lee SIL_CAP_KEY (64 hex chars). Retorna 1 y llena clave, o 0. */
+/* Clave fijada por el proceso huesped (prioritaria sobre SIL_CAP_KEY). */
 static uint8_t clave_fija[32];
 static int hay_clave_fija = 0;
 
 SilCapError sil_cap_fijar_clave(const uint8_t clave[32]) {
     if (!clave) return SIL_CAP_INVALID_PARAM;
     memcpy(clave_fija, clave, 32);
+#if defined(_MSC_VER)
+    _ReadWriteBarrier();
     hay_clave_fija = 1;
+#else
+    __atomic_store_n(&hay_clave_fija, 1, __ATOMIC_RELEASE);
+#endif
     return SIL_CAP_OK;
 }
 
+static int clave_fija_publicada(void) {
+#if defined(_MSC_VER)
+    return hay_clave_fija;
+#else
+    return __atomic_load_n(&hay_clave_fija, __ATOMIC_ACQUIRE);
+#endif
+}
+
 static int leer_clave(uint8_t clave[32]) {
-    if (hay_clave_fija) {
+    if (clave_fija_publicada()) {
         memcpy(clave, clave_fija, 32);
         return 1;
     }
@@ -102,7 +123,10 @@ SilCapError sil_cap_solicitar(const char *recurso, uint32_t permisos, uint64_t t
     if (!out_cap || !recurso) return SIL_CAP_INVALID_PARAM;
     size_t lr = strlen(recurso);
     if (lr == 0 || lr > SIL_CAP_MAX_RECURSO) return SIL_CAP_INVALID_PARAM;
-    if ((permisos & 0xFFFFFFF0u) != 0 && permisos > 0x0Fu) return SIL_CAP_INVALID_PARAM;
+    /* Una capacidad sin permisos no autoriza nada: se rechaza en origen para
+     * que nunca exista una capacidad "vacia" que valide por accidente. */
+    if (permisos == 0) return SIL_CAP_INVALID_PARAM;
+    if ((permisos & ~(uint32_t)SIL_CAP_PERMISOS_VALIDOS) != 0) return SIL_CAP_INVALID_PARAM;
 
     uint8_t clave[32];
     if (!leer_clave(clave)) {
@@ -134,6 +158,9 @@ SilCapError sil_cap_validar(const SilCapacidad *cap, const char *recurso, SilPer
     if (!cap || !recurso) return SIL_CAP_INVALID_PARAM;
     if (!cap->valida) return SIL_CAP_ERROR;
     if (cap->id != SIL_CAP_MAGIC) return SIL_CAP_ERROR;
+    if ((unsigned)requerido == 0u) return SIL_CAP_INVALID_PARAM;
+    if (((unsigned)requerido & ~(unsigned)SIL_CAP_PERMISOS_VALIDOS) != 0)
+        return SIL_CAP_INVALID_PARAM;
     if (((unsigned)cap->permisos & (unsigned)requerido) != (unsigned)requerido) return SIL_CAP_ERROR;
     size_t lr = strlen(recurso);
     if (lr == 0 || lr > SIL_CAP_MAX_RECURSO) return SIL_CAP_INVALID_PARAM;

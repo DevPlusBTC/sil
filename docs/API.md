@@ -135,14 +135,16 @@ El runtime se compila y enlaza con el código C generado. Familias principales:
 
 | Familia | Ejemplos |
 |---------|----------|
-| Arenas | `sil_arena_crear`, `sil_arena_asignar`, `sil_arena_reset`, `sil_arena_ciclo_*` |
-| Fibras | `sil_sched_crear`, `sil_sched_spawn`, `sil_sched_ejecutar`, `sil_fibra_yield` |
-| Canales | `sil_channel_crear/enviar/recibir/cerrar/contar` |
-| Canales MPSC | `sil_channel_mpsc_crear/enviar/recibir/cerrar` |
+| Arenas | `sil_arena_crear`, `sil_arena_asignar` (alineación sobre la dirección, `NULL` ante petición imposible), `sil_arena_reset`, `sil_arena_promover`, `sil_arena_ciclo_*` |
+| Fibras | `sil_sched_crear`, `sil_sched_spawn`, `sil_sched_ejecutar` (round-robin), `sil_fibra_yield` (reanuda el contexto propio de la fibra) |
+| Canales | `sil_channel_crear(arena, capacidad)`, `enviar` (false si lleno/cerrado), `recibir`, `cerrar` (drena), `contar`, `capacidad` |
+| Canales MPSC | `sil_channel_mpsc_*` con la misma semántica y CAS en la cola |
 | E/S asíncrona | `sil_aio_ctx_crear`, `sil_aio_leer`, `sil_aio_escribir`, `sil_aio_procesar` |
 | eBPF (Linux) | `sil_ebpf_ctx_crear`, `sil_ebpf_ctx_destruir` |
 
-Las firmas exactas están en `silc-core/silc-runtime/src/lib.rs`.
+Las firmas exactas están en `silc-core/silc-runtime/src/lib.rs` y en los headers
+de `silc-core/sil-rt/include/`. El contrato de cada función está verificado por
+`scripts/run_c_tests.sh` (ASan/UBSan/TSan); ver `docs/AUDITORIA.md`.
 
 ---
 
