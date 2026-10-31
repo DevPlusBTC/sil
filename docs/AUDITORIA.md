@@ -223,6 +223,7 @@ Ninguna de estas brechas se puede cerrar «de una vez»: cada una necesita dise�
 
 ```bash
 # Todo lo verificado aquí, en 10 s
+scripts/pre-pr.sh --permitir-omitidos   # todos los gates (OMITIDO si falta la herramienta)
 scripts/run_c_tests.sh            # estricto + ASan/UBSan + TSan + runtime emitido
 scripts/run_c_tests.sh --bench    # medidas de la sección 4
 python3 -m pytest -q              # prototipo Python (31 tests)

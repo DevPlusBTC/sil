@@ -343,7 +343,7 @@ jobs:
 
   # --- 5. Python prototipo (no romper Fase -1) ---
   python-proto:
-    name: python prototipo (31 tests)
+    name: python prototipo (unittest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

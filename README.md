@@ -18,15 +18,25 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 
 ---
 
-## Verificación del runtime (sin toolchain de Rust)
+## Verificación en local
 
-El runtime nativo (`sil-rt`, C99) y el runtime que **emite** el backend C99 se
-compilan y ejecutan en local y en CI:
+Un solo comando ejecuta los mismos gates que la CI antes de abrir un PR:
 
 ```bash
-scripts/run_c_tests.sh            # estricto + ASan/UBSan + TSan + runtime emitido
-scripts/run_c_tests.sh --bench    # medidas reproducibles (arena y canales)
+scripts/pre-pr.sh                 # todos los gates de la CI, en local
+├─ fmt, clippy, cargo test        # gates de Rust (se omiten sin toolchain)
+├─ scripts/run_c_tests.sh         # runtime C: estricto + ASan/UBSan + TSan
+├─ tests Python                   # pytest si está, si no unittest
+└─ test_counts.py --check         # los conteos de tests no se desfasan
 ```
+
+Los gates que no se pueden ejecutar (p. ej. sin toolchain de Rust) se marcan
+**OMITIDO**, nunca como éxito. Para trabajar solo el runtime:
+`scripts/run_c_tests.sh` y `scripts/run_c_tests.sh --bench` (medidas
+reproducibles de arena y canales).
+
+El flujo de ramas, mensajes y evidencia que se espera en un PR está en
+[`CONTRIBUTING.md`](CONTRIBUTING.md#flujo-de-trabajo-con-git).
 
 Cubre arenas (alineación, desbordamiento, ciclos, promoción), canales SPSC/MPSC
 (contrapresión, concurrencia real), fibras (round-robin, `yield`), SHA-256/HMAC

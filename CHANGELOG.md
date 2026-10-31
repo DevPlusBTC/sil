@@ -38,6 +38,25 @@
   la caja (`Box::into_raw` sin recuperación) cuando el envío fallaba por
   contrapresión o cierre. Ahora se recupera la propiedad y se libera.
 
+### Añadido — flujo de trabajo Git
+- `CONTRIBUTING.md`: sección **«Flujo de trabajo con Git»** (trunk-based con
+  ramas cortas): por qué no se commitea en `main` con el caso concreto de este
+  repo (la CI solo se dispara con PR, los releases salen de tags con atestación,
+  trazabilidad EAL7/DO-178C), excepciones aceptables, ciclo completo, convención
+  de ramas y de mensajes por scope, tabla gates locales ↔ jobs de CI, rebase vs
+  merge, squash/rebase/merge al integrar, protección de `main` recomendada y
+  reglas anti-deriva.
+- `scripts/pre-pr.sh`: ejecuta en local los gates de la CI con resultado
+  **OK / FALLO / OMITIDO** (nunca cuenta una herramienta ausente como éxito).
+  Salidas: 0 todo correcto, 1 algún fallo, 2 omisiones no permitidas. Flags:
+  `--rapido`, `--completo` (feature `smt` + extensión VS Code),
+  `--permitir-omitidos`, `--permitir-main`. Probado en los tres caminos.
+- `.github/pull_request_template.md`: el PR pide evidencia (comando + salida),
+  gates omitidos declarados, alcance y límites, y riesgos de compatibilidad.
+- CI: el job `python-proto` se llamaba «python prototipo (31 tests)»; el conteo
+  fijo se desfasaba con cada test nuevo. Ahora se llama «python prototipo
+  (unittest)» y el número real lo mantiene `scripts/test_counts.py`.
+
 ### Añadido — verificación del runtime C
 - `silc-core/sil-rt/tests/`: 40 casos y 222 comprobaciones escritas (≈4.700
   ejecutadas por los bucles) para arenas, canales (incluido SPSC de 200.000
