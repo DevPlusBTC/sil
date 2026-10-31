@@ -190,6 +190,7 @@ typedef struct { unsigned long long id; unsigned int permisos; unsigned long lon
  * salvo libc (+ws2_32 en Windows solo si el programa usa red). */
 const RUNTIME_CONFIANZA: &str = r#"
 #include <stdint.h>
+#include <limits.h>
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -444,41 +445,88 @@ if (!s->fibras[i].terminada) { s->fibras[i].fn(s->fibras[i].ctx); s->fibras[i].t
 #define SIL_PERM_LEER_ 0x01u
 #define SIL_PERM_ESCRIBIR_ 0x02u
 #define SIL_PERM_RED_ 0x04u
+/* Lee el fichero completo en la arena del programa.
+ *
+ * Contrato:
+ *  - Lectura por trozos de 4 KiB, sin `ftell`: funciona con pipes, FIFOs y
+ *    dispositivos no buscables, y no se limita a LONG_MAX por el `ftell`.
+ *    (El tamano maximo representable sigue siendo LONG_MAX porque
+ *    `SilTexto_.len` es `long`; por encima se devuelve vacio, no truncado.)
+ *  - Un fichero vacio devuelve `("", 0)` sin consumir arena.
+ *  - Error de lectura: se descartan los datos parciales y se devuelve vacio.
+ *  - El contenido siempre termina en 0 (el tamano reservado es len + 1). */
 static SilTexto_ sil_io_leer_(SilArena_ *a, const char *ruta, SilCap_ *cap) {
-SilTexto_ t; FILE *f; long n;
+SilTexto_ t; FILE *f; unsigned char pila[4096]; unsigned char *b;
+size_t n, usado, capacidad;
 t.ptr = ""; t.len = 0;
 if (!a || !ruta || !cap) return t;
 if (!sil_cap_validar_(cap, ruta, SIL_PERM_LEER_)) { fprintf(stderr, "SIL: capacidad invalida para leer %s\n", ruta); return t; }
 f = fopen(ruta, "rb");
 if (!f) return t;
-fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
-if (n > 0) {
-char *b = (char*)sil_arena_asignar_(a, (unsigned long)n + 1, 1);
-if (b) { if (fread(b, 1, (unsigned long)n, f) == (unsigned long)n) { b[n] = 0; t.ptr = b; t.len = n; } }
+n = fread(pila, 1, sizeof pila, f);
+if (n == 0) { fclose(f); return t; } /* vacio (o error: ferror se comprueba abajo) */
+capacidad = n;
+b = (unsigned char*)sil_arena_asignar_(a, capacidad + 1, 1);
+if (!b) { fclose(f); return t; }
+memcpy(b, pila, n);
+usado = n;
+while (usado == capacidad && !feof(f)) {
+size_t nueva; unsigned char *nb;
+if (capacidad > ((size_t)-1 - 1) / 2) break; /* no desbordar size_t */
+nueva = capacidad * 2;
+nb = (unsigned char*)sil_arena_asignar_(a, nueva + 1, 1);
+if (!nb) break;
+memcpy(nb, b, usado);
+b = nb; capacidad = nueva;
+n = fread(b + usado, 1, capacidad - usado, f);
+if (n == 0) break;
+usado += n;
 }
+if (ferror(f) || usado > (size_t)LONG_MAX) { fclose(f); return t; }
 fclose(f);
+b[usado] = 0;
+t.ptr = (const char*)b;
+t.len = (long)usado;
 return t;
 }
+/* Escribe `datos` en `ruta` con capacidad ESCRIBIR ligada a la ruta.
+ * Devuelve los bytes escritos o -1. `datos.len < 0` se rechaza: convertirlo a
+ * size_t pediria escribir 2^64-1 bytes y leeria fuera del buffer. El `fflush`
+ * y el `fclose` se comprueban porque ahi se detecta el disco lleno. */
 static long long sil_io_escribir_(const char *ruta, SilTexto_ datos, SilCap_ *cap) {
 FILE *f;
 if (!ruta || !cap || !datos.ptr) return -1;
+if (datos.len < 0) return -1;
 if (!sil_cap_validar_(cap, ruta, SIL_PERM_ESCRIBIR_)) { fprintf(stderr, "SIL: capacidad invalida para escribir %s\n", ruta); return -1; }
 f = fopen(ruta, "wb");
 if (!f) return -1;
-if (datos.len > 0 && fwrite(datos.ptr, 1, (unsigned long)datos.len, f) != (unsigned long)datos.len) { fclose(f); return -1; }
-fclose(f);
+if (datos.len > 0 && fwrite(datos.ptr, 1, (size_t)datos.len, f) != (size_t)datos.len) { fclose(f); return -1; }
+if (fflush(f) != 0 || ferror(f)) { fclose(f); return -1; }
+if (fclose(f) != 0) return -1;
 return datos.len;
 }
+/* Recibe hasta 64 KiB del destino "host:puerto" en la arena del programa.
+ *
+ * Contrato:
+ *  - Devuelve texto terminado en 0 (reserva len + 1): igual que sil_io_leer_,
+ *    el `ptr` es usable como cadena C ademas de por longitud.
+ *  - Como `sil_red_recibir_` abre una conexion por llamada, un mensaje mayor
+ *    que 64 KiB se trunca a 64 KiB; el protocolo debe trocear.
+ *  - Sin datos, error o capacidad invalida: ("", 0). La region de 64 KiB se
+ *    reserva antes de saber si llega algo (no hay forma de sondear sin
+ *    cambiar la API); en el peor caso cuesta una pagina de arena por llamada
+ *    fallida. */
 static SilTexto_ sil_red_recibir_t_(SilArena_ *a, const char *dest, SilCap_ *cap) {
 SilTexto_ t; long long n;
 t.ptr = ""; t.len = 0;
 if (!a || !dest || !cap) return t;
 if (!sil_cap_validar_(cap, dest, SIL_PERM_RED_)) { fprintf(stderr, "SIL: capacidad invalida para red %s\n", dest); return t; }
 {
-char *b = (char*)sil_arena_asignar_(a, 65536, 1);
+char *b = (char*)sil_arena_asignar_(a, 65536 + 1, 1);
 if (!b) return t;
 n = sil_red_recibir_(dest, (unsigned char*)b, 65536);
 if (n <= 0) return t;
+b[n] = 0;
 t.ptr = b; t.len = n;
 }
 return t;

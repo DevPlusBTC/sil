@@ -38,6 +38,28 @@
   la caja (`Box::into_raw` sin recuperación) cuando el envío fallaba por
   contrapresión o cierre. Ahora se recupera la propiedad y se libera.
 
+### Corregido — E/S del runtime emitido (`RUNTIME_CONFIANZA`)
+- `sil_io_leer_` ya no dimensiona con `fseek(SEEK_END)`+`ftell`: lee por trozos de
+  4 KiB con crecimiento exponencial en la arena. Antes devolvía **vacío** en
+  cualquier flujo no buscable (pipes, FIFOs, `/dev/stdin`, `/proc/*`), se limitaba
+  a `long` (2 GiB en Windows) y gastaba 64 KiB de arena para un fichero vacío.
+  Ahora tampoco distingue «vacío» de «error» a ciegas: comprueba `ferror`.
+- `sil_io_escribir_` rechaza `datos.len < 0` (antes `(size_t)(-1)` pedía escribir
+  2^64-1 bytes y leía fuera del buffer) y comprueba `fflush`/`ferror`/`fclose`,
+  que es donde se detecta el disco lleno.
+- `sil_red_recibir_t_` termina el contenido en 0 y reserva `len + 1`, igual que el
+  resto de `SilTexto_` del runtime.
+
+### Añadido — verificación de E/S, red y aio
+- `silc-core/sil-rt/tests/test_aio.c` (6 casos): contrato de la E/S asíncrona
+  POSIX (pread/pwrite), completación por callback solo en `procesar`, offsets,
+  `max_eventos`, cola acotada de 256 con rechazo explícito al desbordar, errores
+  como resultado negativo, `cancelar` como no-op declarado.
+- `test_runtime_emitido.c` ampliado (13 casos): fichero pequeño/exacto/vacío/
+  200 KiB/FIFO no buscable, escritura con permisos correctos e incorrectos,
+  longitud negativa, **red loopback real** (enviar, recibir binario, recibir
+  texto) y destino inalcanzable.
+
 ### Añadido — flujo de trabajo Git
 - `CONTRIBUTING.md`: sección **«Flujo de trabajo con Git»** (trunk-based con
   ramas cortas): por qué no se commitea en `main` con el caso concreto de este

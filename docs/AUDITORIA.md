@@ -110,11 +110,23 @@ Prueba (fibra que imprime `A1`, cede, imprime `A2`): la salida fue `A1` repetido
 
 **Corregido:** se rechazan permisos vacíos o con bits desconocidos (solicitud y validación), y la clave se publica con `store-release`/`load-acquire`. La ampliación de permisos y la manipulación de firma siguen rechazándose (HMAC cubre `magic|permisos|expiración|hash(recurso)`).
 
+### C-08 · E/S por capacidades del runtime emitido: 3 defectos reales
+**Severidad: alta (pérdida silenciosa de datos y lectura fuera de límites).**
+`silc-backend/src/c99.rs` (bloque `RUNTIME_CONFIANZA`).
+
+| Defecto | Consecuencia | Evidencia |
+|---|---|---|
+| `sil_io_leer_` dimensionaba con `fseek(SEEK_END)` + `ftell` | Falla en cualquier flujo **no buscable** (pipe, FIFO, `/dev/stdin`, `/proc/*`): `ftell` devuelve −1 y la lectura devuelve vacío. Además `long` limita a 2 GiB en Windows (32 bits) | Prueba nueva `eos_leer_flujo_no_buscable` (FIFO real) |
+| `sil_io_escribir_` no validaba `datos.len < 0` | `(size_t)(-1)` pide escribir 2⁶⁴−1 bytes: **lectura fuera del buffer** | Prueba `eos_y_red_respetan_capacidades` |
+| `sil_red_recibir_t_` no ponía terminador | Contradecía el contrato del resto del runtime (`SilTexto_` cadenas): devolvía memoria con basura al final si se usaba como cadena C | Falló al primer intento: `"respuesta"` seguido de bytes sin inicializar |
+
+También: un fichero **vacío** consumía 64 KiB de arena y un error de lectura no distinguía de fichero vacío. Corregido leyendo por trozos de 4 KiB a un buffer de pila (sin `ftell`, sin techo de `long`, sin consumo en el caso vacío) con crecimiento exponencial en la arena, y comprobando `ferror`.
+
 ### C-07 · Cero pruebas sobre 1.500 líneas de C, y el runtime emitido nunca se compiló
 - `sil-rt` tenía **4 tests** de Rust (arenas cíclicas y capacidades) y **ninguno** de canales, fibras ni E/S; el SHA-256/HMAC no tenía vectores de referencia.
 - El runtime C que `silc build --target c99` inyecta en cada programa se compilaba solo con `gcc -fsyntax-only` sobre los ejemplos válidos, en Linux. Es decir: nunca se **ejecutó**, y en los ejemplos que no usan red/canales/fibras el runtime quedaba como código muerto que solo pasaba el chequeo sintáctico. El bug de alineación (`al = 0`) y el del runtime de canales sobreviven a `-fsyntax-only` porque no son errores de compilación: son errores de comportamiento.
 
-**Corregido:** `scripts/run_c_tests.sh` (compilación estricta + ASan/UBSan + TSan + extracción verbatim del runtime emitido) y job `runtime-c` en CI. 40 casos / 222 comprobaciones escritas (≈4.600 comprobaciones ejecutadas por los bucles).
+**Corregido:** `scripts/run_c_tests.sh` (compilación estricta + ASan/UBSan + TSan + extracción verbatim del runtime emitido) y job `runtime-c` en CI. Segunda pasada: se añadieron E/S asíncrona POSIX (`test_aio.c`) y **E/S de fichero, red y capacidades del runtime emitido** (`test_runtime_emitido.c`), que destaparon C-08.
 
 ---
 
@@ -135,6 +147,8 @@ Prueba (fibra que imprime `A1`, cede, imprime `A2`): la salida fue `A1` repetido
 | **R-09** | Baja | `sil_arena_promover` promueve **la arena completa**, no el objeto `(ptr, tamanio)`; el nombre `migrar_cero_costo` sugiere migración de esquemas | `arena.c`, whitepaper §4.1 | Renombrar a `sil_arena_absorber` o implementar promoción por objeto con copia medida |
 | **R-10** | Baja | `docs/` mezcla estado real y aspiracional en frases sueltas («CI verde» vs README «CI fallando») | README, WHITE_PAPER | Una sola fuente de estado (`docs/ESTADO.md`) generada |
 | **R-11** | Baja | `silc-runtime` usa `std::env::set_var` (no seguro en edition 2024) en tests | `lib.rs` tests | Pasar la clave por `sil_cap_fijar_clave` en lugar de variables de entorno |
+| **R-12** | Media | `SilTexto_.len` es `long`: en Windows (32 bits) el texto está limitado a 2 GiB; en 64 bits es teórico pero el tipo no expresa el tamaño real | `c99.rs` (`RUNTIME_TIPOS`) | Cambiar a `size_t` (cambio de ABI del C emitido; hacerlo junto con la versión 0.2) |
+| **R-13** | Media | `sil_aio` con io_uring (opt-in `SIL_IO_URING=1`) y los stubs de eBPF no tienen pruebas de comportamiento | `aio_linux.c`, `ebpf_linux.c` | Job de CI con `liburing-dev` que ejecute `test_aio.c` en esa rama; smoke test de los stubs (`sil_ebpf_soportado() == false`) |
 
 ---
 
@@ -188,6 +202,11 @@ Ninguna de estas brechas se puede cerrar «de una vez»: cada una necesita dise�
 - [x] Runtime C emitido compilado y ejecutado en CI.
 - [x] Compilación estricta (`-std=c99 -pedantic-errors -Werror`) de todo `sil-rt`.
 - [x] Conteo de tests C integrado en `scripts/test_counts.py` (con modo local sin toolchain).
+
+### P0 — hecho en la segunda pasada
+- [x] **E/S del runtime emitido**: pruebas de fichero pequeño/vacío/grande/no buscable (FIFO), escritura con capacidad correcta e incorrecta, longitud negativa, red loopback real (enviar, recibir binario, recibir texto) y destino inalcanzable.
+- [x] **E/S asíncrona POSIX (`sil_aio`)**: contrato de completación por callback, offsets, `max_eventos`, cola acotada (256), errores como negativos, `cancelar` inexistente por diseño.
+- [x] Corregidos los 3 defectos de C-08 y el consumo de arena en ficheros vacíos.
 
 ### P0 — siguiente paso (1–2 días, requiere toolchain Rust)
 1. **R-01**: job de CI que compile **y ejecute** los `.c` de `examples/valid`, comparando `stdout`.

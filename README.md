@@ -10,7 +10,7 @@ Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiemp
 |---------|-------|
 | **Tests Rust** | **169/169 ✅** |
 | **Tests Python** | **31/31 ✅** |
-| **Tests C (runtime)** | **40 casos / 222 comprobaciones ✅** |
+| **Tests C (runtime)** | **52 casos / 318 comprobaciones ✅** |
 | **Crates** | 7/7 compilan |
 | **Líneas código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** |

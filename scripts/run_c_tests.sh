@@ -84,6 +84,9 @@ ejecutar "canales SPSC/MPSC (ASan/UBSan)" "$BUILD/test_channel"
 compilar_test test_fiber.c test_fiber "$RT/src/fiber.c"
 ejecutar "fibras y scheduler (ASan/UBSan)" "$BUILD/test_fiber"
 
+compilar_test test_aio.c test_aio "$RT/src/aio.c"
+ejecutar "E/S asincrona POSIX (ASan/UBSan)" "$BUILD/test_aio"
+
 echo "== fase 3: ThreadSanitizer (canales concurrentes)"
 if [ "$RAPIDO" -eq 0 ]; then
     "$CC" -std=c99 -Wall -Wextra -Werror -D_GNU_SOURCE -I"$RT/include" -I"$TESTS" \
