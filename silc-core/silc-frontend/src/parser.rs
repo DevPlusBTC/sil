@@ -277,12 +277,12 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
 
     while p.peek_is_kw(&Token::Requiere) || p.peek_is_kw(&Token::Garantiza) {
         if p.peek_is_kw(&Token::Requiere) {
-            let sp = p.expect_kw(Token::Requiere)?;
+            let _sp = p.expect_kw(Token::Requiere)?;
             p.expect_kw(Token::Que)?;
             let c = parse_expr_logica(p)?;
             precondiciones.push(c);
         } else if p.peek_is_kw(&Token::Garantiza) {
-            let sp = p.expect_kw(Token::Garantiza)?;
+            let _sp = p.expect_kw(Token::Garantiza)?;
             p.expect_kw(Token::Que)?;
             let c = parse_expr_logica(p)?;
             postcondiciones.push(c);
