@@ -58,6 +58,7 @@ fn stmt_a_source(stmt: &Stmt) -> String {
         Stmt::Verificar { cond, .. } => format!("verificar que {}\n", expr_a_source(cond)),
         Stmt::Asumir { cond, .. } => format!("asumir {}\n", expr_a_source(cond)),
         Stmt::Demostrar { cond, .. } => format!("demostrar {}\n", expr_a_source(cond)),
+        Stmt::InvarianteBucle { cond, .. } => format!("invariante {}\n", expr_a_source(cond)),
         Stmt::Asignar { nombre, tipo, expr, mutable, .. } => {
             let mut s = if *mutable { "let mut " } else { "let " }.to_string();
             s.push_str(&nombre.nombre);

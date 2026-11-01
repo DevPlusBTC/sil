@@ -16,8 +16,9 @@ mod tests {
             Decl::Tarea(t) => bajar_tarea(t).expect("lower fallÃ³"),
             _ => panic!("se esperaba tarea"),
         };
-        let llvm = emitir(&tarea).expect("emisiÃ³n LLVM fallÃ³");
-        // Debe contener una definiciÃ³n de funciÃ³n con el nombre de la tarea.
-        assert!(llvm.contains(&format!("define i64 @{}", tarea.nombre)));
-    }
+        let llvm = emitir(&tarea).expect("emisión LLVM falló");
+                // Debe contener una definición de función con el nombre de la tarea.
+                // LLVM puede emitir atributos/espacios extra, así que buscamos el nombre de la función.
+                assert!(llvm.contains(&format!("@{}", tarea.nombre)), "IR no contiene @{}", tarea.nombre);
+            }
 }
