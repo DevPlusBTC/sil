@@ -391,6 +391,10 @@ pub struct TareaIR {
     pub arenas: SlotMap<ArenaId, ArenaInfo>,
     pub arena_local: ArenaId,
     pub restricciones: Vec<Restriccion>,
+    /// Precondiciones (requiere) convertidas a fórmulas SMT.
+    pub precondiciones: Vec<FormulaLogica>,
+    /// Postcondiciones (garantiza) convertidas a fórmulas SMT.
+    pub postcondiciones: Vec<FormulaLogica>,
 }
 
 impl TareaIR {

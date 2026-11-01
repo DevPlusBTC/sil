@@ -43,6 +43,10 @@ pub struct TareaDecl {
     pub retorno: Option<TipoDato>,
     pub cuerpo: Cuerpo,
     pub span: Span,
+    /// Precondiciones (requiere) - fórmulas que deben cumplirse al entrar.
+    pub precondiciones: Vec<Expr>,
+    /// Postcondiciones (garantiza) - fórmulas que deben cumplirse al salir.
+    pub postcondiciones: Vec<Expr>,
 }
 
 /// Parámetro: nombre + tipo.
@@ -71,6 +75,11 @@ pub enum Stmt {
         span: Span,
     },
     Demostrar {
+        cond: Expr,
+        span: Span,
+    },
+    /// Invariante de bucle: `invariante <cond>`
+    InvarianteBucle {
         cond: Expr,
         span: Span,
     },

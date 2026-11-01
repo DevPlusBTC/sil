@@ -167,6 +167,12 @@ pub enum Token {
     Probar,
     #[token("propiedad")]
     Propiedad,
+    #[token("invariante")]
+    Invariante,
+    #[token("requiere")]
+    Requiere,
+    #[token("garantiza")]
+    Garantiza,
     #[token("convertir")]
     Convertir,
     #[token("a", priority = 3)]

@@ -337,6 +337,20 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             });
             Ok(())
         }
+        A::Stmt::InvarianteBucle { cond, .. } => {
+            let f = a_formula(ctx, cond)?;
+            let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Demostracion);
+            ctx.emitir(InstrCausal {
+                resultado: None,
+                op: Operacion::Const {
+                    valor: Constante::Bool(true),
+                    tipo: SilType::Booleano,
+                },
+                capacidad: None,
+                invariante: Some(inv),
+            });
+            Ok(())
+        }
         A::Stmt::Asignar {
             nombre, tipo, expr, ..
         } => {
@@ -667,6 +681,18 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         })
         .collect();
 
+    // Convertir pre/post conditions a fórmulas SMT ANTES de mover ctx.
+    let precondiciones = tarea
+        .precondiciones
+        .iter()
+        .map(|e| a_formula(&ctx, e).unwrap())
+        .collect();
+    let postcondiciones = tarea
+        .postcondiciones
+        .iter()
+        .map(|e| a_formula(&ctx, e).unwrap())
+        .collect();
+
     // 5. Tipo de retorno (ya calculado en ctx al iniciar, para F3).
 
     // 6. Recolectar tipos/nombres.
@@ -686,6 +712,8 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         arenas: ctx.arenas,
         arena_local: ctx.arena_local,
         restricciones,
+        precondiciones,
+        postcondiciones,
     };
 
     // Postcondición: IR válida

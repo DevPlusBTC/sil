@@ -271,6 +271,24 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
         None
     };
 
+    // Parse precondiciones (requiere) y postcondiciones (garantiza)
+    let mut precondiciones = Vec::new();
+    let mut postcondiciones = Vec::new();
+    
+    while p.peek_is_kw(&Token::Requiere) || p.peek_is_kw(&Token::Garantiza) {
+        if p.peek_is_kw(&Token::Requiere) {
+            let sp = p.expect_kw(Token::Requiere)?;
+            p.expect_kw(Token::Que)?;
+            let c = parse_expr_logica(p)?;
+            precondiciones.push(c);
+        } else if p.peek_is_kw(&Token::Garantiza) {
+            let sp = p.expect_kw(Token::Garantiza)?;
+            p.expect_kw(Token::Que)?;
+            let c = parse_expr_logica(p)?;
+            postcondiciones.push(c);
+        }
+    }
+
     p.expect_sym(Token::Colon)?;
     p.expect_newline()?;
     p.expect_indent()?;
@@ -284,6 +302,8 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
         retorno,
         cuerpo,
         span: inicio..fin,
+        precondiciones,
+        postcondiciones,
     })
 }
 
@@ -810,6 +830,15 @@ Token::Demostrar => {
                 }
                 let c = parse_expr_logica(p)?;
                 Ok(Stmt::Demostrar {
+                    cond: c,
+                    span: sp.start..p.fin(),
+                })
+            }
+            Token::Invariante => {
+                let sp = s.span.clone();
+                p.bump();
+                let c = parse_expr_logica(p)?;
+                Ok(Stmt::InvarianteBucle {
                     cond: c,
                     span: sp.start..p.fin(),
                 })

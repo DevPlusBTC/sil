@@ -237,6 +237,7 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
         expr_strategy().prop_map(|cond| Stmt::Verificar { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Asumir { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Demostrar { cond, span: 0..0 }),
+        expr_strategy().prop_map(|cond| Stmt::InvarianteBucle { cond, span: 0..0 }),
         (
             permiso_strategy(),
             recurso_strategy(),
@@ -330,6 +331,8 @@ fn tarea_decl_strategy() -> impl Strategy<Value = TareaDecl> {
             retorno,
             cuerpo,
             span: 0..0,
+            precondiciones: Vec::new(),
+            postcondiciones: Vec::new(),
         })
 }
 
@@ -477,6 +480,7 @@ fn stmt_a_source(stmt: &Stmt) -> String {
         Stmt::Verificar { cond, .. } => format!("verificar que {}\n", expr_a_source(cond)),
         Stmt::Asumir { cond, .. } => format!("asumir {}\n", expr_a_source(cond)),
         Stmt::Demostrar { cond, .. } => format!("demostrar {}\n", expr_a_source(cond)),
+        Stmt::InvarianteBucle { cond, .. } => format!("invariante {}\n", expr_a_source(cond)),
         Stmt::Asignar {
             nombre,
             tipo,
@@ -697,6 +701,7 @@ fn stmts_equiv(a: &Stmt, b: &Stmt) -> bool {
             (Stmt::Demostrar { cond: ca, .. }, Stmt::Demostrar { cond: cb, .. }) => {
                 exprs_equiv(ca, cb)
             }
+            (Stmt::InvarianteBucle { cond: ca, .. }, Stmt::InvarianteBucle { cond: cb, .. }) => exprs_equiv(ca, cb),
             (
                 Stmt::Asignar {
                     nombre: na,
@@ -858,6 +863,7 @@ fn stmt_well_formed(stmt: &Stmt) -> bool {
         Stmt::Verificar { cond, .. } | Stmt::Asumir { cond, .. } | Stmt::Demostrar { cond, .. } => {
             expr_well_formed(cond)
         }
+        Stmt::InvarianteBucle { cond, .. } => expr_well_formed(cond),
         Stmt::Asignar { expr, .. } => expr_well_formed(expr),
         Stmt::Retornar { expr, .. } => expr.as_ref().is_none_or(expr_well_formed),
         Stmt::SolicitarCapacidad {
