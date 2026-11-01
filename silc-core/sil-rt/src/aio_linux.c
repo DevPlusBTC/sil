@@ -6,6 +6,8 @@
  * en sil_aio_procesar(). No hay stub: el I/O siempre se realiza.
  */
 
+#define _GNU_SOURCE 1
+
 #include "sil_aio.h"
 #include <stdlib.h>
 #include <string.h>
