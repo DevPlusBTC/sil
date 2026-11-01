@@ -1,4 +1,4 @@
-# SIL - Source Implementation Language
+# SIL - Semantic Intention Language
 
 **Versión:** 0.1.0-ALPHA | **Estado:** Fase 0 (Semilla) — **Parser completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR de tareas + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) ✅ | CI: última ejecución fallando (ver Actions) | LLVM = implementado, job de CI **llvm-test** (ubuntu‑latest, LLVM 17) | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas ✅ (16 niveles, reclamo O(1)); NVM y migración = declaradas en AST, sin runtime**
 
