@@ -274,7 +274,7 @@ fn parse_tarea(p: &mut P) -> Result<TareaDecl, ErrorFrontend> {
     // Parse precondiciones (requiere) y postcondiciones (garantiza)
     let mut precondiciones = Vec::new();
     let mut postcondiciones = Vec::new();
-    
+
     while p.peek_is_kw(&Token::Requiere) || p.peek_is_kw(&Token::Garantiza) {
         if p.peek_is_kw(&Token::Requiere) {
             let sp = p.expect_kw(Token::Requiere)?;

@@ -1,4 +1,4 @@
-﻿#[cfg(all(feature = "llvm", target_os = "linux"))]
+#[cfg(all(feature = "llvm", target_os = "linux"))]
 mod tests {
     use silc_backend::llvm::emitir;
     use silc_causal_ir::lower::bajar_tarea;
@@ -21,4 +21,3 @@ mod tests {
         assert!(llvm.contains(&format!("define i64 @{}", tarea.nombre)));
     }
 }
-

@@ -701,7 +701,9 @@ fn stmts_equiv(a: &Stmt, b: &Stmt) -> bool {
             (Stmt::Demostrar { cond: ca, .. }, Stmt::Demostrar { cond: cb, .. }) => {
                 exprs_equiv(ca, cb)
             }
-            (Stmt::InvarianteBucle { cond: ca, .. }, Stmt::InvarianteBucle { cond: cb, .. }) => exprs_equiv(ca, cb),
+            (Stmt::InvarianteBucle { cond: ca, .. }, Stmt::InvarianteBucle { cond: cb, .. }) => {
+                exprs_equiv(ca, cb)
+            }
             (
                 Stmt::Asignar {
                     nombre: na,
