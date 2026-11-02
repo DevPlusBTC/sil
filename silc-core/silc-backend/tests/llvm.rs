@@ -1,6 +1,6 @@
 #[cfg(all(feature = "llvm", target_os = "linux"))]
 mod tests {
-    use silc_backend::llvm::emitir;
+    use silc_backend::llvm::{emitir, ErrorLLVM};
     use silc_causal_ir::lower::bajar_tarea;
     use silc_frontend::ast::Decl;
     use silc_frontend::lexer::lexear;
