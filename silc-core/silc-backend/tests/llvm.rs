@@ -18,7 +18,7 @@ mod tests {
         };
         let llvm = emitir(&tarea).expect("emisión LLVM falló");
         // Debe contener una definición de función con el nombre de la tarea.
-        // LLVM puede emitir atributos/espacios extra, así que buscamos el nombre de la función.
+        // LLVM IR emite: `define <ret> @nombre(...) { ... }`
         assert!(
             llvm.contains(&format!("@{}", tarea.nombre)),
             "IR no contiene @{}",
