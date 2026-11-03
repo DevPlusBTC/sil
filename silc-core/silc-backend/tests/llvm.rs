@@ -26,8 +26,6 @@ mod tests {
             }
             Err(e) => panic!("emisión LLVM falló: {e}"),
         };
-        // Debug: imprimir IR si falla
-        eprintln!("=== LLVM IR generado ===\n{llvm}\n=========================");
         // Debe contener una definición de función con el nombre de la tarea.
         // LLVM IR emite: `define <ret> @nombre(...) { ... }`
         assert!(
