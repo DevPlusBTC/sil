@@ -19,18 +19,18 @@ mod tests {
         let llvm = match emitir(&tarea) {
             Ok(ir) => ir,
             Err(ErrorLLVM::NoDisponible) => {
-                eprintln!(
-                    "LLVM no disponible (feature llvm sin librería instalada), saltando test"
-                );
+                eprintln!("LLVM no disponible (feature llvm sin librería instalada), saltando test");
                 return;
             }
             Err(e) => panic!("emisión LLVM falló: {e}"),
         };
+        // Debug: imprimir IR si falla
+        eprintln!("=== LLVM IR generado ===\n{llvm}\n=========================");
         // Debe contener una definición de función con el nombre de la tarea.
         // LLVM IR emite: `define <ret> @nombre(...) { ... }`
         assert!(
             llvm.contains(&format!("@{}", tarea.nombre)),
-            "IR no contiene @{}",
+            "IR no contiene @{}. IR generado:\n{llvm}",
             tarea.nombre
         );
     }
