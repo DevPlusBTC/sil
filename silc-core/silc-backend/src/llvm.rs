@@ -64,7 +64,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
             }
         }
 
-        for bloque in tarea.bloques.values() {
+        for (bloque_idx, bloque) in tarea.bloques.values().enumerate() {
             generar_bloque(
                 &context,
                 &module,
@@ -72,6 +72,7 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorLLVM> {
                 bloque,
                 &mut vars_llvm,
                 function,
+                bloque_idx as u32,
             )?;
         }
 
@@ -173,9 +174,15 @@ mod llvm_impl {
         bloque: &Bloque,
         vars_llvm: &mut std::collections::HashMap<ValueId, BasicValueEnum<'ctx>>,
         function: FunctionValue<'ctx>,
+        bloque_idx: u32,
     ) -> Result<(), ErrorLLVM> {
-        // BlockId no implementa Display → usar {:?}
-        let block = context.append_basic_block(function, &format!("bloque_{:?}", bloque.id));
+        // Nombre válido para LLVM: "entry" para el primer bloque, "block_N" para otros
+        let block_name = if bloque_idx == 0 {
+            "entry".to_string()
+        } else {
+            format!("block_{}", bloque_idx)
+        };
+        let block = context.append_basic_block(function, &block_name);
         builder.position_at_end(block);
 
         for instr in &bloque.instrs {
