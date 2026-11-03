@@ -1233,6 +1233,26 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
                     Ok(Expr::Var(base))
                 }
             }
+            // "a" puede ser variable o palabra clave de preposición
+            Token::A => {
+                let sp = s.span.clone();
+                p.bump();
+                let base = Ident {
+                    nombre: "a".into(),
+                    span: sp.clone(),
+                };
+                if p.peek_is_sym(&Token::Dot) {
+                    p.bump();
+                    let prop = parse_ident(p)?;
+                    Ok(Expr::AccesoProp {
+                        base: Box::new(Expr::Var(base)),
+                        prop,
+                        span: sp.start..p.fin(),
+                    })
+                } else {
+                    Ok(Expr::Var(base))
+                }
+            }
             Token::LParen => {
                 p.bump();
                 let e = parse_expr(p)?;
@@ -1269,6 +1289,15 @@ fn parse_ident(p: &mut P) -> Result<Ident, ErrorFrontend> {
                 p.bump();
                 Ok(Ident {
                     nombre: n,
+                    span: sp,
+                })
+            }
+            // "a" puede ser variable o palabra clave de preposición
+            Token::A => {
+                let sp = s.span.clone();
+                p.bump();
+                Ok(Ident {
+                    nombre: "a".into(),
                     span: sp,
                 })
             }

@@ -8,18 +8,20 @@ mod tests {
 
     #[test]
     fn emit_llvm_simple_task() {
-        // Programa simple con una tarea sin parÃ¡metros.
+        // Programa simple con una tarea sin parámetros.
         let src = "definir tarea suma(a: Entero64, b: Entero64) -> Entero64:\n    retornar a + b\n";
         let toks = lexear(src);
-        let prog = parsear(&toks).expect("parseo fallÃ³");
+        let prog = parsear(&toks).expect("parseo falló");
         let tarea = match &prog.defs[0] {
-            Decl::Tarea(t) => bajar_tarea(t).expect("lower fallÃ³"),
+            Decl::Tarea(t) => bajar_tarea(t).expect("lower falló"),
             _ => panic!("se esperaba tarea"),
         };
         let llvm = match emitir(&tarea) {
             Ok(ir) => ir,
             Err(ErrorLLVM::NoDisponible) => {
-                eprintln!("LLVM no disponible (feature llvm sin librería instalada), saltando test");
+                eprintln!(
+                    "LLVM no disponible (feature llvm sin librería instalada), saltando test"
+                );
                 return;
             }
             Err(e) => panic!("emisión LLVM falló: {e}"),
