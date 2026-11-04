@@ -18,8 +18,8 @@
 //! - Contraejemplo: si retorna `Violada`, incluye asignacion concreta.
 
 use crate::nodes::{
-    a_smtlib2_con_nombres, canonizar, nombre_de_var, ClaseInvariante, FormulaLogica, OpLogico,
-    TareaIR, ValueId,
+    a_smtlib2_con_nombres, canonizar, nombre_de_var, ClaseInvariante, FormulaLogica, InvarianteSMT,
+    OpLogico, TareaIR, ValueId,
 };
 use silc_contracts::*;
 use std::collections::HashMap;
@@ -933,24 +933,41 @@ pub fn verificar_tarea_con<B: BackendSMT>(
 ) -> Result<(), ErrorSMT> {
     require(timeout_ms > 0, "timeout debe ser > 0");
 
-    // Tareas sin invariantes (ni asumir ni demostrar) no requieren verificación
-    let tiene_demostracion = !tarea.invariantes(ClaseInvariante::Demostracion).is_empty();
+    // Tareas sin metas (ni demostrar ni postcondiciones) no requieren verificación
+    let tiene_demostracion = !tarea.invariantes(ClaseInvariante::Demostracion).is_empty()
+        || !tarea.postcondiciones.is_empty();
     if !tiene_demostracion {
         return Ok(()); // Sin metas que verificar → pasa
     }
 
-    // Recolectar asunciones (fórmulas) y definiciones SSA (`let x = ...`).
+    // Recolectar asunciones: `asumir`, definiciones SSA (`let x = ...`) y
+    // precondiciones de contrato (`requiere que ...`).
     let mut asunciones: Vec<FormulaLogica> = tarea
         .invariantes(ClaseInvariante::Asuncion)
         .into_iter()
         .map(|i| i.formula.clone())
         .collect();
     asunciones.extend(tarea.definiciones());
+    asunciones.extend(tarea.precondiciones.iter().cloned());
 
     // Hash del contexto de asunciones para clave de cache combinada.
     let asunciones_hash = hash_asunciones(&asunciones);
 
-    for inv in tarea.invariantes(ClaseInvariante::Demostracion) {
+    // Metas: invariantes `demostrar` + postcondiciones de contrato
+    // (`garantiza que ...`), cada una verificada contra el mismo contexto.
+    let mut metas: Vec<InvarianteSMT> = tarea
+        .invariantes(ClaseInvariante::Demostracion)
+        .into_iter()
+        .cloned()
+        .collect();
+    for pc in &tarea.postcondiciones {
+        metas.push(InvarianteSMT::con_hash(
+            pc.clone(),
+            ClaseInvariante::Demostracion,
+        ));
+    }
+
+    for inv in &metas {
         let clave_contexto = clave_cache_contexto(&asunciones_hash, &inv.hash);
         if cache.contiene(&clave_contexto) {
             continue; // O(1): ya probado en ESTE contexto de asunciones
@@ -1188,6 +1205,51 @@ mod tests {
         let r3 = verificar_tarea_con(&ir3, &mut b3, &mut c3, 5000);
         // x > 5 no implica nada sobre y → debe ser Violada o Desconocido
         assert!(r3.is_err(), "x > 5 no implica y > 3");
+    }
+
+    // === Regresión: contratos de función (requiere/garantiza) se verifican ===
+    // Bug histórico: las postcondiciones se guardaban en TareaIR pero el
+    // pipeline SMT nunca las verificaba → `garantiza que x > 5` sin
+    // precondición pasaba como válido (vaporware semántico).
+
+    #[test]
+    fn postcondicion_invalida_falla() {
+        // sin precondición, x > 5 es falsificable (x = 0)
+        let ir = ir_de(
+            "definir tarea f(x: Entero64) -> Entero64 garantiza que x > 5:\n    retornar x\n",
+        );
+        let mut b = VerificadorIntervalos::new();
+        let mut c = CacheLemas::en_memoria();
+        let r = verificar_tarea_con(&ir, &mut b, &mut c, 5000);
+        assert!(r.is_err(), "garantiza falsa sin precondición debe fallar");
+        match r.unwrap_err() {
+            ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
+                assert!(
+                    contraejemplo.contains('x'),
+                    "contraejemplo menciona x: {contraejemplo}"
+                );
+            }
+            other => panic!("esperaba Violada, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn precondicion_sostiene_postcondicion() {
+        // requiere x > 10 ⊢ garantiza x > 5 → válido
+        verif_ok("definir tarea g(x: Entero64) -> Entero64 requiere que x > 10 garantiza que x > 5:\n    retornar x\n");
+    }
+
+    #[test]
+    fn precondicion_sola_no_pasa() {
+        // `requiere que` sin `garantiza` no genera metas → no se verifica nada
+        // (los pre solo restringen; sin post no hay obligación que comprobar)
+        let ir = ir_de(
+            "definir tarea h(x: Entero64) -> Entero64 requiere que x > 10:\n    retornar x\n",
+        );
+        let mut b = VerificadorIntervalos::new();
+        let mut c = CacheLemas::en_memoria();
+        verificar_tarea_con(&ir, &mut b, &mut c, 5000)
+            .expect("requiere sin garantiza no obliga a nada");
     }
 }
 

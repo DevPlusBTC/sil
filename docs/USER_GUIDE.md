@@ -87,7 +87,6 @@ definir tarea sin_comentarios() -> Entero64:
 | `Flotante64` | Punto flotante 64 bits | `3.14`, `-0.5` |
 | `Booleano` | Valor booleano | `verdadero`, `falso` |
 | `Texto` | Cadena UTF-8 | `"hola"` |
-| `Byte` | Byte (8 bits) | `0xFF` |
 | `Void` | Sin valor | - |
 
 ### Literales
