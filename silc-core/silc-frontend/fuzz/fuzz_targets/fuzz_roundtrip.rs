@@ -97,6 +97,28 @@ fn stmt_a_source(stmt: &Stmt) -> String {
             s.push('\n');
             s
         }
+        Stmt::Si { cond, cuerpo, sino, .. } => {
+            let mut s = format!("si {} entonces:\n", expr_a_source(cond));
+            for stmt in &cuerpo.stmts {
+                write!(&mut s, "    {}\n", stmt_a_source(stmt)).unwrap();
+            }
+            if let Some(else_body) = sino {
+                // Detectar si es sino si (otro Si en el cuerpo) o sino: (cuerpo vacío o normal)
+                if else_body.stmts.len() == 1 {
+                    if let Stmt::Si { .. } = &else_body.stmts[0] {
+                        // sino si: el primer stmt es otro Si
+                        write!(&mut s, "sino\n").unwrap();
+                        // No imprimir el "entonces" porque el sub-Si ya lo genera
+                        return s;
+                    }
+                }
+                write!(&mut s, "sino:\n").unwrap();
+                for stmt in &else_body.stmts {
+                    write!(&mut s, "    {}\n", stmt_a_source(stmt)).unwrap();
+                }
+            }
+            s
+        }
         Stmt::ValidarCapacidad { token, .. } => format!("validar {}\n", token.nombre),
         Stmt::EnviarCanal { valor, canal, .. } => {
             format!("enviar {} en {}\n", expr_a_source(valor), canal.nombre)
