@@ -35,6 +35,7 @@ struct Ctx {
     nombres: HashMap<ValueId, String>,
     bloques: slotmap::SlotMap<BlockId, Bloque>,
     actual: BlockId,
+    entrada: BlockId,
     arenas: slotmap::SlotMap<ArenaId, ArenaInfo>,
     arena_local: ArenaId,
     vars: HashMap<String, ValueId>,
@@ -63,6 +64,7 @@ impl Ctx {
             nombres: HashMap::new(),
             bloques,
             actual: entrada,
+            entrada,
             arenas,
             arena_local,
             vars: HashMap::new(),
@@ -304,6 +306,63 @@ fn a_formula(ctx: &Ctx, e: &A::Expr) -> Result<FormulaLogica, ErrorBajada> {
 
 fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
     match s {
+        A::Stmt::Si {
+            cond, cuerpo, sino, ..
+        } => {
+            let cond_val = bajar_expr(ctx, cond)?;
+            // Crear 3 bloques: entonces, sino (si existe), continuar (join).
+            let blk_entonces = ctx.bloques.insert(Bloque {
+                id: BlockId::default(),
+                instrs: Vec::new(),
+                terminador: Terminador::Inalcanzable,
+            });
+            ctx.bloques[blk_entonces].id = blk_entonces;
+
+            let blk_sino = ctx.bloques.insert(Bloque {
+                id: BlockId::default(),
+                instrs: Vec::new(),
+                terminador: Terminador::Inalcanzable,
+            });
+            ctx.bloques[blk_sino].id = blk_sino;
+
+            let blk_cont = ctx.bloques.insert(Bloque {
+                id: BlockId::default(),
+                instrs: Vec::new(),
+                terminador: Terminador::Inalcanzable,
+            });
+            ctx.bloques[blk_cont].id = blk_cont;
+
+            // El bloque actual se ramifica.
+            ctx.bloques[ctx.actual].terminador = Terminador::Rama {
+                cond: cond_val,
+                entonces: blk_entonces,
+                sino: if sino.is_some() { blk_sino } else { blk_cont },
+            };
+
+            // Bajar cuerpo del "si".
+            ctx.actual = blk_entonces;
+            for s in &cuerpo.stmts {
+                bajar_sentencia(ctx, s)?;
+            }
+            if matches!(ctx.bloques[ctx.actual].terminador, Terminador::Inalcanzable) {
+                ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cont);
+            }
+
+            // Bajar cuerpo del "sino" si existe.
+            if let Some(sino_cuerpo) = sino {
+                ctx.actual = blk_sino;
+                for s in &sino_cuerpo.stmts {
+                    bajar_sentencia(ctx, s)?;
+                }
+                if matches!(ctx.bloques[ctx.actual].terminador, Terminador::Inalcanzable) {
+                    ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cont);
+                }
+            }
+
+            // Continuar desde el bloque de unión.
+            ctx.actual = blk_cont;
+            Ok(())
+        }
         A::Stmt::Asumir { cond, .. } => {
             let f = a_formula(ctx, cond)?;
             let inv = InvarianteSMT::con_hash(f, ClaseInvariante::Asuncion);
@@ -706,7 +765,7 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
         params,
         retorno: ctx.retorno,
         bloques: ctx.bloques,
-        entrada: ctx.actual,
+        entrada: ctx.entrada,
         tipos,
         nombres: ctx.nombres,
         arenas: ctx.arenas,

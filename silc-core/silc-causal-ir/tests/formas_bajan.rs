@@ -42,6 +42,41 @@ fn formas_nuevas_bajan() {
 }
 
 #[test]
+fn si_sino_baja_a_rama() {
+    let ir = baja(
+        "definir tarea clasificar(nota: Entero64) -> Entero64:\n    si nota >= 90:\n        retornar 1\n    sino:\n        retornar 0\n",
+    );
+    // El bloque de entrada debe tener un terminador Rama.
+    assert!(
+        matches!(
+            ir.bloques[ir.entrada].terminador,
+            silc_causal_ir::nodes::Terminador::Rama { .. }
+        ),
+        "entrada no tiene terminador Rama"
+    );
+    // Debe haber 3+ bloques (entrada, entonces, sino).
+    assert!(
+        ir.bloques.len() >= 3,
+        "esperaba 3+ bloques, got {}",
+        ir.bloques.len()
+    );
+}
+
+#[test]
+fn si_sino_si_cascada() {
+    let ir = baja(
+        "definir tarea clasificar2(nota: Entero64) -> Entero64:\n    si nota >= 90:\n        retornar 1\n    sino si nota >= 80:\n        retornar 2\n    sino:\n        retornar 0\n",
+    );
+    // Cascada: entrada + 3 niveles de rama + bloque final.
+    let ramas: usize = ir
+        .bloques
+        .values()
+        .filter(|b| matches!(b.terminador, silc_causal_ir::nodes::Terminador::Rama { .. }))
+        .count();
+    assert_eq!(ramas, 2, "se esperan 2 ramas (si + sino si), got {ramas}");
+}
+
+#[test]
 fn usos_sin_declarar_fallan() {
     for src in [
         "definir tarea f() -> Booleano:\n    validar cap\n    retornar verdadero\n",

@@ -755,8 +755,7 @@ fn emitir_def_funcion(
         }
     }
 
-    let mut bids: Vec<_> = tarea.bloques.keys().collect();
-    bids.sort_by_key(|k| format!("{k:?}"));
+    let bids = orden_bloques(tarea);
     // Indice estable por bloque para etiquetas.
     let mut indice: HashMap<silc_causal_ir::nodes::BlockId, usize> = HashMap::new();
     for (i, bid) in bids.iter().enumerate() {
@@ -855,11 +854,44 @@ fn c_nombre_fn(nombre: &str) -> String {
         .collect()
 }
 
+/// Orden de ejecución: DFS pre-orden desde `entrada`.
+/// El orden lexicográfico de BlockId era incorrecto ("10v1" < "1v1").
+fn orden_bloques(tarea: &TareaIR) -> Vec<silc_causal_ir::nodes::BlockId> {
+    let mut visited: std::collections::HashSet<silc_causal_ir::nodes::BlockId> =
+        std::collections::HashSet::new();
+    let mut bids: Vec<silc_causal_ir::nodes::BlockId> = Vec::new();
+    let mut stack = vec![tarea.entrada];
+    while let Some(bid) = stack.pop() {
+        if !visited.insert(bid) {
+            continue;
+        }
+        bids.push(bid);
+        match &tarea.bloques[bid].terminador {
+            Terminador::Salto(d) => stack.push(*d),
+            Terminador::Rama { entonces, sino, .. } => {
+                stack.push(*sino);
+                stack.push(*entonces);
+            }
+            _ => {}
+        }
+    }
+    // Bloques inalcanzables al final (deberían no existir; por seguridad).
+    let mut all_keys: Vec<_> = tarea.bloques.keys().collect();
+    all_keys.sort_by_key(|k| format!("{k:?}"));
+    for k in all_keys {
+        if !visited.contains(&k) {
+            bids.push(k);
+        }
+    }
+    bids
+}
+
 /// Indice estable de bloque para etiquetas `blk_<N>` (orden determinista).
 fn blk_indice(tarea: &TareaIR, objetivo: silc_causal_ir::nodes::BlockId) -> usize {
-    let mut bids: Vec<_> = tarea.bloques.keys().collect();
-    bids.sort_by_key(|k| format!("{k:?}"));
-    bids.iter().position(|k| *k == objetivo).unwrap_or(0)
+    orden_bloques(tarea)
+        .iter()
+        .position(|k| *k == objetivo)
+        .unwrap_or(0)
 }
 
 fn nombre_val(e: &Emisor, mapa_params: &HashMap<ValueId, String>, v: ValueId) -> String {

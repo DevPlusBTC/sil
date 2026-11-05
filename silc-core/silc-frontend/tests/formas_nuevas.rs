@@ -18,6 +18,8 @@ fn formas_nuevas() {
         "definir tarea f() -> Booleano:\n    solicitar capacidad escritura_archivo para \"/tmp/d\" como cap\n    escribir 1 en archivo \"/tmp/d\" con cap\n    retornar verdadero\n",
         "definir tarea f() -> Booleano:\n    solicitar capacidad red para \"h:2\" como cap\n    enviar 1 en red \"h:2\" con cap\n    retornar verdadero\n",
         "definir tarea f() -> Booleano:\n    solicitar capacidad red para \"h:2\" como cap\n    recibir de red \"h:2\" con cap como r\n    retornar verdadero\n",
+        "definir tarea clasificar(nota: Entero64) -> Texto:\n    si nota >= 90 entonces:\n        retornar \"A\"\n    sino:\n        retornar \"B\"\n",
+        "definir tarea clasificar2(nota: Entero64) -> Texto:\n    si nota >= 90:\n        retornar \"A\"\n    sino si nota >= 80:\n        retornar \"B\"\n    sino:\n        retornar \"C\"\n",
     ] {
         parsea(src);
     }

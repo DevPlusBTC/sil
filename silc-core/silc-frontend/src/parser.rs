@@ -808,6 +808,45 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                     span: sp.start..p.fin(),
                 })
             }
+            Token::Si => {
+                let sp = s.span.clone();
+                p.bump();
+                let c = parse_expr_logica(p)?;
+                if p.peek_is_kw(&Token::Entonces) {
+                    p.bump();
+                }
+                p.expect_sym(Token::Colon)?;
+                p.expect_newline()?;
+                p.expect_indent()?;
+                let cuerpo = parse_cuerpo(p)?;
+                p.expect_dedent()?;
+                let sino = if p.peek_is_kw(&Token::Sino) {
+                    p.bump();
+                    if p.peek_is_kw(&Token::Si) {
+                        // "sino si": recursivo como una única sentencia en un Cuerpo
+                        let sub_si = parse_sentencia(p)?;
+                        Some(Box::new(Cuerpo {
+                            stmts: vec![sub_si],
+                            restricciones: vec![],
+                        }))
+                    } else {
+                        p.expect_sym(Token::Colon)?;
+                        p.expect_newline()?;
+                        p.expect_indent()?;
+                        let c = parse_cuerpo(p)?;
+                        p.expect_dedent()?;
+                        Some(Box::new(c))
+                    }
+                } else {
+                    None
+                };
+                Ok(Stmt::Si {
+                    cond: c,
+                    cuerpo,
+                    sino,
+                    span: sp.start..p.fin(),
+                })
+            }
             Token::Asumir => {
                 let sp = s.span.clone();
                 p.bump();

@@ -66,6 +66,13 @@ pub struct Cuerpo {
 /// Sentencia CNL.
 #[derive(Debug, Clone)]
 pub enum Stmt {
+    /// `si <expr> entonces <cuerpo> [sino <cuerpo>]`
+    Si {
+        cond: Expr,
+        cuerpo: Cuerpo,
+        sino: Option<Box<Cuerpo>>,
+        span: Span,
+    },
     Verificar {
         cond: Expr,
         span: Span,

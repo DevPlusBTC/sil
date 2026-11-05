@@ -117,6 +117,8 @@ pub enum Token {
     Mientras,
     #[token("si")]
     Si,
+    #[token("sino")]
+    Sino,
     #[token("entonces")]
     Entonces,
     #[token("retornar")]

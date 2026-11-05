@@ -543,6 +543,9 @@ fn stmt_a_source(stmt: &Stmt) -> String {
         Stmt::GenerarFibra { tarea, .. } => {
             format!("generar {}\n", tarea.nombre)
         }
+        Stmt::Si { cond, .. } => {
+            format!("si {} entonces:\n    <cuerpo>\n", expr_a_source(cond))
+        }
         Stmt::CrearCanal {
             capacidad,
             guardar_como,
@@ -883,6 +886,7 @@ fn stmt_well_formed(stmt: &Stmt) -> bool {
             ..
         } => !canal.nombre.is_empty() && !guardar_como.nombre.is_empty(),
         Stmt::GenerarFibra { tarea, .. } => !tarea.nombre.is_empty(),
+        Stmt::Si { cond, .. } => expr_well_formed(cond),
         Stmt::CrearCanal { guardar_como, .. } => !guardar_como.nombre.is_empty(),
         Stmt::OperarIO {
             ruta,
