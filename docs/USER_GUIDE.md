@@ -69,9 +69,9 @@ definir tarea ejemplo(x: Entero64) -> Entero64:
 ### Comentarios
 
 ```sil
-# Esto es un comentario de línea
+// Esto es un comentario de línea
 
-# Los comentarios no afectan la verificación
+// Los comentarios no afectan la verificación
 definir tarea sin_comentarios() -> Entero64:
     retornar 42
 ```

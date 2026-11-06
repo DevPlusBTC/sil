@@ -829,13 +829,9 @@ fn cuerpo_funcion(
             emitir_instr(&mut f, locales, tarea, ins, off_texto, idx_host, llamables)?;
         }
         match &b.terminador {
-            Terminador::Retorno(v) => {
-                if let Some(v) = v.clone() {
-                    valor_retorno = Some(v);
-                }
-            }
+            Terminador::Retorno(Some(v)) => valor_retorno = Some(*v),
             Terminador::Rama { .. } | Terminador::Salto(_) => control_flujo = true,
-            Terminador::Inalcanzable => {}
+            Terminador::Retorno(None) | Terminador::Inalcanzable => {}
         }
     }
 
