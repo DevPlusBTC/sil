@@ -35,6 +35,8 @@ pub enum ErrorWasm {
     Wasm(String),
     #[error("Tipo no soportado en WASM M6: {0:?}")]
     TipoNoSoportado(String),
+    #[error("WASM no soporta control de flujo (si/sino/mientras/para)")]
+    ControlFlujoNoSoportado,
 }
 
 /// Host de referencia en Node.js para los módulos generados (imports "sil.*").
@@ -819,14 +821,26 @@ fn cuerpo_funcion(
     bids.sort_by_key(|k| format!("{k:?}"));
     // Rastrear el valor de retorno (del terminador).
     let mut valor_retorno: Option<ValueId> = None;
+    // Detectar control de flujo no soportado.
+    let mut control_flujo = false;
     for bid in bids {
         let b = &tarea.bloques[bid];
         for ins in &b.instrs {
             emitir_instr(&mut f, locales, tarea, ins, off_texto, idx_host, llamables)?;
         }
-        if let Terminador::Retorno(v) = &b.terminador {
-            valor_retorno = *v;
+        match &b.terminador {
+            Terminador::Retorno(v) => {
+                if let Some(v) = v.clone() {
+                    valor_retorno = Some(v);
+                }
+            }
+            Terminador::Rama { .. } | Terminador::Salto(_) => control_flujo = true,
+            Terminador::Inalcanzable => {}
         }
+    }
+
+    if control_flujo {
+        return Err(ErrorWasm::ControlFlujoNoSoportado);
     }
 
     // Pushear valor de retorno a la pila (si no es void).
