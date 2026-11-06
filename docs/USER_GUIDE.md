@@ -8,8 +8,9 @@
 4. [Contratos: asumir y demostrar](#contratos-asumir-y-demostrar)
 5. [Gestión de Memoria](#gestión-de-memoria)
 6. [Capacidades](#capacidades)
-7. [Ejemplos](#ejemplos)
-8. [Errores Comunes](#errores-comunes)
+7. [Control de Flujo](#control-de-flujo)
+8. [Ejemplos](#ejemplos)
+9. [Errores Comunes](#errores-comunes)
 
 ---
 
@@ -235,6 +236,16 @@ definir tarea clasificar(nota: Entero64) -> Texto:
 - `entonces` es opcional (se puede omitir como en el ejemplo).
 - `sino si` permite encadenar múltiples condiciones de forma limpia.
 
+
+---
+
+## Control de Flujo
+
+SIL admite condicionales mediante `si`/`sino`/`sino si` (ver Ejemplo 4).
+
+### Funcionalidades planificadas
+
+Los tokens `mientras` y `para` están definidos en el lexer pero **aún no están implementados** en el parser ni en el lowering. Su implementación está planificada para versiones futuras.
 
 ---
 
