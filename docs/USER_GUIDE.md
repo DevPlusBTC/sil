@@ -213,6 +213,8 @@ definir tarea calcular(x: Entero64, y: Entero64) -> Entero64:
 
 ### Ejemplo 4: Control de Flujo
 
+El lenguaje soporta sentencias condicionales mediante la estructura `si`, `sino si` y `sino`.
+
 ```sil
 definir tarea clasificar(nota: Entero64) -> Texto:
     asumir nota >= 0
@@ -226,6 +228,13 @@ definir tarea clasificar(nota: Entero64) -> Texto:
     sino:
         retornar "F"
 ```
+
+**Notas de sintaxis:**
+- La condición debe ir seguida de `:`.
+- Los bloques de código deben estar indentados.
+- `entonces` es opcional (se puede omitir como en el ejemplo).
+- `sino si` permite encadenar múltiples condiciones de forma limpia.
+
 
 ---
 
