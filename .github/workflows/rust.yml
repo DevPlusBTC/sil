@@ -38,14 +38,11 @@ jobs:
   build-test:
     name: build+test (ubuntu-latest)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
-      RUST_TEST_THREADS: 2
+      RUST_TEST_THREADS: 1
       CARGO_INCREMENTAL: 0
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@v5
 
@@ -60,14 +57,14 @@ jobs:
           workspaces: silc-core
 
       - name: Build workspace
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --locked -j 2
         working-directory: silc-core
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       - name: Tests workspace
-        run: cargo test --workspace --locked -- --test-threads=2
+        run: cargo test --workspace --locked -- --test-threads=1
         working-directory: silc-core
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
