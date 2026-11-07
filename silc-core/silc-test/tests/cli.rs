@@ -189,6 +189,49 @@ fn build_wasm_biblioteca_con_varias_tareas() {
 }
 
 #[test]
+fn build_wasm_biblioteca_varias_tareas_con_si() {
+    // Dos tareas con si/sino → valida generación WASM multi-tarea con control de flujo.
+    use std::io::Write;
+    let temp = tempfile::Builder::new().suffix(".sil").tempfile().unwrap();
+    let mut f = std::fs::File::create(temp.path()).unwrap();
+    writeln!(
+        f,
+        "definir tarea suma_segura(a: Entero64, b: Entero64) -> Entero64:"
+    )
+    .unwrap();
+    writeln!(f, "    si a > 0 entonces:").unwrap();
+    writeln!(f, "        retornar a + b").unwrap();
+    writeln!(f, "    sino:").unwrap();
+    writeln!(f, "        retornar b").unwrap();
+    writeln!(f).unwrap();
+    writeln!(f, "definir tarea doble(x: Entero64) -> Entero64:").unwrap();
+    writeln!(f, "    si x > 0 entonces:").unwrap();
+    writeln!(f, "        retornar x * 2").unwrap();
+    writeln!(f, "    sino:").unwrap();
+    writeln!(f, "        retornar 0").unwrap();
+    drop(f);
+    let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
+    let out_path = out.path().to_str().unwrap().to_string();
+    drop(out);
+    Command::cargo_bin("silc")
+        .unwrap()
+        .args([
+            "build",
+            temp.path().to_str().unwrap(),
+            "--out",
+            &out_path,
+            "--target",
+            "wasm",
+        ])
+        .assert()
+        .success();
+    let b = std::fs::read(&out_path).unwrap();
+    assert!(b.starts_with(b"\0asm"), "magic WASM ausente");
+    wasmparser::Validator::new().validate_all(&b).unwrap();
+    let _ = std::fs::remove_file(&out_path);
+}
+
+#[test]
 fn build_c99_generar_sin_principal_falla_limpio() {
     let f = ejemplo(
         "fiblib",
