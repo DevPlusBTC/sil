@@ -4,26 +4,11 @@
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
-## 📊 Estado Real del Proyecto
-
-| Métrica | Valor |
-|---------|-------|
-| **Tests Rust** | **174/174 ✅** |
-| **Tests Python** | **31/31 ✅** |
-| **Crates** | 7/7 compilan |
-| **Líneas código** | ~15,000 Rust |
-| **Estado real** | **Fase 0 (Semilla)** |
-| **Próximo hito** | Codegen de servicios/red; decidir LLVM (job de CI o experimental); validar eBPF con libbpf 1.x |
-
 ---
 
 ## Instalación
 
 ```bash
-# Desde fuente (el CLI no está publicado en crates.io)
-git clone https://github.com/DevPlusBTC/sil.git
-cd sil/silc-core
-cargo install --path silc-cli
 # o: cargo build --release -p silc-cli
 ```
 
@@ -59,6 +44,16 @@ definir tarea procesar_pago(monto: Entero64, saldo: Entero64) -> Booleano:
         latencia_maxima: baja
         gestion_memoria: arena
 ```
+
+## Pruebas
+
+Ejecutar las pruebas del proyecto:
+
+```bash
+cargo test --workspace
+```
+
+---
 
 ## Estructura del Proyecto
 
