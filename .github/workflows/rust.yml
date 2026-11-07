@@ -45,7 +45,31 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy
+
+      - name: Increase swap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Increase swap (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo sysctl -w vm.swapfile_prefix=/private/var/vm/swapfile
+          free -h
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev liburing-dev linux-headers-generic
         with:
           components: clippy
 
@@ -342,7 +366,31 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy
+
+      - name: Increase swap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Increase swap (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sudo sysctl -w vm.swapfile_prefix=/private/var/vm/swapfile
+          free -h
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev liburing-dev linux-headers-generic
 
       - name: Install system dependencies (Linux)
         run: |
