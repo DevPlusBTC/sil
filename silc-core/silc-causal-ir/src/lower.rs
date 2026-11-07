@@ -388,17 +388,17 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
                 terminador: Terminador::Inalcanzable,
             });
             ctx.bloques[blk_mientras].id = blk_mientras;
-            
+
             let blk_cont = ctx.bloques.insert(Bloque {
                 id: BlockId::default(),
                 instrs: Vec::new(),
                 terminador: Terminador::Inalcanzable,
             });
             ctx.bloques[blk_cont].id = blk_cont;
-            
+
             // El bloque actual salta al bloque mientras
             ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_mientras);
-            
+
             // Bajar cuerpo del mientras
             ctx.actual = blk_mientras;
             for s in &cuerpo.stmts {
@@ -408,11 +408,16 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             if matches!(ctx.bloques[ctx.actual].terminador, Terminador::Inalcanzable) {
                 ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cont);
             }
-            
+
             ctx.actual = blk_cont;
             Ok(())
         }
-        A::Stmt::Para { variable, iterable, cuerpo, .. } => {
+        A::Stmt::Para {
+            variable,
+            iterable,
+            cuerpo,
+            ..
+        } => {
             // Bucle para: iterar sobre un valor
             let iter_val = bajar_expr(ctx, iterable)?;
             // Crear bloques: cuerpo y continuar
@@ -422,17 +427,17 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
                 terminador: Terminador::Inalcanzable,
             });
             ctx.bloques[blk_cuerpo].id = blk_cuerpo;
-            
+
             let blk_cont = ctx.bloques.insert(Bloque {
                 id: BlockId::default(),
                 instrs: Vec::new(),
                 terminador: Terminador::Inalcanzable,
             });
             ctx.bloques[blk_cont].id = blk_cont;
-            
+
             // Almacenar la variable en el contexto local
             ctx.vars.insert(variable.clone(), iter_val);
-            
+
             // Bajar cuerpo del para
             ctx.actual = blk_cuerpo;
             for s in &cuerpo.stmts {
@@ -442,7 +447,7 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             if matches!(ctx.bloques[ctx.actual].terminador, Terminador::Inalcanzable) {
                 ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cont);
             }
-            
+
             ctx.actual = blk_cont;
             Ok(())
         }

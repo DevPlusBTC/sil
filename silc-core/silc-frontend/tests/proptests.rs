@@ -238,8 +238,6 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
         expr_strategy().prop_map(|cond| Stmt::Asumir { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Demostrar { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::InvarianteBucle { cond, span: 0..0 }),
-        expr_strategy().prop_map(|cond| Stmt::Mientras { cond: expr_strategy(), cuerpo: Cuerpo { stmts: vec![], restricciones: vec![] } }),
-        expr_strategy().prop_map(|cond| Stmt::Para { variable: ident_node_strategy(), iterable: expr_strategy(), cuerpo: Cuerpo { stmts: vec![], restricciones: vec![] } }),
         (
             permiso_strategy(),
             recurso_strategy(),
@@ -547,6 +545,25 @@ fn stmt_a_source(stmt: &Stmt) -> String {
         }
         Stmt::Si { cond, .. } => {
             format!("si {} entonces:\n    <cuerpo>\n", expr_a_source(cond))
+        }
+        Stmt::Mientras { cond, .. } => {
+            format!(
+                "mientras {}:
+    <cuerpo>
+",
+                expr_a_source(cond)
+            )
+        }
+        Stmt::Para {
+            variable, iterable, ..
+        } => {
+            format!(
+                "para {} en {}:
+    <cuerpo>
+",
+                variable,
+                expr_a_source(iterable)
+            )
         }
         Stmt::CrearCanal {
             capacidad,
