@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
       - name: Verificar formato
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.97.1
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
@@ -189,7 +189,7 @@ jobs:
       - name: Versión de CMake
         run: cmake --version
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
@@ -313,7 +313,7 @@ jobs:
           echo "/usr/lib/llvm-17/lib" | sudo tee /etc/ld.so.conf.d/llvm-17.conf
           sudo ldconfig
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
@@ -367,7 +367,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.97.1
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
