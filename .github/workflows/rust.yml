@@ -38,6 +38,10 @@ jobs:
   build-test:
     name: build+test (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUST_TEST_THREADS: 2
+      CARGO_INCREMENTAL: 0
     strategy:
       fail-fast: false
       matrix:
@@ -50,15 +54,6 @@ jobs:
         with:
           components: clippy
 
-      - name: Increase swap (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo fallocate -l 4G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
-
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -67,10 +62,12 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace --locked
         working-directory: silc-core
+        timeout-minutes: 15
 
       - name: Tests workspace
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked -- --test-threads=2
         working-directory: silc-core
+        timeout-minutes: 15
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
