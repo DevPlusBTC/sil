@@ -90,6 +90,19 @@ pub enum Stmt {
         cond: Expr,
         span: Span,
     },
+    /// `mientras <cond>:` - bucle con terminador Salto/Rama
+    Mientras {
+        cond: Expr,
+        cuerpo: Cuerpo,
+        span: Span,
+    },
+    /// `para <var> en <exp>:` - bucle sobre una colección
+    Para {
+        variable: String,
+        iterable: Expr,
+        cuerpo: Cuerpo,
+        span: Span,
+    },
     Asignar {
         nombre: Ident,
         tipo: Option<TipoDato>,

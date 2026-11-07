@@ -847,10 +847,33 @@ fn parse_sentencia(p: &mut P) -> Result<Stmt, ErrorFrontend> {
                     span: sp.start..p.fin(),
                 })
             }
+            Token::Mientras => {
+                let sp = s.span.clone();
+                p.bump();
+                let c = parse_expr_logica(p)?;
+                p.expect_sym(Token::Colon)?;
+                p.expect_newline()?;
+                p.expect_indent()?;
+                let cuerpo = parse_cuerpo(p)?;
+                p.expect_dedent()?;
+                Ok(Stmt::Mientras { cond: c, cuerpo, span: sp.start..p.fin() })
+            }
+            Token::Para => {
+                let sp = s.span.clone();
+                p.bump();
+                // "para" espera un nombre de variable
+                let var_name = parse_ident(p)?;
+                p.expect_kw(Token::En)?;
+                let exp = parse_expr(p)?;
+                p.expect_newline()?;
+                p.expect_indent()?;
+                let cuerpo = parse_cuerpo(p)?;
+                p.expect_dedent()?;
+                Ok(Stmt::Para { variable: var_name.nombre, iterable: exp, cuerpo, span: sp.start..p.fin() })
+            }
             Token::Asumir => {
                 let sp = s.span.clone();
                 p.bump();
-                // "asumir" puede ir seguido opcionalmente de "que" para consistencia con "verificar"
                 if p.peek_is_kw(&Token::Que) {
                     p.bump();
                 }

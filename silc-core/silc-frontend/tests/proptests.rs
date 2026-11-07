@@ -238,6 +238,8 @@ fn stmt_strategy() -> impl Strategy<Value = Stmt> {
         expr_strategy().prop_map(|cond| Stmt::Asumir { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::Demostrar { cond, span: 0..0 }),
         expr_strategy().prop_map(|cond| Stmt::InvarianteBucle { cond, span: 0..0 }),
+        expr_strategy().prop_map(|cond| Stmt::Mientras { cond: expr_strategy(), cuerpo: Cuerpo { stmts: vec![], restricciones: vec![] } }),
+        expr_strategy().prop_map(|cond| Stmt::Para { variable: ident_node_strategy(), iterable: expr_strategy(), cuerpo: Cuerpo { stmts: vec![], restricciones: vec![] } }),
         (
             permiso_strategy(),
             recurso_strategy(),
@@ -887,6 +889,8 @@ fn stmt_well_formed(stmt: &Stmt) -> bool {
         } => !canal.nombre.is_empty() && !guardar_como.nombre.is_empty(),
         Stmt::GenerarFibra { tarea, .. } => !tarea.nombre.is_empty(),
         Stmt::Si { cond, .. } => expr_well_formed(cond),
+        Stmt::Mientras { .. } => true,
+        Stmt::Para { .. } => true,
         Stmt::CrearCanal { guardar_como, .. } => !guardar_como.nombre.is_empty(),
         Stmt::OperarIO {
             ruta,
