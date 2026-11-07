@@ -5,6 +5,7 @@
 
 use clap::{Parser, Subcommand};
 use miette::{IntoDiagnostic, Result, WrapErr};
+use silc_causal_ir::nodes::{ConfiguracionRedIR, ManejadorEventoIR, ProgramaIR};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
@@ -69,10 +70,10 @@ enum Comando {
     Lsp,
 }
 
-/// Programa compilado en memoria (todas las fases).
+/// Programa compilado en memoria: metadata de servicio + tareas IR.
 struct Compilado {
     nombre_archivo: String,
-    tareas_ir: Vec<silc_causal_ir::nodes::TareaIR>,
+    programa_ir: ProgramaIR,
 }
 
 fn leer_fuente(path: &Path) -> Result<String> {
@@ -95,6 +96,66 @@ fn bajar_tarea_declarada(
     })
 }
 
+/// Baja un servicio a ProgramaIR: extrae metadata de red/manejadores y baja sus tareas.
+fn bajar_servicio(s: &silc_frontend::ast::ServicioDecl, path: &Path) -> Result<ProgramaIR> {
+    let mut tareas_ir = Vec::new();
+    for t in &s.tareas {
+        tareas_ir.push(bajar_tarea_declarada(t, path)?);
+    }
+
+    // Manejadores: evento -> tarea handler
+    let mut manejadores = Vec::new();
+    for m in &s.manejadores {
+        // Buscar si hay una tarea en el servicio que coincida con el evento
+        let handler_name = format!("__handler_{}", m.evento.nombre);
+        let tarea_handler = s
+            .tareas
+            .iter()
+            .find(|t| t.nombre.nombre == handler_name || t.nombre.nombre == m.evento.nombre)
+            .map(|t| t.nombre.nombre.clone())
+            .unwrap_or_else(|| handler_name);
+
+        let params = m
+            .params
+            .iter()
+            .map(|p| {
+                let t = silc_causal_ir::lower::bajar_tipo(&p.tipo)
+                    .unwrap_or(silc_causal_ir::nodes::SilType::Entero64);
+                (p.nombre.nombre.clone(), t)
+            })
+            .collect();
+
+        manejadores.push(ManejadorEventoIR {
+            evento: m.evento.nombre.clone(),
+            params,
+            tarea_handler,
+        });
+    }
+
+    let red = s.red.as_ref().map(|r| ConfiguracionRedIR {
+        puerto: r.puerto,
+        protocolo: r.protocolo.as_ref().map(|p| p.nombre.clone()),
+    });
+
+    // Convertir restricciones frontend -> IR (dropping span)
+    let restricciones: Vec<silc_causal_ir::nodes::Restriccion> = s
+        .restricciones
+        .iter()
+        .map(|r| silc_causal_ir::nodes::Restriccion {
+            clave: r.clave.clone(),
+            valor: r.valor.clone(),
+        })
+        .collect();
+
+    Ok(ProgramaIR {
+        servicio_nombre: Some(s.nombre.nombre.clone()),
+        red,
+        manejadores,
+        tareas: tareas_ir,
+        restricciones,
+    })
+}
+
 /// Fase 1-4: lex → parse → lower → SMT verify. Retorna IR verificado.
 fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     let fuente = leer_fuente(path)?;
@@ -105,40 +166,47 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     debug!(archivo = %nombre, tokens = toks.len(), "lex OK");
 
     // Fase 2: Parse (errores miette con spans via ErrorFrontend)
-    let prog = silc_frontend::parser::parsear(&toks).map_err(|e| {
-        // ErrorFrontend ya es Diagnostic; lo envolvemos con contexto de archivo.
-        miette::miette!("{}: {e:?}", path.display())
-    })?;
+    let prog = silc_frontend::parser::parsear(&toks)
+        .map_err(|e| miette::miette!("{}: {e:?}", path.display()))?;
     debug!(archivo = %nombre, defs = prog.defs.len(), "parse OK");
 
-    // Fase 3: Lower cada tarea (las de servicio también se compilan).
-    let mut tareas_ir = Vec::new();
-    for decl in &prog.defs {
-        match decl {
-            silc_frontend::ast::Decl::Tarea(t) => {
+    // Fase 3: Lower - detectar si hay servicio y procesar apropiadamente
+    let programa_ir = if let Some(servicio) = prog.defs.iter().find_map(|d| {
+        if let silc_frontend::ast::Decl::Servicio(s) = d {
+            Some(s)
+        } else {
+            None
+        }
+    }) {
+        // Hay un servicio: bajar sus tareas y extraer metadata
+        bajar_servicio(servicio, path)?
+    } else {
+        // Sin servicio: bajar tareas sueltas
+        let mut tareas_ir = Vec::new();
+        for decl in &prog.defs {
+            if let silc_frontend::ast::Decl::Tarea(t) = decl {
                 tareas_ir.push(bajar_tarea_declarada(t, path)?);
             }
-            silc_frontend::ast::Decl::Servicio(s) => {
-                for t in &s.tareas {
-                    tareas_ir.push(bajar_tarea_declarada(t, path)?);
-                }
-            }
-            // Estructuras, variantes, modelos, memoria persistente, capacidades,
-            // módulos y migraciones son declaraciones de tipos/metadatos: se
-            // validan en el parser y no generan código todavía.
-            _ => {}
+            // Otras declaraciones (estructura, variante, etc.) se validan en parser
+            // pero no generan código en Fase 0.
         }
-    }
-    if tareas_ir.is_empty() {
-        return Err(miette::miette!(
-            "{}: sin tareas para compilar",
-            path.display()
-        ));
-    }
+        if tareas_ir.is_empty() {
+            return Err(miette::miette!(
+                "{}: sin tareas para compilar",
+                path.display()
+            ));
+        }
+        ProgramaIR {
+            servicio_nombre: None,
+            red: None,
+            manejadores: Vec::new(),
+            tareas: tareas_ir,
+            restricciones: Vec::new(),
+        }
+    };
 
     // Fase 4: SMT verify cada tarea
-    // Usa Z3 (feature `smt`) si está disponible, si no intervalos
-    for ir in &tareas_ir {
+    for ir in &programa_ir.tareas {
         #[cfg(feature = "smt")]
         {
             let mut backend = VerificadorZ3::new();
@@ -163,11 +231,11 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
             })?;
         }
     }
-    info!(archivo = %nombre, tareas = tareas_ir.len(), "SMT OK");
+    info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT OK");
 
     Ok(Compilado {
         nombre_archivo: nombre,
-        tareas_ir,
+        programa_ir,
     })
 }
 
@@ -178,7 +246,7 @@ fn cmd_check(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
             Ok(c) => println!(
                 "{}: OK ({} tareas verificadas)",
                 c.nombre_archivo,
-                c.tareas_ir.len()
+                c.programa_ir.tareas.len()
             ),
             Err(e) => {
                 eprintln!("{e:?}");
@@ -226,7 +294,7 @@ fn cmd_build(
         ));
     }
     let c = compilar_archivo(&archivos[0], smt_timeout)?;
-    if c.tareas_ir.is_empty() {
+    if c.programa_ir.tareas.is_empty() {
         return Err(miette::miette!("archivo sin tareas"));
     }
 
@@ -234,13 +302,14 @@ fn cmd_build(
         "c99" => {
             // Una sola tarea con parámetros: función suelta (biblioteca).
             // En otro caso: programa completo con main ejecutable.
-            let codigo = if c.tareas_ir.len() == 1 && !c.tareas_ir[0].params.is_empty() {
-                silc_backend::c99::emitir(&c.tareas_ir[0])
-                    .map_err(|e| miette::miette!("backend C99: {e}"))?
-            } else {
-                silc_backend::c99::emitir_programa(&c.tareas_ir)
-                    .map_err(|e| miette::miette!("backend C99: {e}"))?
-            };
+            let codigo =
+                if c.programa_ir.tareas.len() == 1 && !c.programa_ir.tareas[0].params.is_empty() {
+                    silc_backend::c99::emitir(&c.programa_ir.tareas[0])
+                        .map_err(|e| miette::miette!("backend C99: {e}"))?
+                } else {
+                    silc_backend::c99::emitir_programa(&c.programa_ir)
+                        .map_err(|e| miette::miette!("backend C99: {e}"))?
+                };
             std::fs::write(out, &codigo)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
@@ -257,20 +326,21 @@ fn cmd_build(
         "wasm" => {
             // Un módulo por programa (todas las tareas + start + host).
             // Una sola tarea con parámetros: módulo de una función.
-            let bytes = if c.tareas_ir.len() == 1 && !c.tareas_ir[0].params.is_empty() {
-                silc_backend::wasm::emitir(&c.tareas_ir[0])
-                    .map_err(|e| miette::miette!("backend WASM: {e}"))?
-            } else {
-                silc_backend::wasm::emitir_programa(&c.tareas_ir)
-                    .map_err(|e| miette::miette!("backend WASM: {e}"))?
-            };
+            let bytes =
+                if c.programa_ir.tareas.len() == 1 && !c.programa_ir.tareas[0].params.is_empty() {
+                    silc_backend::wasm::emitir(&c.programa_ir.tareas[0])
+                        .map_err(|e| miette::miette!("backend WASM: {e}"))?
+                } else {
+                    silc_backend::wasm::emitir_programa(&c.programa_ir.tareas)
+                        .map_err(|e| miette::miette!("backend WASM: {e}"))?
+                };
             std::fs::write(out, &bytes)
                 .into_diagnostic()
                 .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
             println!(
                 "{} ({} tareas) → {} ({} bytes WASM)",
                 c.nombre_archivo,
-                c.tareas_ir.len(),
+                c.programa_ir.tareas.len(),
                 out.display(),
                 bytes.len()
             );

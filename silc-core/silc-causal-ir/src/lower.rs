@@ -106,7 +106,7 @@ impl Ctx {
 // Mapeo de tipos AST → IR
 // =============================================================================
 
-fn bajar_tipo(t: &A::TipoDato) -> Result<SilType, ErrorBajada> {
+pub fn bajar_tipo(t: &A::TipoDato) -> Result<SilType, ErrorBajada> {
     match t {
         A::TipoDato::Entero64 => Ok(SilType::Entero64),
         A::TipoDato::Flotante64 => Ok(SilType::Flotante64),

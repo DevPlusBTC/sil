@@ -462,3 +462,34 @@ impl TareaIR {
         self.bloques.values().map(|b| b.instrs.len()).sum()
     }
 }
+
+/// Programa IR completo: metadata de servicio + todas las tareas compiladas.
+/// Permite al codegen emitir bootstrap de servicio (socket, event loop).
+#[derive(Debug, Clone)]
+pub struct ProgramaIR {
+    /// Nombre del servicio (si el programa es un servicio).
+    pub servicio_nombre: Option<String>,
+    /// Configuración de red: puerto + protocolo opcional.
+    pub red: Option<ConfiguracionRedIR>,
+    /// Manejadores de evento: mapa nombre_evento → (params, tarea_handler).
+    pub manejadores: Vec<ManejadorEventoIR>,
+    /// Todas las tareas compiladas del programa/servicio.
+    pub tareas: Vec<TareaIR>,
+    /// Restricciones globales del servicio.
+    pub restricciones: Vec<Restriccion>,
+}
+
+/// Configuración de red en IR.
+#[derive(Debug, Clone)]
+pub struct ConfiguracionRedIR {
+    pub puerto: u64,
+    pub protocolo: Option<String>,
+}
+
+/// Manejador de evento en IR: evento -> tarea handler.
+#[derive(Debug, Clone)]
+pub struct ManejadorEventoIR {
+    pub evento: String,
+    pub params: Vec<(String, SilType)>,
+    pub tarea_handler: String,
+}

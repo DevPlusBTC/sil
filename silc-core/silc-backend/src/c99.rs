@@ -12,7 +12,7 @@
 //! - Arenas: cada tarea recibe `SilArena* __arena`; asignaciones vía bump alloc.
 
 use silc_causal_ir::nodes::{
-    Bloque, Constante, OpArit, OpCmp, Operacion, SilType, TareaIR, Terminador, ValueId,
+    Bloque, Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador, ValueId,
 };
 use silc_contracts::*;
 use slotmap::Key;
@@ -543,7 +543,8 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
 /// - Sin parámetros: se emite `main`, que ejecuta la principal y luego las
 ///   fibras registradas con `generar X`.
 /// - Con parámetros: se emite una biblioteca (sin `main`), igual que `emitir`.
-pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
+pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
+    let tareas = &programa.tareas;
     require(!tareas.is_empty(), "programa sin tareas");
     let principal = tareas.last().expect("programa sin tareas");
     let con_main = principal.params.is_empty();
@@ -565,6 +566,22 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<String, ErrorC99> {
     if con_main {
         out.push_str("static SilArena_ sil_arena_main_;\n");
         out.push_str("static SilSched_ sil_sched_main_;\n");
+    }
+
+    // Si hay configuración de red, emitir stubs de servidor
+    if let Some(red) = &programa.red {
+        out.push_str("/* --- Bootstrap de Servicio --- */\n");
+        out.push_str(&format!(
+            "static int sil_servicio_puerto_ = {};\n",
+            red.puerto
+        ));
+        if let Some(proto) = &red.protocolo {
+            out.push_str(&format!(
+                "static const char* sil_servicio_protocolo_ = \"{}\";\n",
+                proto
+            ));
+        }
+        // TODO: En M9 integrar con sil-rt bind/listen/accept
     }
 
     // Valida los `generar X`: la tarea debe existir y no tener parámetros.

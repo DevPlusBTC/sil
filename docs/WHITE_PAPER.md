@@ -131,7 +131,7 @@ intención):
 | Declaración | Parser | Lowering a Causal-IR | Backend C99/WASM |
 |---|---|---|---|
 | `tarea` | ✅ | ✅ `bajar_tarea` | ✅ |
-| `servicio` (sus tareas) | ✅ | ✅ (sólo las tareas internas) | ✅ |
+| `servicio` (sus tareas + red + manejadores) | ✅ | ✅ `bajar_servicio` + `ProgramaIR` | ✅ (bootstrap + stubs) |
 | `estructura`, `variante`, `modelo` | ✅ | ❌ metadatos | ❌ (`TipoNoSoportado`) |
 | `memoria_persistente`, `migrar` | ✅ | ❌ metadatos | ❌ |
 | `capacidad`, `modulo` | ✅ | ❌ metadatos | ❌ |
