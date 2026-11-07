@@ -385,4 +385,4 @@ jobs:
         run: |
           echo "Build 1: $(cat /tmp/hash1.txt)"
           echo "Build 2: $(cat /tmp/hash2.txt)"
-          diff /tmp/hash1.txt /tmp/hash2.txt && echo "REPRODUCIBLE: hashes idénticos" || (echo "NO REPRODUCIBLE" && exit 1)
+          diff /tmp/hash1.txt /tmp/hash2.txt && echo "REPRODUCIBLE: hashes idénticos" || (echo "NO REPRODUCIBLE" && exit 1)# cache refresh vie.,  6 de nov. de 2026 11:24:49 p. m.
