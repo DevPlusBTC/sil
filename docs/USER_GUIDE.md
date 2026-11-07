@@ -167,8 +167,8 @@ SIL gestiona la memoria con **Arenas** que asignan y liberan en tiempo constante
 ```sil
 definir tarea procesar(datos: Texto) -> Entero64:
     asumir datos.len > 0
-    # La memoria se asigna en la arena de la tarea
-    # y se libera automáticamente al retornar
+    // La memoria se asigna en la arena de la tarea
+    // y se libera automáticamente al retornar
     retornar datos.len
 ```
 
