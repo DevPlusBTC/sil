@@ -877,6 +877,78 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
 }
 
 // =============================================================================
+// Lowering de tipos definidos por el usuario (ADTs)
+// =============================================================================
+
+fn bajar_campo(campo: &A::Campo) -> Result<CampoIR, ErrorBajada> {
+    require_valid_ident(&campo.nombre.nombre, 64, "nombre de campo inválido");
+    let t = bajar_tipo(&campo.tipo)?;
+    Ok(CampoIR {
+        nombre: campo.nombre.nombre.clone(),
+        tipo: t,
+    })
+}
+
+fn bajar_estructura(est: &A::EstructuraDecl) -> Result<TipoDefinido, ErrorBajada> {
+    require_valid_ident(&est.nombre.nombre, 64, "nombre de estructura inválido");
+    let mut campos = Vec::new();
+    for c in &est.campos {
+        campos.push(bajar_campo(c)?);
+    }
+    let tipo = SilType::Nominal(est.nombre.nombre.clone());
+    Ok(TipoDefinido {
+        nombre: est.nombre.nombre.clone(),
+        tipo: tipo.clone(),
+        definicion: TipoDefinicion::Estructura { campos },
+    })
+}
+
+fn bajar_variante(var: &A::VarianteDecl) -> Result<TipoDefinido, ErrorBajada> {
+    require_valid_ident(&var.nombre.nombre, 64, "nombre de variante inválido");
+    let mut constructores = Vec::new();
+    for caso in &var.casos {
+        require_valid_ident(&caso.nombre.nombre, 64, "nombre de constructor inválido");
+        let mut campos = Vec::new();
+        for c in &caso.datos {
+            campos.push(bajar_campo(c)?);
+        }
+        constructores.push(ConstructorIR {
+            nombre: caso.nombre.nombre.clone(),
+            campos,
+        });
+    }
+    let tipo = SilType::Nominal(var.nombre.nombre.clone());
+    Ok(TipoDefinido {
+        nombre: var.nombre.nombre.clone(),
+        tipo: tipo.clone(),
+        definicion: TipoDefinicion::Variante { constructores },
+    })
+}
+
+fn bajar_modelo(r#mod: &A::ModeloDecl) -> Result<TipoDefinido, ErrorBajada> {
+    require_valid_ident(&r#mod.nombre.nombre, 64, "nombre de modelo inválido");
+    let mut campos = Vec::new();
+    for c in &r#mod.campos {
+        campos.push(bajar_campo(c)?);
+    }
+    let tipo = SilType::Nominal(r#mod.nombre.nombre.clone());
+    Ok(TipoDefinido {
+        nombre: r#mod.nombre.nombre.clone(),
+        tipo: tipo.clone(),
+        definicion: TipoDefinicion::Modelo { campos },
+    })
+}
+
+pub fn bajar_tipo_definido(decl: &A::Decl) -> Result<Option<TipoDefinido>, ErrorBajada> {
+    match decl {
+        A::Decl::Estructura(e) => Ok(Some(bajar_estructura(e)?)),
+        A::Decl::Variante(v) => Ok(Some(bajar_variante(v)?)),
+        A::Decl::Modelo(m) => Ok(Some(bajar_modelo(m)?)),
+        _ => Ok(None),
+    }
+}
+
+// =============================================================================
 // Tests M3 (disciplina elite: invariantes verificadas, no solo "no-panic")
 // =============================================================================
 

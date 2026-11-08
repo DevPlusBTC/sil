@@ -99,9 +99,18 @@ fn bajar_tarea_declarada(
 /// Baja un servicio a ProgramaIR: extrae metadata de red/manejadores y baja sus tareas.
 fn bajar_servicio(s: &silc_frontend::ast::ServicioDecl, path: &Path) -> Result<ProgramaIR> {
     let mut tareas_ir = Vec::new();
+    let mut tipos_definidos: Vec<silc_causal_ir::nodes::TipoDefinido> = Vec::new();
     for t in &s.tareas {
         tareas_ir.push(bajar_tarea_declarada(t, path)?);
     }
+    // Tipos definidos en el servicio (estructura, variante, modelo)
+    for decl in &s.tareas {
+        // The tasks themselves don't contain type declarations; they're at the top level of the service.
+        // For now, we don't have type declarations inside tasks, but if they're added to the AST,
+        // they would be processed here.
+    }
+    // Also check for type declarations at the service level (if the AST supports it)
+    // For now, the service AST doesn't include type declarations directly.
 
     // Manejadores: evento -> tarea handler
     let mut manejadores = Vec::new();
@@ -153,6 +162,7 @@ fn bajar_servicio(s: &silc_frontend::ast::ServicioDecl, path: &Path) -> Result<P
         manejadores,
         tareas: tareas_ir,
         restricciones,
+        tipos_definidos: Vec::new(),
     })
 }
 
@@ -181,18 +191,22 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
         // Hay un servicio: bajar sus tareas y extraer metadata
         bajar_servicio(servicio, path)?
     } else {
-        // Sin servicio: bajar tareas sueltas
+        // Sin servicio: bajar tareas sueltas y tipos definidos
         let mut tareas_ir = Vec::new();
+        let mut tipos_definidos: Vec<silc_causal_ir::nodes::TipoDefinido> = Vec::new();
         for decl in &prog.defs {
             if let silc_frontend::ast::Decl::Tarea(t) = decl {
                 tareas_ir.push(bajar_tarea_declarada(t, path)?);
+            } else if let Some(tipo_def) = silc_causal_ir::lower::bajar_tipo_definido(decl)
+                .map_err(|e| miette::miette!("error de lowering: {}", e))?
+            {
+                tipos_definidos.push(tipo_def);
             }
-            // Otras declaraciones (estructura, variante, etc.) se validan en parser
-            // pero no generan código en Fase 0.
+            // Otras declaraciones se validan en parser pero no generan código en Fase 0.
         }
-        if tareas_ir.is_empty() {
+        if tareas_ir.is_empty() && tipos_definidos.is_empty() {
             return Err(miette::miette!(
-                "{}: sin tareas para compilar",
+                "{}: sin tareas ni tipos para compilar",
                 path.display()
             ));
         }
@@ -202,6 +216,7 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
             manejadores: Vec::new(),
             tareas: tareas_ir,
             restricciones: Vec::new(),
+            tipos_definidos,
         }
     };
 

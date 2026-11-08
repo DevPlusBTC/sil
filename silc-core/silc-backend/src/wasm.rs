@@ -1668,6 +1668,7 @@ mod tests {
                     manejadores,
                     tareas: tareas_ir,
                     restricciones: Vec::new(),
+                    tipos_definidos: Vec::new(),
                 };
             }
         }
@@ -1720,6 +1721,7 @@ mod tests {
             manejadores: Vec::new(),
             tareas: vec![ir_de("definir tarea f() -> Entero64:\n    retornar 1\n")],
             restricciones: Vec::new(),
+            tipos_definidos: Vec::new(),
         };
         let bytes = emitir_programa(&ir).expect("emitir_programa OK");
         valida_wasm(&bytes);

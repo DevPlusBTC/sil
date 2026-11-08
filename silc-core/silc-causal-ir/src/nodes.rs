@@ -477,6 +477,41 @@ pub struct ProgramaIR {
     pub tareas: Vec<TareaIR>,
     /// Restricciones globales del servicio.
     pub restricciones: Vec<Restriccion>,
+    /// Tipos definidos por el usuario (estructuras, variantes, modelos).
+    pub tipos_definidos: Vec<TipoDefinido>,
+}
+
+/// Tipo definido por el usuario (estructura, variante, modelo).
+#[derive(Debug, Clone)]
+pub struct TipoDefinido {
+    pub nombre: String,
+    pub tipo: SilType,
+    pub definicion: TipoDefinicion,
+}
+
+/// Definicion interna de un tipo definido por el usuario.
+#[derive(Debug, Clone)]
+pub enum TipoDefinicion {
+    /// Estructura (product type): lista de campos.
+    Estructura { campos: Vec<CampoIR> },
+    /// Variante (sum type): lista de constructores con sus campos.
+    Variante { constructores: Vec<ConstructorIR> },
+    /// Modelo: igual que estructura pero semánticamente distinto (dominio).
+    Modelo { campos: Vec<CampoIR> },
+}
+
+/// Campo de estructura/modelo en IR.
+#[derive(Debug, Clone)]
+pub struct CampoIR {
+    pub nombre: String,
+    pub tipo: SilType,
+}
+
+/// Constructor de variante en IR.
+#[derive(Debug, Clone)]
+pub struct ConstructorIR {
+    pub nombre: String,
+    pub campos: Vec<CampoIR>,
 }
 
 /// Configuración de red en IR.
