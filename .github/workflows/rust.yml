@@ -59,10 +59,13 @@ jobs:
       - name: Increase swap (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo -S -p '' fallocate -l 8G /swapfile
-          sudo -S -p '' chmod 600 /swapfile
-          sudo -S -p '' mkswap /swapfile
-          sudo -S -p '' swapon /swapfile
+          set -e
+          if ! sudo fallocate -l 4G /swapfile 2>/dev/null; then
+            sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          fi
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
           free -h
 
       - name: Build workspace
