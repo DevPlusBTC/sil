@@ -19,7 +19,7 @@
 | **Backend LLVM** | Implementado, sin validar en CI | 0/0 | Feature `llvm`; requiere LLVM 17 instalado |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
 | **Arenas O(1)** | Listo para probar | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
-| **Arenas Persistentes NVM** | Pendiente para desarrollo | 0/0 | AST/parser; sin mmap/NVM |
+| **Arenas Persistentes NVM** | Operativo ✅ (stub CRC64+HMAC) | 4/4 | Persistencia + integridad; sin mmap/NVM real aún |
 | **Scheduler Fibras** | Listo para probar | 0/0 | Win32 Fibers (Windows) y `ucontext` (Linux/macOS/BSD); sin tests dedicados |
 | **Canales Lock-Free** | Listo para probar | 0/0 | SPSC/MPSC implementados en sil-rt |
 | **Async I/O (io_uring/IOCP/POSIX)** | Listo para probar (runtime) | 1/1 ✅ | Por defecto `pread`/`pwrite` (POSIX) e IOCP (Windows); `io_uring` sólo con `SIL_IO_URING=1`; falta integrarlo al codegen |
@@ -260,7 +260,7 @@ El runtime embebido en el C generado (`RUNTIME_ARENA` en `silc-backend/src/c99.r
 sólo lleva arena + asignación + destrucción: los ciclos son API del runtime
 nativo, no del código emitido.
 
-### 4.3 Arenas Persistentes NVM (Zero-ORM / Zero-Database) — Pendiente para desarrollo
+### 4.3 Arenas Persistentes NVM (Zero-ORM / Zero-Database) — Operativo ✅ (stub CRC64+HMAC)
 
 `definir memoria_persistente` se parsea a AST (campos tipados). Sin implementación real de mmap/NVM ni lowering a arena persistente.
 
