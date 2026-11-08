@@ -12,7 +12,8 @@
 //! - Arenas: cada tarea recibe `SilArena* __arena`; asignaciones vía bump alloc.
 
 use silc_causal_ir::nodes::{
-    Bloque, CampoIR, ConstructorIR, Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador, TipoDefinido, TipoDefinicion, ValueId,
+    Bloque, Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador,
+    TipoDefinicion, TipoDefinido, ValueId,
 };
 use silc_contracts::*;
 use slotmap::Key;
@@ -496,15 +497,15 @@ impl Emisor {
                     }
                 }
                 Err(ErrorC99::TipoNoSoportado(format!(
-                    "Tipo nominal '{}' no definido", nombre
+                    "Tipo nominal '{}' no definido",
+                    nombre
                 )))
             }
-            SilType::Lista(_)
-            | SilType::Mapa(..)
-            | SilType::Conjunto(_)
-            | SilType::Tupla(_) => Err(ErrorC99::TipoNoSoportado(format!(
-                "{t:?} (M6: fat pointers)"
-            ))),
+            SilType::Lista(_) | SilType::Mapa(..) | SilType::Conjunto(_) | SilType::Tupla(_) => {
+                Err(ErrorC99::TipoNoSoportado(format!(
+                    "{t:?} (M6: fat pointers)"
+                )))
+            }
         }
     }
 }
@@ -554,6 +555,106 @@ pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
     Ok(out)
 }
 
+/// Emite la definición C de un tipo definido por el usuario (struct, enum, union).
+fn emitir_tipo_definido_c(td: &TipoDefinido) -> Result<String, ErrorC99> {
+    use std::fmt::Write;
+    let mut s = String::new();
+    match &td.definicion {
+        TipoDefinicion::Estructura { campos } => {
+            writeln!(s, "typedef struct {} {{", td.nombre)
+                .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            for c in campos {
+                let tc = tipo_c_standalone(&c.tipo)?;
+                writeln!(s, "    {} {};", tc, c.nombre)
+                    .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            }
+            writeln!(
+                s,
+                "}} {};
+",
+                td.nombre
+            )
+            .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+        }
+        TipoDefinicion::Variante { constructores } => {
+            writeln!(s, "typedef enum {}_tag {{", td.nombre)
+                .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            for (i, c) in constructores.iter().enumerate() {
+                writeln!(s, "    {}__{} = {},", td.nombre, c.nombre, i)
+                    .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            }
+            writeln!(
+                s,
+                "}} {}_tag;
+",
+                td.nombre
+            )
+            .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+
+            writeln!(s, "typedef struct {} {{", td.nombre)
+                .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            writeln!(s, "    {}_tag tag;", td.nombre)
+                .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            s.push_str(
+                "    union {
+",
+            );
+            if let Some(primer) = constructores.first() {
+                for c in &primer.campos {
+                    let tc = tipo_c_standalone(&c.tipo)?;
+                    writeln!(s, "        {} {};", tc, c.nombre)
+                        .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+                }
+            }
+            s.push_str(
+                "    } data;
+",
+            );
+            writeln!(
+                s,
+                "}} {};
+",
+                td.nombre
+            )
+            .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+        }
+        TipoDefinicion::Modelo { campos } => {
+            writeln!(s, "typedef struct {} {{", td.nombre)
+                .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            for c in campos {
+                let tc = tipo_c_standalone(&c.tipo)?;
+                writeln!(s, "    {} {};", tc, c.nombre)
+                    .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+            }
+            writeln!(
+                s,
+                "}} {};
+",
+                td.nombre
+            )
+            .map_err(|e| ErrorC99::Emision(e.to_string()))?;
+        }
+    }
+    Ok(s)
+}
+
+/// Versión standalone de tipo_c para uso en emitir_tipo_definido_c.
+fn tipo_c_standalone(t: &SilType) -> Result<String, ErrorC99> {
+    match t {
+        SilType::Entero64 => Ok("long long".into()),
+        SilType::Flotante64 => Ok("double".into()),
+        SilType::Booleano => Ok("int".into()),
+        SilType::Texto => Ok("SilTexto_".into()),
+        SilType::CapacidadHardware => Ok("SilCap_".into()),
+        SilType::Void => Ok("void".into()),
+        SilType::USD | SilType::EUR => Ok("long long".into()),
+        SilType::Nominal(n) => Ok(n.to_owned() + "_"),
+        SilType::Lista(_) | SilType::Mapa(..) | SilType::Conjunto(_) | SilType::Tupla(_) => Err(
+            ErrorC99::TipoNoSoportado(format!("{t:?} (M6: fat pointers)")),
+        ),
+    }
+}
+
 /// Emite un programa C99 completo con todas las tareas del archivo + main.
 ///
 /// Convención: la última tarea es la principal.
@@ -582,6 +683,19 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
     out.push_str(RUNTIME_ARENA);
     out.push_str(RUNTIME_TIPOS);
     out.push_str(RUNTIME_CONFIANZA);
+
+    // Emitir definiciones de tipos definidos por el usuario (ADTs: struct, enum, union)
+    if !programa.tipos_definidos.is_empty() {
+        out.push_str(
+            "
+/* --- Tipos definidos por el usuario (ADTs) --- */
+",
+        );
+        for td in &programa.tipos_definidos {
+            out.push_str(&emitir_tipo_definido_c(td)?);
+        }
+    }
+
     if con_main {
         out.push_str("static SilArena_ sil_arena_main_;\n");
         out.push_str("static SilSched_ sil_sched_main_;\n");

@@ -52,14 +52,14 @@ fn valtype(t: &SilType) -> Result<ValType, ErrorWasm> {
         SilType::Booleano => Ok(ValType::I32),
         // Texto empaquetado en i64: ptr32 alto + len32 bajo.
         SilType::Texto => Ok(ValType::I64),
+        // ADTs (Nominal) se representan como i64 opacos (handle a memoria).
+        SilType::Nominal(_) => Ok(ValType::I64),
         SilType::Void => Err(ErrorWasm::TipoNoSoportado(
             "Void como valor (solo retorno)".into(),
         )),
-        SilType::Lista(_)
-        | SilType::Mapa(..)
-        | SilType::Conjunto(_)
-        | SilType::Tupla(_)
-        | SilType::Nominal(_) => Err(ErrorWasm::TipoNoSoportado(format!("{t:?}"))),
+        SilType::Lista(_) | SilType::Mapa(..) | SilType::Conjunto(_) | SilType::Tupla(_) => {
+            Err(ErrorWasm::TipoNoSoportado(format!("{t:?}")))
+        }
     }
 }
 

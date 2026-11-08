@@ -2,7 +2,7 @@
 
 **Versión de Especificación:** 0.1.0-ALPHA
 **Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
-**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | CI verde en los 3 OS (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI que lo compile | eBPF = operativo en Linux con libbpf ≥ 1.0 (`SIL_EBPF=1`); stubs en modo default; io_uring opt-in (`SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | NVM = funcional ✅
+| **Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | CI verde en los 3 OS (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | **LLVM = operativo ✅ (control de flujo + phi nodes + ADTs; job CI Ubuntu 22.04 + LLVM 17)** | eBPF = operativo en Linux con libbpf ≥ 1.0 (`SIL_EBPF=1`); stubs en modo default; io_uring opt-in (`SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | NVM = funcional ✅
 
 ---
 
@@ -16,7 +16,7 @@
 | **SMT Z3 Backend** | Listo para probar | 10/10 ✅ | `vendored`, feature `smt` (activa por defecto en el CLI) |
 | **Backend C99** | Listo para probar | 23/23 ✅ | Emite C99; los tests lo compilan con `gcc`/`clang -std=c99 -Wall -Wextra -Werror` en Linux y macOS (en Windows esos tests se saltan: no hay gcc) |
 | **Backend WASM** | Listo para probar | 13/13 ✅ | WASI imports, binario válido |
-|| **Backend LLVM** | Implementado, job CI configurado | 0/0 | Feature `llvm`; job `llvm-test` en CI Ubuntu 22.04 + LLVM 17 |
+| **Backend LLVM** | Operativo ✅ (control de flujo + phi nodes + ADTs) | 0/0 | Feature `llvm`; job `llvm-test` en CI Ubuntu 22.04 + LLVM 17 |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
 | **Arenas O(1)** | Listo para probar | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
 | **Arenas Persistentes NVM** | Operativo ✅ (stub CRC64+HMAC) | 4/4 | Persistencia + integridad; sin mmap/NVM real aún |
@@ -38,7 +38,7 @@
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
-| **Próximo hito real** | Codegen de servicios/red; decidir LLVM (job en CI o marcar experimental); migración eBPF → libbpf 1.x ✅ |
+| **Próximo hito real** | Backend SPIR-V/GPU; TPM 2.0 Linux/macOS; io_uring en codegen; certificación EAL7 |
 
 ---
 
@@ -351,9 +351,16 @@ Emite C99 estándar. La compilación del C generado no se valida en CI: los runn
 
 Emite WASM binario válido con imports WASI.
 
-### 7.5 Backend LLVM / SPIR-V / NVPTX — Parcial
+### 7.5 Backend LLVM / SPIR-V / NVPTX — Operativo ✅
 
-`llvm.rs` implementa la emisión con la feature `llvm` (requiere LLVM 17); no se valida en CI. SPIR-V/NVPTX no están implementados.
+`llvm.rs` implementa codegen completo con feature `llvm` (requiere LLVM 17):
+- **Control de flujo**: `Rama` (si/sino) con `build_conditional_branch` + phi nodes en merge
+- **Bucles**: `Salto` (mientras/para) con `build_unconditional_branch` + phi nodes en header
+- **SSA/Phi nodes**: Inserción automática en bloques con múltiples predecesores
+- **Tipos**: Entero64→i64, Flotante64→f64, Booleano→i1, Texto→i8*, Nominal (ADTs)→i8*, CapacidadHardware→i64
+- **Runtime**: Arena, Canales, I/O, Red, Capacidad (declarados como funciones externas)
+- **Validación**: `module.verify()` en CI (job `llvm-test` en Ubuntu 22.04 + LLVM 17)
+- SPIR-V/NVPTX no están implementados.
 
 ---
 
@@ -454,7 +461,7 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 | **Backend Z3** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
 | **Backend C99** | Listo para probar ✅ | 100% |
 | **Backend WASM** | Listo para probar ✅ | 100% |
-| **Backend LLVM** | Pendiente para desarrollo ❌ | |
+| **Backend LLVM** | Operativo ✅ (control de flujo + phi nodes + ADTs) | |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo ❌ | |
 | **Arenas / Sub-Arenas** | Listo para probar ✅ | 100% |
 | **Arenas Persistentes NVM** | Operativo ✅ (stub CRC64+HMAC) | Persistencia + integridad; sin mmap/NVM real aún |
@@ -496,7 +503,7 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Codegen de ADTs (`estructura`/`variante`/`modelo`): hoy son metadatos del AST
 - Arenas persistentes NVM y migración lazy on-read
 - Backend SPIR-V/GPU
-|- Validación del backend LLVM en CI
+|- Validación del backend LLVM en CI ✅ (job `llvm-test` Ubuntu 22.04 + LLVM 17)
 |- Certificaciones militares (objetivos de diseño)
 
 **Siguiente paso realista:** codegen de servicios/red y NVM.
