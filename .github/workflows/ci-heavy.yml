@@ -1,0 +1,226 @@
+name: CI Heavy (smt + fuzz + llvm + reproducible)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'silc-core/**'
+      - '.github/workflows/ci-heavy.yml'
+  workflow_dispatch:
+  schedule:
+    # Nightly a las 03:00 UTC (no bloquea merges diurnos)
+    - cron: '0 3 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_DATE_EPOCH: '1700000000'
+
+jobs:
+  # --- 1. Feature SMT (Z3) - requiere Python + CMake ---
+  smt-test:
+    name: smt tests (Z3 backend)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Versión de CMake
+        run: cmake --version
+
+      - uses: dtolnay/rust-toolchain@1.80
+        with:
+          components: clippy
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev liburing-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Build with SMT feature
+        run: cargo build --workspace --locked --features smt
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+      - name: Tests with SMT feature (Z3)
+        run: cargo test --workspace --locked --features smt
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+      - name: Clippy with SMT feature
+        run: cargo clippy --workspace --all-targets --locked --features smt -- -D warnings
+        working-directory: silc-core
+        env:
+          Z3_SYS_Z3_VERSION: "4.13.0"
+
+  # --- 2. Fuzzing (Linux only - ASan required) ---
+  fuzz:
+    name: fuzz (ubuntu-latest, nightly)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      RUSTUP_TOOLCHAIN: nightly
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev liburing-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Run fuzz lexer (60s)
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 180 cargo fuzz run fuzz_lexer -- -max_total_time=60 2>&1 | tee fuzz_lexer.log
+        working-directory: silc-core/silc-frontend/fuzz
+
+      - name: Run fuzz parser (60s)
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 180 cargo fuzz run fuzz_parser -- -max_total_time=60 2>&1 | tee fuzz_parser.log
+        working-directory: silc-core/silc-frontend/fuzz
+
+      - name: Run fuzz roundtrip (60s)
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 180 cargo fuzz run fuzz_roundtrip -- -max_total_time=60 2>&1 | tee fuzz_roundtrip.log
+        working-directory: silc-core/silc-frontend/fuzz
+
+      - name: Subir artefactos de fuzz
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: |
+            silc-core/silc-frontend/fuzz/artifacts
+            silc-core/silc-frontend/fuzz/*.log
+          if-no-files-found: warn
+
+      - name: Publicar salida de fuzz en anotaciones
+        if: failure()
+        shell: bash
+        run: |
+          for f in silc-core/silc-frontend/fuzz/*.log; do
+            [ -f "$f" ] || continue
+            msg=$(tail -c 1200 "$f" | tr '\r' ' ' | tr '\n' '|' | sed 's/%/%25/g')
+            echo "::error title=fuzz $(basename "$f")::${msg}"
+          done
+
+  # --- 3. Feature LLVM (backend LLVM 17) ---
+  llvm-test:
+    name: llvm tests (LLVM 17 backend)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install LLVM 17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-17 llvm-17-dev clang-17 lld-17 libpolly-17-dev
+          echo "/usr/lib/llvm-17/lib" | sudo tee /etc/ld.so.conf.d/llvm-17.conf
+          sudo ldconfig
+
+      - uses: dtolnay/rust-toolchain@1.80
+        with:
+          components: clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: silc-core
+
+      - name: Build with LLVM feature
+        run: |
+          cargo clean -p silc-backend
+          cargo build --workspace --locked --features llvm
+        working-directory: silc-core
+        env:
+          LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+
+      - name: Tests with LLVM feature
+        run: cargo test --workspace --locked --features llvm
+        working-directory: silc-core
+        env:
+          LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+
+      - name: Clippy with LLVM feature
+        run: cargo clippy --workspace --all-targets --locked --features llvm -- -D warnings
+        working-directory: silc-core
+        env:
+          LLVM_SYS_170_PREFIX: /usr/lib/llvm-17
+
+  # --- 4. Reproducibilidad: doble build -> hashes idénticos ---
+  reproducibilidad:
+    name: reproducible build (2x sha256)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.80
+        with:
+          components: clippy
+
+      - name: Increase swap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libbpf-dev liburing-dev
+
+      - name: Fijar SOURCE_DATE_EPOCH al commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> $GITHUB_ENV
+
+      - name: Build 1 (locked, frozen)
+        run: |
+          cargo build --locked -p silc-cli --release
+          sha256sum target/release/silc | tee /tmp/hash1.txt
+        working-directory: silc-core
+
+      - name: Limpiar y Build 2
+        run: |
+          cargo clean -p silc-cli
+          cargo build --locked -p silc-cli --release
+          sha256sum target/release/silc | tee /tmp/hash2.txt
+        working-directory: silc-core
+
+      - name: Comparar hashes
+        run: |
+          echo "Build 1: $(cat /tmp/hash1.txt)"
+          echo "Build 2: $(cat /tmp/hash2.txt)"
+          diff /tmp/hash1.txt /tmp/hash2.txt && echo "REPRODUCIBLE: hashes idénticos" || (echo "NO REPRODUCIBLE" && exit 1)
