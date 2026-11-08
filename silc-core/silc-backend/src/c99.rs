@@ -12,7 +12,7 @@
 //! - Arenas: cada tarea recibe `SilArena* __arena`; asignaciones vía bump alloc.
 
 use silc_causal_ir::nodes::{
-    Bloque, Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador, ValueId,
+    Bloque, CampoIR, ConstructorIR, Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador, TipoDefinido, TipoDefinicion, ValueId,
 };
 use silc_contracts::*;
 use slotmap::Key;
@@ -445,16 +445,19 @@ struct Emisor {
     vars: HashMap<ValueId, String>,
     /// ValueId → tipo C declarado.
     tipos_c: HashMap<ValueId, String>,
+    /// Referencia a los tipos definidos por el usuario (ADTs).
+    tipos_definidos: Option<Vec<TipoDefinido>>,
     next_v: u64,
     /// ¿Necesita stdbool? (si hay Booleano)
     usa_bool: bool,
 }
 
 impl Emisor {
-    fn new() -> Self {
+    fn new(tipos_definidos: Option<Vec<TipoDefinido>>) -> Self {
         Self {
             vars: HashMap::new(),
             tipos_c: HashMap::new(),
+            tipos_definidos,
             next_v: 0,
             usa_bool: false,
         }
@@ -482,11 +485,24 @@ impl Emisor {
             SilType::CapacidadHardware => Ok("SilCap_".into()),
             SilType::Void => Ok("void".into()),
             SilType::USD | SilType::EUR => Ok("long long".into()),
+            SilType::Nominal(nombre) => {
+                // Buscar la definición del tipo
+                if let Some(ref tipos) = self.tipos_definidos {
+                    if let Some(td) = tipos.iter().find(|td| td.nombre == *nombre) {
+                        // Generar nombre del tipo C
+                        let nombre_c = format!("{}_", td.nombre);
+                        // Registrar definición si no existe
+                        return Ok(nombre_c);
+                    }
+                }
+                Err(ErrorC99::TipoNoSoportado(format!(
+                    "Tipo nominal '{}' no definido", nombre
+                )))
+            }
             SilType::Lista(_)
             | SilType::Mapa(..)
             | SilType::Conjunto(_)
-            | SilType::Tupla(_)
-            | SilType::Nominal(_) => Err(ErrorC99::TipoNoSoportado(format!(
+            | SilType::Tupla(_) => Err(ErrorC99::TipoNoSoportado(format!(
                 "{t:?} (M6: fat pointers)"
             ))),
         }
@@ -501,7 +517,8 @@ impl Emisor {
 /// - Post: Retorna código C99 que compila con `gcc -std=c99 -Wall -Wextra -Werror`
 /// - Invariante: Cada ValueId → variable C única `v<N>` con tipo declarado
 pub fn emitir(tarea: &TareaIR) -> Result<String, ErrorC99> {
-    let (ret_c, params_c, cuerpo, usa_bool) = emitir_def_funcion(tarea, false)?;
+    let mut e = Emisor::new(None);
+    let (ret_c, params_c, cuerpo, usa_bool) = emitir_def_funcion(tarea, &mut e, false)?;
 
     // --- 4. Ensamblar archivo ---
     let mut out = String::new();
@@ -552,6 +569,8 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
         require(!t.nombre.is_empty(), "nombre de tarea vacío");
         require_valid_ident(&t.nombre, 64, "identificador de tarea inválido");
     }
+
+    let mut e = Emisor::new(Some(programa.tipos_definidos.clone()));
 
     let mut out = String::new();
     out.push_str(PROLOGO_FEATURES);
@@ -631,7 +650,7 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
     let mut defs: Vec<(String, String, String, String)> = Vec::new();
     let mut usa_bool = false;
     for t in tareas {
-        let (ret_c, params_decl, cuerpo, ub) = emitir_def_funcion(t, true)?;
+        let (ret_c, params_decl, cuerpo, ub) = emitir_def_funcion(t, &mut e, true)?;
         usa_bool |= ub;
         defs.push((t.nombre.clone(), ret_c, params_decl, cuerpo));
     }
@@ -707,12 +726,13 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
 /// (spawn al scheduler global); sin programa es error limpio.
 fn emitir_def_funcion(
     tarea: &TareaIR,
+    e: &mut Emisor,
     en_programa: bool,
 ) -> Result<(String, String, String, bool), ErrorC99> {
     require(!tarea.nombre.is_empty(), "nombre de tarea vacío");
     require_valid_ident(&tarea.nombre, 64, "identificador de tarea inválido");
 
-    let mut e = Emisor::new();
+    let mut e = Emisor::new(None);
 
     // --- 1. Pre-declarar tipos de todos los valores (para orden estable) ---
     // Recolectamos en orden de bloques para determinismo.
