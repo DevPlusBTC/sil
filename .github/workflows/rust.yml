@@ -38,11 +38,11 @@ jobs:
   build-test:
     name: build+test (ubuntu-latest)
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       RUST_TEST_THREADS: 1
       CARGO_INCREMENTAL: 0
-      CARGO_BUILD_JOBS: 2
+      CARGO_BUILD_JOBS: 1
     steps:
       - uses: actions/checkout@v5
 
@@ -56,15 +56,24 @@ jobs:
         with:
           workspaces: silc-core
 
+      - name: Increase swap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo -S -p '' fallocate -l 8G /swapfile
+          sudo -S -p '' chmod 600 /swapfile
+          sudo -S -p '' mkswap /swapfile
+          sudo -S -p '' swapon /swapfile
+          free -h
+
       - name: Build workspace
         run: cargo build --workspace --locked -j 1
         working-directory: silc-core
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       - name: Tests workspace
         run: cargo test --workspace --locked -- --test-threads=1
         working-directory: silc-core
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
