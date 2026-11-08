@@ -840,7 +840,7 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
 /// (spawn al scheduler global); sin programa es error limpio.
 fn emitir_def_funcion(
     tarea: &TareaIR,
-    e: &mut Emisor,
+    _e: &mut Emisor,
     en_programa: bool,
 ) -> Result<(String, String, String, bool), ErrorC99> {
     require(!tarea.nombre.is_empty(), "nombre de tarea vacío");

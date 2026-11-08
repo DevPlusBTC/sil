@@ -984,6 +984,7 @@ fn cuerpo_funcion(
 }
 
 /// Maneja un terminador de bloque produciendo el código WASM apropiado.
+#[allow(clippy::too_many_arguments)]
 fn manejar_terminador_wasm(
     f: &mut wasm_encoder::Function,
     locales: &HashMap<ValueId, u32>,

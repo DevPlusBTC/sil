@@ -99,12 +99,12 @@ fn bajar_tarea_declarada(
 /// Baja un servicio a ProgramaIR: extrae metadata de red/manejadores y baja sus tareas.
 fn bajar_servicio(s: &silc_frontend::ast::ServicioDecl, path: &Path) -> Result<ProgramaIR> {
     let mut tareas_ir = Vec::new();
-    let mut tipos_definidos: Vec<silc_causal_ir::nodes::TipoDefinido> = Vec::new();
+    let mut _tipos_definidos: Vec<silc_causal_ir::nodes::TipoDefinido> = Vec::new();
     for t in &s.tareas {
         tareas_ir.push(bajar_tarea_declarada(t, path)?);
     }
     // Tipos definidos en el servicio (estructura, variante, modelo)
-    for decl in &s.tareas {
+    for _decl in &s.tareas {
         // The tasks themselves don't contain type declarations; they're at the top level of the service.
         // For now, we don't have type declarations inside tasks, but if they're added to the AST,
         // they would be processed here.

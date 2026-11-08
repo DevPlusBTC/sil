@@ -380,7 +380,7 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
         }
         A::Stmt::Mientras { cond, cuerpo, .. } => {
             // Bucle mientras: emitir condicion y saltar al bloque de inicio
-            let cond_val = bajar_expr(ctx, cond)?;
+            let _cond_val = bajar_expr(ctx, cond)?;
             // Crear bloques: mientras y continuar
             let blk_mientras = ctx.bloques.insert(Bloque {
                 id: BlockId::default(),

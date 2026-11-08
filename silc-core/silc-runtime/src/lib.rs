@@ -994,7 +994,7 @@ extern "C" {
 mod tests_nvm {
     use super::*;
     use std::ffi::CString;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     unsafe fn tmp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
@@ -1003,7 +1003,7 @@ mod tests_nvm {
     }
 
     /// Convierte una PathBuf a un CString vivo para pasar a funciones FFI.
-    unsafe fn path_cstr(path: &PathBuf) -> CString {
+    unsafe fn path_cstr(path: &Path) -> CString {
         CString::new(path.to_str().unwrap()).unwrap()
     }
 
