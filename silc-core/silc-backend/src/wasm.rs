@@ -20,7 +20,7 @@
 //! - Soporte completo de control de flujo: si/sino, mientras, para.
 
 use silc_causal_ir::nodes::{
-    Constante, OpArit, OpCmp, Operacion, SilType, TareaIR, Terminador, ValueId,
+    Constante, OpArit, OpCmp, Operacion, ProgramaIR, SilType, TareaIR, Terminador, ValueId,
 };
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -486,8 +486,14 @@ pub fn emitir(tarea: &TareaIR) -> Result<Vec<u8>, ErrorWasm> {
 /// la llama y descarta su retorno; si tiene parámetros, se emite una
 /// biblioteca (sin start). `generar X` es llamada directa a X (cooperativo sin
 /// desalojo, igual que el C99).
-pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
+///
+/// Soporte de servicio: cuando `programa.servicio_nombre` está presente y hay
+/// configuración de red, se emiten comentarios metadatos (puerto, protocolo)
+/// que el host puede leer; los manejadores de evento se exportan como funciones
+/// normales bajo sus nombres de tarea asignados.
+pub fn emitir_programa(programa: &ProgramaIR) -> Result<Vec<u8>, ErrorWasm> {
     use silc_contracts::{require, require_valid_ident};
+    let tareas = &programa.tareas;
     require(!tareas.is_empty(), "programa sin tareas");
     let principal = tareas.last().expect("programa sin tareas");
     let con_start = principal.params.is_empty();
@@ -732,6 +738,38 @@ pub fn emitir_programa(tareas: &[TareaIR]) -> Result<Vec<u8>, ErrorWasm> {
             });
         }
         module.section(&data);
+    }
+
+    // Custom section «sil_svc» con metadatos de servicio para el host.
+    if let Some(ref svc) = programa.servicio_nombre {
+        use wasm_encoder::CustomSection;
+        let mut buf = Vec::new();
+        // Formato: NAME\0PORT(u32 LE)\0PROTO\0NUM_HANDLERS(u32 LE)\0H1\0P1\0...
+        buf.extend_from_slice(svc.as_bytes());
+        buf.push(0);
+        if let Some(ref red) = programa.red {
+            buf.extend_from_slice(&red.puerto.to_le_bytes());
+            if let Some(ref proto) = red.protocolo {
+                buf.extend_from_slice(proto.as_bytes());
+            } else {
+                buf.extend_from_slice(b"tcp");
+            }
+        } else {
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(b"");
+        }
+        buf.push(0);
+        buf.extend_from_slice(&(programa.manejadores.len() as u32).to_le_bytes());
+        for m in &programa.manejadores {
+            buf.extend_from_slice(m.evento.as_bytes());
+            buf.push(0);
+            buf.extend_from_slice(m.tarea_handler.as_bytes());
+            buf.push(0);
+        }
+        module.section(&CustomSection {
+            name: "sil_svc".into(),
+            data: buf.into(),
+        });
     }
 
     Ok(module.finish())
@@ -1376,7 +1414,7 @@ fn emitir_instr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silc_causal_ir::{lower::bajar_tarea, nodes::TareaIR};
+    use silc_causal_ir::{lower::bajar_tarea, nodes::*};
     use silc_frontend::{lexer::lexear, parser::parsear};
 
     fn ir_de(src: &str) -> TareaIR {
@@ -1596,5 +1634,103 @@ mod tests {
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
         assert!(!b.is_empty(), "módulo wasm vacío");
+    }
+
+    // ========================================================================
+    // Tests de servicio WASM (programa completo con metadata)
+    // ========================================================================
+    /// Baja un programa que contiene un bloque `servicio` y retorna el
+    /// `ProgramaIR` resultante. Útil para tests de codegen de servicios.
+    fn programa_ir_de(src: &str) -> ProgramaIR {
+        let prog = parsear(&lexear(src)).expect("parse OK");
+        for d in &prog.defs {
+            if let silc_frontend::ast::Decl::Servicio(s) = d {
+                let mut tareas_ir = Vec::new();
+                for t in &s.tareas {
+                    tareas_ir.push(bajar_tarea(t).expect("lower tarea OK"));
+                }
+                let manejadores: Vec<ManejadorEventoIR> = s
+                    .manejadores
+                    .iter()
+                    .map(|m| ManejadorEventoIR {
+                        evento: m.evento.nombre.clone(),
+                        params: Vec::new(),
+                        tarea_handler: format!("__handler_{}", m.evento.nombre),
+                    })
+                    .collect();
+                let red = s.red.as_ref().map(|r| ConfiguracionRedIR {
+                    puerto: r.puerto,
+                    protocolo: r.protocolo.as_ref().map(|p| p.nombre.clone()),
+                });
+                return ProgramaIR {
+                    servicio_nombre: Some(s.nombre.nombre.clone()),
+                    red,
+                    manejadores,
+                    tareas: tareas_ir,
+                    restricciones: Vec::new(),
+                };
+            }
+        }
+        panic!("no se encontró definición de servicio en el fuente");
+    }
+
+    /// Un programa con servicio emite sección custom «sil_svc» con metadatos.
+    #[test]
+    fn servicio_emite_seccion_custom() {
+        let ir = programa_ir_de(
+                "definir servicio mi_servicio:\n    escuchar en puerto 8080 con protocolo tcp\n    cuando llegue evento on_data(p: Entero64):\n        retornar 0\n    definir tarea handler_main() -> Entero64:\n        retornar 0\n",
+            );
+        assert_eq!(ir.servicio_nombre.as_deref(), Some("mi_servicio"));
+        assert_eq!(ir.red.as_ref().unwrap().puerto, 8080);
+        let bytes = emitir_programa(&ir).expect("emitir_programa OK");
+        valida_wasm(&bytes);
+
+        let mut hay_svc = false;
+        for p in wasmparser::Parser::new(0).parse_all(&bytes) {
+            if let Ok(wasmparser::Payload::CustomSection(c)) = p {
+                if c.name() == "sil_svc" {
+                    hay_svc = true;
+                    let data = c.data();
+                    // Search in raw bytes (data contains null bytes, not UTF-8)
+                    assert!(
+                        data.windows(11).any(|w| w == b"mi_servicio"),
+                        "nombre ausente en sil_svc"
+                    );
+                    let port_bytes = 8080u32.to_le_bytes();
+                    assert!(
+                        data.windows(4).any(|w| w == port_bytes),
+                        "puerto ausente en sil_svc"
+                    );
+                    break;
+                }
+            }
+        }
+        assert!(
+            hay_svc,
+            "falta sección custom sil_svc en módulo de servicio"
+        );
+    }
+
+    /// Sin servicio no se emite sección sil_svc.
+    #[test]
+    fn sin_servicio_no_emite_custom() {
+        let ir = ProgramaIR {
+            servicio_nombre: None,
+            red: None,
+            manejadores: Vec::new(),
+            tareas: vec![ir_de("definir tarea f() -> Entero64:\n    retornar 1\n")],
+            restricciones: Vec::new(),
+        };
+        let bytes = emitir_programa(&ir).expect("emitir_programa OK");
+        valida_wasm(&bytes);
+        for p in wasmparser::Parser::new(0).parse_all(&bytes) {
+            if let Ok(wasmparser::Payload::CustomSection(c)) = p {
+                assert_ne!(
+                    c.name(),
+                    "sil_svc",
+                    "no debe haber sección sil_svc sin servicio"
+                );
+            }
+        }
     }
 }

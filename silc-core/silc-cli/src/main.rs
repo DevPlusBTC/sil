@@ -331,7 +331,7 @@ fn cmd_build(
                     silc_backend::wasm::emitir(&c.programa_ir.tareas[0])
                         .map_err(|e| miette::miette!("backend WASM: {e}"))?
                 } else {
-                    silc_backend::wasm::emitir_programa(&c.programa_ir.tareas)
+                    silc_backend::wasm::emitir_programa(&c.programa_ir)
                         .map_err(|e| miette::miette!("backend WASM: {e}"))?
                 };
             std::fs::write(out, &bytes)
