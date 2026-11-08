@@ -928,3 +928,197 @@ mod tests_arena_ciclos {
         }
     }
 }
+
+// ============================================================================
+// Persistencia NVM — declaraciones extern "C"
+// ============================================================================
+
+/// Metadatos de un archivo NVM persistido (sil_arena_info_nvm).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SilArenaNvmInfo {
+    pub version: u32,
+    pub total_size: size_t,
+    pub bloque_count: u32,
+    pub ciclo_contador: u32,
+    pub timestamp: u64,
+}
+
+extern "C" {
+    pub fn sil_arena_persistir(arena: *const SilArena, path: *const c_char) -> c_int;
+    pub fn sil_arena_recuperar(arena: *mut SilArena, path: *const c_char) -> c_int;
+    pub fn sil_arena_destruir_persistida(path: *const c_char) -> c_int;
+    pub fn sil_arena_verificar_nvm(path: *const c_char) -> c_int;
+    pub fn sil_arena_info_nvm(path: *const c_char, info: *mut SilArenaNvmInfo) -> c_int;
+}
+
+// ============================================================================
+// Tests NVM (FFI real C, sin mocks)
+// ============================================================================
+#[cfg(test)]
+mod tests_nvm {
+    use super::*;
+    use std::ffi::CString;
+    use std::path::PathBuf;
+
+    unsafe fn tmp_path(name: &str) -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("sil-nvm-{}-{}.bin", name, std::process::id()));
+        p
+    }
+
+    /// Convierte una PathBuf a un CString vivo para pasar a funciones FFI.
+    unsafe fn path_cstr(path: &PathBuf) -> CString {
+        CString::new(path.to_str().unwrap()).unwrap()
+    }
+
+    /// persistir → verificar_nvm pasa → info_nvm lee datos coherentes.
+    #[test]
+    fn persistir_y_verificar() {
+        unsafe {
+            let path = tmp_path("verify");
+            let cs = path_cstr(&path);
+            let _ = sil_arena_destruir_persistida(cs.as_ptr());
+
+            let mut arena = sil_arena_crear(512);
+            let c1 = sil_arena_ciclo_iniciar(&mut arena);
+            assert_ne!(c1, 0);
+            let _ = sil_arena_asignar(&mut arena, 64, 8);
+            let _ = sil_arena_asignar(&mut arena, 128, 8);
+            assert_eq!(sil_arena_ciclo_bytes(&mut arena, c1), 192);
+
+            let rc = sil_arena_persistir(&arena, cs.as_ptr());
+            assert_eq!(rc, 0, "persistir debe retornar 0");
+
+            // Verificar integridad
+            let v = sil_arena_verificar_nvm(cs.as_ptr());
+            assert_eq!(v, 0, "archivo debe ser válido");
+
+            // Info debe coincidir con lo que escribimos
+            let mut info = std::mem::zeroed::<SilArenaNvmInfo>();
+            let ir = sil_arena_info_nvm(cs.as_ptr(), &mut info as *mut _ as *mut _);
+            assert_eq!(ir, 0, "info_nvm debe retornar 0");
+            assert_eq!(info.version, 1u32);
+            assert!(info.bloque_count > 0, "debe tener al menos un bloque");
+            assert!(info.total_size >= 512, "total_size >= capacidad inicial");
+            assert_eq!(info.ciclo_contador, c1);
+            assert!(info.timestamp > 0, "timestamp debe ser positivo");
+
+            // Limpieza
+            sil_arena_destruir(&mut arena);
+            sil_arena_destruir_persistida(cs.as_ptr());
+        }
+    }
+
+    /// persistir → recuperar → arena reconstruida es idéntica.
+    #[test]
+    fn persistir_y_recuperar_redondeo() {
+        unsafe {
+            let path = tmp_path("roundtrip");
+            let cs = path_cstr(&path);
+            let _ = sil_arena_destruir_persistida(cs.as_ptr());
+
+            // Crear arena con dos ciclos secuenciales (no anidados)
+            let mut a_orig = sil_arena_crear(256);
+            let c1 = sil_arena_ciclo_iniciar(&mut a_orig);
+            assert_ne!(c1, 0);
+            let _p1 = sil_arena_asignar(&mut a_orig, 32, 8);
+            assert_eq!(sil_arena_ciclo_bytes(&mut a_orig, c1), 32);
+
+            let c2 = sil_arena_ciclo_iniciar(&mut a_orig);
+            assert_ne!(c2, 0);
+            let _p2 = sil_arena_asignar(&mut a_orig, 64, 8);
+            assert_eq!(sil_arena_ciclo_bytes(&mut a_orig, c2), 64);
+
+            // Persistir
+            let rc = sil_arena_persistir(&a_orig, cs.as_ptr());
+            assert_eq!(rc, 0);
+
+            // Recuperar en nueva arena
+            let mut a_new = sil_arena_crear(0);
+            let rr = sil_arena_recuperar(&mut a_new, cs.as_ptr());
+            assert_eq!(rr, 0, "recuperar debe retornar 0");
+
+            // El contador de ciclos debe coincidir
+            assert_eq!(a_new.ciclo_contador, a_orig.ciclo_contador);
+            assert_eq!(a_new.ciclos_abiertos, a_orig.ciclos_abiertos);
+            // Cada ciclo debe conservar sus bytes asignados
+            assert_eq!(
+                sil_arena_ciclo_bytes(&mut a_new, c1),
+                sil_arena_ciclo_bytes(&mut a_orig, c1)
+            );
+            assert_eq!(
+                sil_arena_ciclo_bytes(&mut a_new, c2),
+                sil_arena_ciclo_bytes(&mut a_orig, c2)
+            );
+
+            // Limpieza
+            sil_arena_destruir(&mut a_orig);
+            sil_arena_destruir(&mut a_new);
+            sil_arena_destruir_persistida(cs.as_ptr());
+        }
+    }
+
+    /// Archivo corrupto (bytes alterados) → verificar falla.
+    #[test]
+    fn archivo_corrupto_rechazado_por_crc() {
+        unsafe {
+            let path = tmp_path("corrupt-crc");
+            let cs = path_cstr(&path);
+            let _ = sil_arena_destruir_persistida(cs.as_ptr());
+
+            let mut arena = sil_arena_crear(128);
+            let _ = sil_arena_asignar(&mut arena, 32, 8);
+            let rc = sil_arena_persistir(&arena, path_cstr(&path).as_ptr());
+            assert_eq!(rc, 0);
+
+            // Corromper el archivo leyendo sus bytes reales y modificando uno
+            let mut buf = std::fs::read(&path).expect("leer archivo para corromper");
+            // Modificar un byte en medio del cuerpo (evitar header de 88 bytes)
+            if buf.len() > 96 {
+                buf[96] ^= 0xFF;
+            } else {
+                let last = buf.len().saturating_sub(1);
+                buf[last] ^= 0xFF;
+            }
+            std::fs::write(&path, &buf).unwrap();
+
+            // Verificar debe fallar
+            let v = sil_arena_verificar_nvm(path_cstr(&path).as_ptr());
+            assert_ne!(v, 0, "archivo corrompido debe ser rechazado");
+
+            // Intentar recuperar también debe fallar
+            let mut arena_r = sil_arena_crear(0);
+            let rr = sil_arena_recuperar(&mut arena_r, path_cstr(&path).as_ptr());
+            assert_ne!(rr, 0, "recuperar archivo corrupto debe fallar");
+
+            sil_arena_destruir(&mut arena);
+            sil_arena_destruir(&mut arena_r);
+            sil_arena_destruir_persistida(path_cstr(&path).as_ptr());
+        }
+    }
+
+    /// destruye_el_archivo_solo_existe → retorna éxito; segundo destroy es noop.
+    #[test]
+    fn destruir_persistida_es_idempotente() {
+        unsafe {
+            let path = tmp_path("destroy");
+            let cs = path_cstr(&path);
+
+            let mut arena = sil_arena_crear(64);
+            let _ = sil_arena_asignar(&mut arena, 16, 8);
+            let rc = sil_arena_persistir(&arena, cs.as_ptr());
+            assert_eq!(rc, 0);
+
+            // Primer destroy
+            let d1 = sil_arena_destruir_persistida(cs.as_ptr());
+            assert_eq!(d1, 0);
+
+            // Segundo destroy (ruta ya no existe) → también 0 (remove ignora ENOENT)
+            let d2 = sil_arena_destruir_persistida(cs.as_ptr());
+            assert_eq!(d2, 0, "destroy sobre ruta inexistente debe ser noop");
+
+            sil_arena_destruir(&mut arena);
+        }
+    }
+}
