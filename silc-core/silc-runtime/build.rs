@@ -11,6 +11,7 @@ fn main() {
             "../sil-rt/src/fiber.c",
             "../sil-rt/src/aio.c",
             "../sil-rt/src/ebpf.c",
+            "../sil-rt/src/sil_servicio.c",
             "../sil-rt/src/sil_hmac.c",
         ])
         .include("../sil-rt/include")

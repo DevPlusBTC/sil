@@ -568,20 +568,21 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
         out.push_str("static SilSched_ sil_sched_main_;\n");
     }
 
-    // Si hay configuración de red, emitir stubs de servidor
+    // Si hay configuración de red, emitir bootstrap de servicio real
     if let Some(red) = &programa.red {
-        out.push_str("/* --- Bootstrap de Servicio --- */\n");
+        out.push_str("/* --- Bootstrap de Servicio (TCP) --- */\n");
         out.push_str(&format!(
-            "static int sil_servicio_puerto_ = {};\n",
-            red.puerto
+            "static SilServicioConfig sil_servicio_cfg_ = {{ {}, \"{}\", 128, true }};\n",
+            red.puerto,
+            red.protocolo.as_deref().unwrap_or("tcp")
         ));
-        if let Some(proto) = &red.protocolo {
-            out.push_str(&format!(
-                "static const char* sil_servicio_protocolo_ = \"{}\";\n",
-                proto
-            ));
-        }
-        // TODO: En M9 integrar con sil-rt bind/listen/accept
+        out.push_str("static SilServicio* sil_servicio_ = NULL;\n");
+        out.push_str("static void sil_servicio_init(void) {\n");
+        out.push_str("    sil_servicio_ = sil_servicio_crear(&sil_servicio_cfg_);\n");
+        out.push_str("}\n");
+        out.push_str("static void sil_servicio_fini(void) {\n");
+        out.push_str("    if (sil_servicio_) { sil_servicio_detener(sil_servicio_); sil_servicio_ = NULL; }\n");
+        out.push_str("}\n");
     }
 
     // Valida los `generar X`: la tarea debe existir y no tener parámetros.
@@ -692,7 +693,7 @@ pub fn emitir_programa(programa: &ProgramaIR) -> Result<String, ErrorC99> {
             }
         };
         out.push_str(&format!(
-            "\nint main(void) {{\nsil_arena_main_ = sil_arena_crear_(65536ul);\n{llamada}\nsil_sched_ejecutar_(&sil_sched_main_);\nreturn 0;\n}}\n",
+            "\nint main(void) {{\nsil_arena_main_ = sil_arena_crear_(65536ul);\nsil_servicio_init();\n{llamada}\nsil_sched_ejecutar_(&sil_sched_main_);\nsil_servicio_fini();\nreturn 0;\n}}\n",
             llamada = llamada,
         ));
 

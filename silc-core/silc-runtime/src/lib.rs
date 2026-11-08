@@ -132,6 +132,13 @@ extern "C" {
     ) -> c_int;
     pub fn sil_ebpf_soportado() -> bool;
     pub fn sil_ebpf_version_kernel() -> u32;
+
+    // Servicio de Red (TCP)
+    pub fn sil_servicio_crear(config: *const SilServicioConfig) -> *mut SilServicio;
+    pub fn sil_servicio_aceptar(servicio: *mut SilServicio, conexion: *mut SilConexion) -> c_int;
+    pub fn sil_servicio_fd(servicio: *const SilServicio) -> SilSocketFd;
+    pub fn sil_servicio_activo(servicio: *const SilServicio) -> bool;
+    pub fn sil_servicio_detener(servicio: *mut SilServicio);
 }
 
 #[repr(C)]
@@ -241,6 +248,34 @@ pub const SIL_EBPF_ADJUNTO: c_int = -5;
 pub const SIL_EBPF_MAPA: c_int = -6;
 pub const SIL_EBPF_PERMISOS: c_int = -7;
 pub const SIL_EBPF_NO_SOPORTADO: c_int = -8;
+
+// Servicio de Red (TCP) - tipos
+#[repr(C)]
+pub struct SilServicioConfig {
+    pub puerto: i32,
+    pub protocolo: *const c_char,
+    pub backlog: i32,
+    pub reutilizar_direccion: bool,
+}
+
+#[repr(C)]
+pub struct SilConexion {
+    pub cliente_fd: SilSocketFd,
+    pub ip: [c_char; 46],
+    pub puerto: i32,
+}
+
+pub type SilServicio = c_void;
+
+#[cfg(target_os = "windows")]
+pub type SilSocketFd = u64; // SOCKET en Windows
+#[cfg(not(target_os = "windows"))]
+pub type SilSocketFd = i32; // int en POSIX
+
+#[cfg(target_os = "windows")]
+pub const SIL_SOCKET_INVALID: SilSocketFd = 0xFFFFFFFFFFFFFFFFu64; // INVALID_SOCKET
+#[cfg(not(target_os = "windows"))]
+pub const SIL_SOCKET_INVALID: SilSocketFd = -1;
 
 // Versión del runtime embebido.
 pub const RT_VERSION: &str = env!("CARGO_PKG_VERSION");
