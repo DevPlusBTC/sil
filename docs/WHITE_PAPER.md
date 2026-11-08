@@ -16,7 +16,7 @@
 | **SMT Z3 Backend** | Listo para probar | 10/10 ✅ | `vendored`, feature `smt` (activa por defecto en el CLI) |
 | **Backend C99** | Listo para probar | 23/23 ✅ | Emite C99; los tests lo compilan con `gcc`/`clang -std=c99 -Wall -Wextra -Werror` en Linux y macOS (en Windows esos tests se saltan: no hay gcc) |
 | **Backend WASM** | Listo para probar | 13/13 ✅ | WASI imports, binario válido |
-| **Backend LLVM** | Implementado, sin validar en CI | 0/0 | Feature `llvm`; requiere LLVM 17 instalado |
+|| **Backend LLVM** | Implementado, job CI configurado | 0/0 | Feature `llvm`; job `llvm-test` en CI Ubuntu 22.04 + LLVM 17 |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo | 0/0 | Sin implementación |
 | **Arenas O(1)** | Listo para probar | 13/13 ✅ | Bump alloc, sub-arenas, zero-copy |
 | **Arenas Persistentes NVM** | Operativo ✅ (stub CRC64+HMAC) | 4/4 | Persistencia + integridad; sin mmap/NVM real aún |
