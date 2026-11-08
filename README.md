@@ -53,6 +53,12 @@ Ejecutar las pruebas del proyecto:
 cargo test --workspace
 ```
 
+**Tests Rust**: **188/188 ✅**  
+**Tests Python**: **31/31 ✅**
+
+| **Tests Rust** | **188/188 ✅** |
+| **Tests Python** | **31/31 ✅** |
+
 ---
 
 ## Estructura del Proyecto
