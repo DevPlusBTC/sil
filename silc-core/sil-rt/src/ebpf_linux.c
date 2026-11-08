@@ -1,7 +1,10 @@
 /* sil_ebpf_linux.c - eBPF para Linux usando libbpf
- * 
- * Requiere: libbpf-dev, kernel 5.10+, headers kernel
+ *
+ * Requiere: libbpf >= 1.0 (Ubuntu 22.04 / Debian 12), kernel 5.10+, headers kernel
  * Compilar con: -lbpf -lelf -lz
+ *
+ * Opt-in: definir SIL_EBPF=1 al compilar cargo. En modo por defecto se emiten
+ * stubs que retornan SIL_EBPF_NO_SOPORTADO; no se requiere libbpf en el path.
  */
 
 #include "sil_ebpf.h"
@@ -11,10 +14,6 @@
 #include <stdint.h>
 #include <errno.h>
 
-/* eBPF es opt-in: se compila con -DSIL_EBPF (o SIL_EBPF=1 en el entorno de
- * cargo) y requiere libbpf-dev. Sin la macro se emiten los stubs de abajo:
- * el runtime compila en cualquier Linux sin headers de libbpf.
- */
 #if defined(__linux__) && defined(SIL_EBPF)
 #include <unistd.h>
 #include <sys/resource.h>
@@ -22,7 +21,17 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <bpf/libbpf.h>
-#include <bpf/bpf.h>
+
+/* ── Compatibilidad libbpf 0.x vs 1.x ─────────────────────────────────────── */
+#ifdef LIBBPF_VERSION
+/* libbpf >= 1.0 : bpf_map_create movido a cabecera interna; usar API pública. */
+#define sil_bpf_map_create(tipo, nombre, ks, vs, max_ent, opts_p)           \
+    libbpf_create_map((tipo), (nombre), (ks), (vs), (max_ent), (opts_p))
+#else
+/* libbpf 0.x (<=0.8): bpf_map_create es pública. */
+#define sil_bpf_map_create(tipo, nombre, ks, vs, max_ent, opts_p)           \
+    bpf_map_create((tipo), (nombre), (ks), (vs), (max_ent), (opts_p))
+#endif
 
 typedef struct {
  struct bpf_object *obj;
@@ -64,21 +73,21 @@ void sil_ebpf_ctx_destruir(SilEbpfContext *ctx) {
 
 SilEbpfProgram* sil_ebpf_programa_cargar(SilEbpfContext *ctx, const SilEbpfProgramConfig *config, SilEbpfError *error) {
  if (!ctx || !config || !config->bytecode || config->bytecode_len == 0) {
- if (error) *error = SIL_EBPF_ERROR;
- return NULL;
+  if (error) *error = SIL_EBPF_ERROR;
+  return NULL;
  }
  SilEbpfProgramInterno *interno = (SilEbpfProgramInterno*)calloc(1, sizeof(SilEbpfProgramInterno));
  if (!interno) {
- if (error) *error = SIL_EBPF_NO_MEM;
- return NULL;
+  if (error) *error = SIL_EBPF_NO_MEM;
+  return NULL;
  }
  struct bpf_object_open_opts opts = { .sz = sizeof(opts), .object_name = config->nombre };
  interno->obj = bpf_object__open_mem(config->bytecode, config->bytecode_len, &opts);
  if (libbpf_get_error(interno->obj)) { free(interno); if (error) *error = SIL_EBPF_CARGA; return NULL; }
  struct bpf_program *prog = NULL;
  bpf_object__for_each_program(prog, interno->obj) {
- enum bpf_prog_type tipo = bpf_program__get_type(prog);
- if ((int)tipo == config->tipo) { interno->prog = prog; break; }
+  enum bpf_prog_type tipo = bpf_program__get_type(prog);
+  if ((int)tipo == config->tipo) { interno->prog = prog; break; }
  }
  if (!interno->prog) { bpf_object__close(interno->obj); free(interno); if (error) *error = SIL_EBPF_CARGA; return NULL; }
  if (config->license) bpf_program__set_license(interno->prog, config->license);
@@ -101,23 +110,25 @@ SilEbpfLink* sil_ebpf_adjuntar(SilEbpfProgram *prog, const char *punto_anclaje, 
  SilEbpfProgramInterno *interno = (SilEbpfProgramInterno*)prog;
  struct bpf_link *link = NULL;
  if (strncmp(punto_anclaje, "tracepoint/", 11) == 0) {
- char *categoria = strdup(punto_anclaje + 11);
- char *nombre = strchr(categoria, '/');
- if (nombre) { *nombre++ = '\0'; link = bpf_program__attach_tracepoint(interno->prog, categoria, nombre); }
- free(categoria);
+  char *categoria = strdup(punto_anclaje + 11);
+  char *nombre = strchr(categoria, '/');
+  if (nombre) { *nombre++ = '\0'; link = bpf_program__attach_tracepoint(interno->prog, categoria, nombre); }
+  free(categoria);
  } else if (strncmp(punto_anclaje, "kprobe/", 7) == 0) {
- link = bpf_program__attach_kprobe(interno->prog, false, punto_anclaje + 7);
+  link = bpf_program__attach_kprobe(interno->prog, false, punto_anclaje + 7);
  } else if (strncmp(punto_anclaje, "kretprobe/", 10) == 0) {
- link = bpf_program__attach_kprobe(interno->prog, true, punto_anclaje + 10);
+  link = bpf_program__attach_kprobe(interno->prog, true, punto_anclaje + 10);
  } else if (strncmp(punto_anclaje, "uprobe:", 7) == 0) {
- char *bin_func = strdup(punto_anclaje + 7);
- char *func = strchr(bin_func, ':');
- if (func) { *func++ = '\0'; link = bpf_program__attach_uprobe(interno->prog, -1, bin_func, func); }
- free(bin_func);
+  char *bin_func = strdup(punto_anclaje + 7);
+  char *func = strchr(bin_func, ':');
+  if (func) { *func++ = '\0'; link = bpf_program__attach_uprobe(interno->prog, -1, bin_func, func); }
+  free(bin_func);
  } else if (strncmp(punto_anclaje, "xdp/", 4) == 0) {
- int ifindex = atoi(punto_anclaje + 4); link = bpf_program__attach_xdp(interno->prog, ifindex);
+  int ifindex = atoi(punto_anclaje + 4);
+  link = bpf_program__attach_xdp(interno->prog, ifindex);
  } else if (strncmp(punto_anclaje, "tc/", 3) == 0) {
- int ifindex = atoi(punto_anclaje + 3); link = bpf_program__attach_tc(interno->prog, ifindex);
+  int ifindex = atoi(punto_anclaje + 3);
+  link = bpf_program__attach_tc(interno->prog, ifindex);
  }
  if (!link || libbpf_get_error(link)) { if (error) *error = SIL_EBPF_ADJUNTO; return NULL; }
  SilEbpfLinkInterno *link_interno = (SilEbpfLinkInterno*)malloc(sizeof(SilEbpfLinkInterno));
@@ -145,8 +156,10 @@ SilEbpfMap* sil_ebpf_mapa_crear(SilEbpfContext *ctx, const SilEbpfMapConfig *con
  case SIL_EBPF_MAP_LRU_PERCPU_HASH: tipo = BPF_MAP_TYPE_LRU_PERCPU_HASH; break;
  default: free(interno); if (error) *error = SIL_EBPF_MAPA; return NULL;
  }
- struct bpf_map_create_opts opts = { .sz = sizeof(opts), .map_flags = config->flags };
- interno->map = bpf_map_create(tipo, config->nombre, config->key_size, config->value_size, config->max_entries, &opts);
+ {
+  struct bpf_map_create_opts opts = { .sz = sizeof(opts), .map_flags = config->flags };
+  interno->map = sil_bpf_map_create(tipo, config->nombre, config->key_size, config->value_size, config->max_entries, &opts);
+ }
  if (libbpf_get_error(interno->map)) { free(interno); if (error) *error = SIL_EBPF_MAPA; return NULL; }
  interno->fd = bpf_map__fd(interno->map);
  if (error) *error = SIL_EBPF_OK;

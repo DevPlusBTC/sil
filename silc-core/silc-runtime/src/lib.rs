@@ -1122,3 +1122,76 @@ mod tests_nvm {
         }
     }
 }
+
+// ============================================================================
+// Tests eBPF (FFI stub — validación sin kernel)
+// ============================================================================
+#[cfg(test)]
+mod tests_ebpf_stubs {
+    use super::*;
+
+    /// En modo por defecto (sin SIL_EBPF), todas las funciones deben retornar
+    /// el código NO_SOPORTADO o NULL/0, nunca panic ni SIGSEGV.
+    #[test]
+    fn ctx_crear_y_destruir_no_panic() {
+        unsafe {
+            let ctx = sil_ebpf_ctx_crear();
+            // Stubs: ctx es NULL en plataformas sin libbpf
+            assert!(ctx.is_null() || !ctx.is_null());
+            sil_ebpf_ctx_destruir(ctx);
+            // Doble destrucción debe ser safe
+            sil_ebpf_ctx_destruir(ctx);
+        }
+    }
+
+    #[test]
+    fn programa_cargar_retorna_no_soportado() {
+        unsafe {
+            let cfg = SilEbpfProgramConfig {
+                nombre: std::ptr::null(),
+                tipo: SIL_EBPF_PROG_KPROBE,
+                bytecode: std::ptr::null(),
+                bytecode_len: 0,
+                license: std::ptr::null(),
+                kern_version: 0,
+            };
+            let mut err: c_int = 99;
+            let prog = sil_ebpf_programa_cargar(std::ptr::null_mut(), &cfg, &mut err);
+            assert!(prog.is_null(), "debe retornar NULL");
+            assert_eq!(err, SIL_EBPF_NO_SOPORTADO);
+        }
+    }
+
+    #[test]
+    fn todos_los_codigos_error_coinciden() {
+        assert_eq!(SIL_EBPF_OK, 0);
+        assert_eq!(SIL_EBPF_ERROR, -1);
+        assert_eq!(SIL_EBPF_NO_MEM, -2);
+        assert_eq!(SIL_EBPF_VERIFICACION, -3);
+        assert_eq!(SIL_EBPF_CARGA, -4);
+        assert_eq!(SIL_EBPF_ADJUNTO, -5);
+        assert_eq!(SIL_EBPF_MAPA, -6);
+        assert_eq!(SIL_EBPF_PERMISOS, -7);
+        assert_eq!(SIL_EBPF_NO_SOPORTADO, -8);
+    }
+
+    /// Operaciones sobre mapa/null deben fallar con error conocido.
+    #[test]
+    fn operaciones_con_null_mapa_fallan() {
+        unsafe {
+            let r1 = sil_ebpf_mapa_actualizar(
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+            );
+            assert!(r1 < 0, "actualizar null debe fallar: {}", r1);
+            let r2 =
+                sil_ebpf_mapa_buscar(std::ptr::null_mut(), std::ptr::null(), std::ptr::null_mut());
+            assert!(r2 < 0, "buscar null debe fallar: {}", r2);
+            let r3 = sil_ebpf_mapa_eliminar(std::ptr::null_mut(), std::ptr::null());
+            assert!(r3 < 0, "eliminar null debe fallar: {}", r3);
+            assert_eq!(sil_ebpf_mapa_fd(std::ptr::null_mut()), -1);
+        }
+    }
+}

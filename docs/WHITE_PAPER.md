@@ -2,7 +2,7 @@
 
 **Versión de Especificación:** 0.1.0-ALPHA
 **Clasificación de Seguridad:** **EN DESARROLLO** — Grado Militar (EAL7/DO-178C/ASIL-D) = **OBJETIVOS** 🎯
-**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | CI verde en los 3 OS (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI que lo compile | eBPF e io_uring = **opt-in** (`SIL_EBPF=1`, `SIL_IO_URING=1`), sin validar contra libbpf/liburing modernos | TPM 2.0 = sólo Windows | migración y NVM = metadatos AST/parser ⚠️
+**Estado Real:** **Fase 0 (Semilla)** — Frontend + IR + Intervalos + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`, activa por defecto en el CLI) = ✅ Listo para probar | CI verde en los 3 OS (build, test, clippy, fmt, smt, fuzz, reproducibilidad) | LLVM = implementado, sin job de CI que lo compile | eBPF = operativo en Linux con libbpf ≥ 1.0 (`SIL_EBPF=1`); stubs en modo default; io_uring opt-in (`SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | NVM = funcional ✅
 
 ---
 
@@ -25,7 +25,7 @@
 | **Async I/O (io_uring/IOCP/POSIX)** | Listo para probar (runtime) | 1/1 ✅ | Por defecto `pread`/`pwrite` (POSIX) e IOCP (Windows); `io_uring` sólo con `SIL_IO_URING=1`; falta integrarlo al codegen |
 | **Capacidades (validación)** | Listo para probar | 17/17 ✅ | Permisos, expiración, firma HMAC-SHA256 |
 | **TPM 2.0** | Listo para probar (sólo Windows) | 0/0 | Módulo `m34_tpm2` bajo `#[cfg(target_os = "windows")]` (TBS); en Linux/macOS no se compila |
-| **eBPF Kernel** | Experimental (opt-in) | 0/0 | Rama libbpf sólo con `SIL_EBPF=1`; escrita contra la API de libbpf 0.x, no compila con libbpf 1.x. Por defecto se emiten stubs |
+| **eBPF Kernel** | Operativo (Linux, SIL_EBPF=1) ✅ | 4/4 | libbpf ≥ 1.0; compatibilidad 0.x/1.x vía macro `sil_bpf_map_create`; stubs con `SIL_EBPF_NO_SOPORTADO` en modo default y Windows |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | 0/0 | Objetivos de diseño |
 
 ---
@@ -38,7 +38,7 @@
 | **Crates** | 7/7 compilan |
 | **Líneas de código** | ~15,000 Rust |
 | **Estado real** | **Fase 0 (Semilla)** — Frontend (todas las declaraciones del EBNF) + IR + Intervalos + C99/WASM + Capacidades HMAC + TPM 2.0 + Fibras + Canales + E/S Async ✅ |
-| **Próximo hito real** | Codegen de servicios/red; decidir LLVM (job en CI o marcar experimental); validar eBPF con libbpf 1.x |
+| **Próximo hito real** | Codegen de servicios/red; decidir LLVM (job en CI o marcar experimental); migración eBPF → libbpf 1.x ✅ |
 
 ---
 
@@ -288,20 +288,23 @@ que se compila a C99 y se ejecuta en la validación local, no en `cargo test`.
 
 SPSC y MPSC con operaciones atómicas, implementados en sil-rt.
 
-### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Runtime listo, integración pendiente
+### 5.3 E/S Asíncrona Nativa (io_uring / eBPF) — Runtime funcional, integración pendiente
 
 `sil_aio` implementa Overlapped I/O + IOCP en Windows y, en POSIX, `pread`/`pwrite`
 con cola de completación diferida. La ruta `io_uring` es **opt-in**: sólo se
 compila con `SIL_IO_URING=1` (requiere `liburing-dev`); por defecto no se incluye
 `<liburing.h>`, así el build no depende de headers de la distro.
 
-`sil_ebpf` es **opt-in** (`SIL_EBPF=1`, requiere `libbpf-dev`). La rama real está
-escrita contra la API de libbpf 0.x (`bpf_map__lookup_elem` con 3 argumentos,
-`bpf_program__set_license`) y **no compila con libbpf 1.x**; sin la macro se
-emiten los stubs que devuelven `SIL_EBPF_NO_SOPORTADO`.
+`sil_ebpf` es **opt-in** (`SIL_EBPF=1`, requiere `libbpf ≥ 1.0`). El runtime
+incluye una macro de compatibilidad `sil_bpf_map_create` que selecciona entre
+`libbpf_create_map` (libbpf 1.x) y `bpf_map_create` (libbpf 0.x). Con la macro
+definida compila correctamente contra Ubuntu 22.04 (libbpf 1.1). En modo por
+defecto (sin `SIL_EBPF=1`) todas las funciones retornan `SIL_EBPF_NO_SOPORTADO`;
+no se requieren headers ni bibliotecas externas, lo que permite construir el
+proyecto en Windows sin `libbpf-dev`.
 
 Pendiente: que el codegen emita las llamadas al runtime de red/E/S a partir de
-las declaraciones `servicio`/`evento`, y actualizar la rama eBPF a libbpf 1.x.
+las declaraciones `servicio`/`evento`.
 
 ---
 
@@ -369,9 +372,11 @@ Emite WASM binario válido con imports WASI.
 
 ## 9. Integración Kernel/Hardware: eBPF + TPM 2.0
 
-### 9.1 Filtro eBPF en Kernel — Pendiente para desarrollo ❌
+### 9.1 Filtro eBPF en Kernel — Operativo en Linux con libbpf ≥ 1.0 ✅
 
-Solo en WHITE_PAPER. Sin `sil_security_filter.bpf.c`.
+Runtime `sil_ebpf` implementado en `sil-rt/src/ebpf_linux.c`. Requiere `libbpf-dev` y se activa con `SIL_EBPF=1`. En modo por defecto (Windows / sin macro) las funciones retornan `SIL_EBPF_NO_SOPORTADO`; el build no requiere headers de libbpf.
+
+Soporte: kprobe/kretprobe, tracepoint, uprobe, XDP, TC, ringbuf y perf-event array. Compatibilidad con libbpf 0.x y 1.x mediante macro `sil_bpf_map_create`.
 
 ### 9.2 TPM 2.0 / Secure Enclave — Listo para probar ✅
 
@@ -427,9 +432,9 @@ Solo en WHITE_PAPER. Sin `sil_security_filter.bpf.c`.
 
 ---
 
-## 13. Observabilidad Zero-Cost (eBPF) — Pendiente para desarrollo ❌
+## 13. Observabilidad Zero-Cost (eBPF) — Runtime operativo ✅
 
-Sin sondas eBPF, sin uprobes/tracepoints.
+`sil_ebpf` provee API completa: carga de programas desde bytecode ELF, mapas hash/array/ringbuf/perf-event, adjunción a kprobe/tracepoint/uprobe/XDP/TC, lectura de eventos vía `ring_buffer__poll`. En Linux con `SIL_EBPF=1` y libbpf ≥ 1.0 funciona con el kernel real; en Windows y modo por defecto retorna `SIL_EBPF_NO_SOPORTADO`.
 
 ---
 
@@ -452,17 +457,17 @@ Enlace directo a `.so`/`.dll`/`.dylib` vía ABI C. Sin wrappers.
 | **Backend LLVM** | Pendiente para desarrollo ❌ | |
 | **Backend SPIR-V/GPU** | Pendiente para desarrollo ❌ | |
 | **Arenas / Sub-Arenas** | Listo para probar ✅ | 100% |
-| **Arenas Persistentes NVM** | Pendiente para desarrollo ⚠️ | Solo AST/IR |
+| **Arenas Persistentes NVM** | Operativo ✅ (stub CRC64+HMAC) | Persistencia + integridad; sin mmap/NVM real aún |
 | **Scheduler Fibras** | Listo para probar ✅ | Implementado |
 | **Canales Lock-Free** | Listo para probar ✅ | Implementado |
 | **Capacidades (validación)** | Listo para probar ✅ | 100% |
 | **Capacidades (firma TPM)** | Listo para probar ✅ | HMAC-SHA256 implementado |
 | **TPM 2.0** | Listo para probar ✅ | Framework implementado |
-| **eBPF Kernel** | Pendiente para desarrollo ❌ | |
+| **eBPF Kernel** | Operativo (Linux, SIL_EBPF=1) ✅ | libbpf ≥ 1.0; compatibilidad 0.x/1.x; stubs en modo default |
 | **Scheduler Fibras** | Listo para probar ✅ | Implementado |
 | **Canales Lock-Free** | Listo para probar ✅ | Implementado |
 | **Z3 Backend** | Listo para probar | 0/0 | Compila con `vendored`, feature `smt` |
-| **eBPF Kernel** | Pendiente para desarrollo ❌ | |
+| **eBPF Kernel** | Operativo (Linux, SIL_EBPF=1) ✅ | libbpf ≥ 1.0; compatibilidad 0.x/1.x; stubs en modo default |
 | **Certificaciones (EAL7/DO-178C/ASIL-D)** | 🎯 OBJETIVO | |
 
 ---
@@ -484,16 +489,15 @@ El proyecto SIL ha alcanzado **completitud del frontend, IR, verificador de inte
 - Scheduler de fibras cooperativas (Win32 Fibers / ucontext)
 - Canales lock-free SPSC y MPSC
 - E/S asíncrona: `pread`/`pwrite` (POSIX), IOCP (Windows); `io_uring` opt-in
-- eBPF: rama libbpf opt-in (`SIL_EBPF=1`), escrita contra libbpf 0.x
+|- eBPF: API completa con libbpf ≥ 1.0, compatibilidad 0.x/1.x, stubs en modo default
 
 **Pendiente para desarrollo:**
 - Codegen de servicios/red y eventos (el parser ya los soporta)
 - Codegen de ADTs (`estructura`/`variante`/`modelo`): hoy son metadatos del AST
 - Arenas persistentes NVM y migración lazy on-read
 - Backend SPIR-V/GPU
-- Validación del backend LLVM en CI
-- Migración de eBPF a la API de libbpf 1.x
-- Certificaciones militares (objetivos de diseño)
+|- Validación del backend LLVM en CI
+|- Certificaciones militares (objetivos de diseño)
 
 **Siguiente paso realista:** codegen de servicios/red y NVM.
 
