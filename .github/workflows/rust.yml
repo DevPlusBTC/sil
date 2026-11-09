@@ -56,26 +56,15 @@ jobs:
         with:
           workspaces: silc-core
 
-      - name: Increase swap (Linux)
+      - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          set -e
-          echo "Creating 1GB swap file..."
-          # Try fallocate first, fallback to dd
-          if sudo fallocate -l 1G /swapfile 2>/dev/null; then
-            echo "fallocate succeeded"
-          else
-            echo "fallocate failed, trying dd..."
-            sudo dd if=/dev/zero of=/swapfile bs=1M count=1024 status=progress || {
-              echo "dd failed, trying smaller swap..."
-              sudo dd if=/dev/zero of=/swapfile bs=1M count=512 status=progress
-            }
-          fi
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "Swap created successfully:"
+          echo "=== Memoria disponible ==="
           free -h
+          echo "=== Swap existente ==="
+          swapon --show || echo "(sin swap activo)"
+          echo "=== nproc ==="
+          nproc
 
       - name: Build workspace
         run: cargo build --workspace --locked -j 1
