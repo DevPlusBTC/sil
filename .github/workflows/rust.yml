@@ -67,14 +67,27 @@ jobs:
           nproc
 
       - name: Build workspace
-        run: cargo build --workspace --locked -j 1
+        run: |
+          echo "=== Memoria antes de build ==="
+          free -h || true
+          echo "=== CPU info ==="
+          nproc || true
+          ulimit -a || true
+          echo "=== Iniciando build ==="
+          cargo build --workspace --locked -j 1 2>&1
+          echo "=== Build terminado con código $? ==="
         working-directory: silc-core
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       - name: Tests workspace
-        run: cargo test --workspace --locked -- --test-threads=1
+        run: |
+          echo "=== Memoria antes de tests ==="
+          free -h || true
+          echo "=== Ejecutando tests ==="
+          cargo test --workspace --locked -- --test-threads=1 2>&1
+          echo "=== Tests terminados con código $? ==="
         working-directory: silc-core
-        timeout-minutes: 15
+        timeout-minutes: 20
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
