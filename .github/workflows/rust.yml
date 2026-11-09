@@ -73,20 +73,30 @@ jobs:
           echo "=== CPU info ==="
           nproc || true
           ulimit -a || true
-          echo "=== Iniciando build ==="
+          echo "=== Build individual por crate ==="
           set +e
-          cargo build --workspace --locked -j 1 > /tmp/build.log 2>&1
-          CODE=$?
-          echo "=== Build terminado con código $CODE ==="
-          if [ $CODE -ne 0 ]; then
-            echo "::error title=Build failed::Exit code $CODE"
-            echo "=== Últimas 80 líneas del build ==="
-            tail -80 /tmp/build.log
-            exit $CODE
-          fi
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-cli silc-test silc-contracts; do
+            echo "--- Build $crate ---"
+            cargo build -p "$crate" --locked -j 1 > "/tmp/build_$crate.log" 2>&1
+            CODE=$?
+            if [ $CODE -ne 0 ]; then
+              echo "::error title=\"Build failed: $crate\"::Exit code $CODE"
+              echo "=== Errores de $crate ==="
+              grep -i 'error\|panic\|failed' "/tmp/build_$crate.log" | tail -20
+              exit $CODE
+            fi
+            echo "OK: $crate"
+          done
           echo "=== Build exitoso ==="
         working-directory: silc-core
         timeout-minutes: 20
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: /tmp/build_*.log
 
       - name: Tests workspace
         run: |
@@ -106,6 +116,13 @@ jobs:
           echo "=== Tests exitosos ==="
         working-directory: silc-core
         timeout-minutes: 20
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: /tmp/tests.log
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
