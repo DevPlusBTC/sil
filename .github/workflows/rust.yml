@@ -113,17 +113,20 @@ jobs:
         run: |
           echo "=== Memoria antes de tests ==="
           free -h || true
-          echo "=== Ejecutando tests ==="
+          echo "=== Tests por crate (excluye silc-cli: se compila sin smt) ==="
           set +e
-          cargo test --workspace --locked -- --test-threads=1 > /tmp/tests.log 2>&1
-          CODE=$?
-          echo "=== Tests terminados con código $CODE ==="
-          if [ $CODE -ne 0 ]; then
-            echo "::error title=Tests failed::Exit code $CODE"
-            echo "=== Últimas 80 líneas de tests ==="
-            tail -80 /tmp/tests.log
-            exit $CODE
-          fi
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts; do
+            echo "--- Test $crate ---"
+            cargo test -p "$crate" --locked -- --test-threads=1 > "/tmp/test_$crate.log" 2>&1
+            CODE=$?
+            if [ $CODE -ne 0 ]; then
+              echo "::error title=\"Test failed: $crate\"::Exit code $CODE"
+              echo "=== Errores de $crate ==="
+              grep -i 'error\|panic\|failed' "/tmp/test_$crate.log" | tail -20
+              exit $CODE
+            fi
+            echo "OK: $crate"
+          done
           echo "=== Tests exitosos ==="
         working-directory: silc-core
         timeout-minutes: 20
@@ -133,7 +136,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-logs
-          path: /tmp/tests.log
+          path: /tmp/test_*.log
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
