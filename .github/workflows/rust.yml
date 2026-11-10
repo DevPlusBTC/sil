@@ -43,7 +43,6 @@ jobs:
       RUST_TEST_THREADS: 1
       CARGO_INCREMENTAL: 0
       CARGO_BUILD_JOBS: 1
-      Z3_SYS_Z3_VERSION: "4.13.0"
     steps:
       - uses: actions/checkout@v5
 
@@ -60,9 +59,17 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 dev headers para feature smt (silc-cli, silc-test, test_counts.py)
-          # Ubuntu 22.04 libz3-dev funciona con z3-sys 0.13.1 + Z3_SYS_Z3_VERSION=4.13.0
-          sudo apt-get update -qq && sudo apt-get install -y -qq libz3-dev >/dev/null
+          # Instalar Z3 4.13.0 desde release oficial (libz3-dev 4.8.x de Ubuntu es muy viejo para z3-sys 0.13.1)
+          sudo apt-get update -qq && sudo apt-get install -y -qq wget unzip >/dev/null
+          for i in 1 2 3; do
+            wget -q --timeout=30 --tries=1 https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-ubuntu-22.04.zip && break || sleep 5
+          done
+          unzip -q z3-4.13.0-x64-ubuntu-22.04.zip
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/bin/libz3.so* /usr/local/lib/
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/include/z3*.h /usr/local/include/
+          sudo ldconfig
+          # Verificar instalación
+          pkg-config --cflags --libs z3 2>/dev/null || echo "pkg-config z3 no disponible, usando lib directa"
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
