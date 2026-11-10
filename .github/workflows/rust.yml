@@ -59,6 +59,8 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
+          # Instalar dependencias de build para feature vendored (z3-sys compila Z3 desde fuente)
+          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build python3 >/dev/null
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
@@ -73,11 +75,11 @@ jobs:
           echo "=== CPU info ==="
           nproc || true
           ulimit -a || true
-          echo "=== Build individual por crate ==="
+          echo "=== Build individual por crate (con feature vendored para Z3) ==="
           set +e
           for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts silc-cli; do
             echo "--- Build $crate ---"
-            cargo build -p "$crate" --locked -j 1 > "/tmp/build_$crate.log" 2>&1
+            cargo build -p "$crate" --locked --features vendored -j 1 > "/tmp/build_$crate.log" 2>&1
             CODE=$?
             if [ $CODE -ne 0 ]; then
               echo "::error title=\"Build failed: $crate\"::Exit code $CODE"
@@ -89,7 +91,7 @@ jobs:
           done
           echo "=== Build exitoso ==="
         working-directory: silc-core
-        timeout-minutes: 20
+        timeout-minutes: 30
 
       - name: Upload build log on failure
         if: failure()
