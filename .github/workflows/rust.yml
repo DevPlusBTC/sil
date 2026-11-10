@@ -113,9 +113,9 @@ jobs:
         run: |
           echo "=== Memoria antes de tests ==="
           free -h || true
-          echo "=== Tests por crate (excluye silc-cli: se compila sin smt) ==="
+          echo "=== Tests por crate (excluye silc-cli y silc-test: requieren feature smt) ==="
           set +e
-          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts; do
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-contracts; do
             echo "--- Test $crate ---"
             cargo test -p "$crate" --locked -- --test-threads=1 > "/tmp/test_$crate.log" 2>&1
             CODE=$?
