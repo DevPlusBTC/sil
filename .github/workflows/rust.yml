@@ -59,6 +59,8 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
+          # Instalar Z3 para feature smt (silc-cli, silc-test, test_counts.py)
+          sudo apt-get update -qq && sudo apt-get install -y -qq z3 >/dev/null
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
@@ -75,7 +77,7 @@ jobs:
           ulimit -a || true
           echo "=== Build individual por crate ==="
           set +e
-          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts; do
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts silc-cli; do
             echo "--- Build $crate ---"
             cargo build -p "$crate" --locked -j 1 > "/tmp/build_$crate.log" 2>&1
             CODE=$?
@@ -87,17 +89,6 @@ jobs:
             fi
             echo "OK: $crate"
           done
-          # silc-cli sin feature smt (requiere Z3 no instalado en CI ligero)
-          echo "--- Build silc-cli (no default features) ---"
-          cargo build -p silc-cli --locked --no-default-features -j 1 > /tmp/build_silc-cli.log 2>&1
-          CODE=$?
-          if [ $CODE -ne 0 ]; then
-            echo "::error title=\"Build failed: silc-cli\"::Exit code $CODE"
-            echo "=== Errores de silc-cli ==="
-            grep -i 'error\|panic\|failed' /tmp/build_silc-cli.log | tail -20
-            exit $CODE
-          fi
-          echo "OK: silc-cli"
           echo "=== Build exitoso ==="
         working-directory: silc-core
         timeout-minutes: 20
@@ -115,7 +106,7 @@ jobs:
           free -h || true
           echo "=== Tests por crate (excluye silc-cli y silc-test: requieren feature smt) ==="
           set +e
-          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-contracts; do
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts; do
             echo "--- Test $crate ---"
             cargo test -p "$crate" --locked -- --test-threads=1 > "/tmp/test_$crate.log" 2>&1
             CODE=$?
@@ -142,10 +133,7 @@ jobs:
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
       - name: Docs al día (conteos de tests)
         if: runner.os == 'Linux'
-        run: |
-          # Instalar Z3 para que test_counts.py pueda compilar silc-cli con feature smt
-          sudo apt-get update -qq && sudo apt-get install -y -qq z3 >/dev/null
-          python3 scripts/test_counts.py --check
+        run: python3 scripts/test_counts.py --check
 
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
