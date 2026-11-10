@@ -59,13 +59,6 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 4.13.x desde repositorio Ubuntu 24.04 (noble)
-          # libz3-dev 4.8.x de Ubuntu 22.04 es incompatible con z3-sys 0.13.1
-          echo "deb http://archive.ubuntu.com/ubuntu noble main universe" | sudo tee /etc/apt/sources.list.d/noble.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq -t noble libz3-dev >/dev/null
-          sudo rm /etc/apt/sources.list.d/noble.list
-          sudo apt-get update -qq
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
