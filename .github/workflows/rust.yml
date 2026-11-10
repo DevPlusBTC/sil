@@ -75,7 +75,7 @@ jobs:
           ulimit -a || true
           echo "=== Build individual por crate ==="
           set +e
-          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-cli silc-test silc-contracts; do
+          for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts; do
             echo "--- Build $crate ---"
             cargo build -p "$crate" --locked -j 1 > "/tmp/build_$crate.log" 2>&1
             CODE=$?
@@ -87,6 +87,17 @@ jobs:
             fi
             echo "OK: $crate"
           done
+          # silc-cli sin feature smt (requiere Z3 no instalado en CI ligero)
+          echo "--- Build silc-cli (no default features) ---"
+          cargo build -p silc-cli --locked --no-default-features -j 1 > /tmp/build_silc-cli.log 2>&1
+          CODE=$?
+          if [ $CODE -ne 0 ]; then
+            echo "::error title=\"Build failed: silc-cli\"::Exit code $CODE"
+            echo "=== Errores de silc-cli ==="
+            grep -i 'error\|panic\|failed' /tmp/build_silc-cli.log | tail -20
+            exit $CODE
+          fi
+          echo "OK: silc-cli"
           echo "=== Build exitoso ==="
         working-directory: silc-core
         timeout-minutes: 20
