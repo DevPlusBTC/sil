@@ -60,7 +60,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           # Instalar Z3 dev headers para feature smt (silc-cli, silc-test, test_counts.py)
-          sudo apt-get update -qq && sudo apt-get install -y -qq libz3-dev >/dev/null
+          # Ubuntu 22.04 libz3-dev es muy viejo; instalamos Z3 4.13.0 desde release oficial
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wget >/dev/null
+          wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-ubuntu-22.04.zip
+          unzip -q z3-4.13.0-x64-ubuntu-22.04.zip
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/bin/libz3.so* /usr/local/lib/
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/include/z3*.h /usr/local/include/
+          sudo ldconfig
+          # Verificar que pkg-config encuentra Z3
+          pkg-config --cflags --libs z3 || echo "pkg-config z3 no encontrado, usando lib directa"
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
