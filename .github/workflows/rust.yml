@@ -59,8 +59,8 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 para feature smt (silc-cli, silc-test, test_counts.py)
-          sudo apt-get update -qq && sudo apt-get install -y -qq z3 >/dev/null
+          # Instalar Z3 dev headers para feature smt (silc-cli, silc-test, test_counts.py)
+          sudo apt-get update -qq && sudo apt-get install -y -qq libz3-dev >/dev/null
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
