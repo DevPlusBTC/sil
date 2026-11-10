@@ -142,7 +142,10 @@ jobs:
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
       - name: Docs al día (conteos de tests)
         if: runner.os == 'Linux'
-        run: python3 scripts/test_counts.py --check
+        run: |
+          # Instalar Z3 para que test_counts.py pueda compilar silc-cli con feature smt
+          sudo apt-get update -qq && sudo apt-get install -y -qq z3 >/dev/null
+          python3 scripts/test_counts.py --check
 
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
