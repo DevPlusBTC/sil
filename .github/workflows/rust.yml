@@ -59,20 +59,30 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 4.13.0 desde release oficial (libz3-dev 4.8.x de Ubuntu es muy viejo para z3-sys 0.13.1)
-          # Usar curl con User-Agent para evitar bloqueos de GitHub
+          # Instalar Z3 4.13.0 usando gh CLI (pre-autenticado en GitHub Actions)
+          # Evita bloqueos de descarga directa desde github.com/releases
           sudo apt-get update -qq && sudo apt-get install -y -qq curl unzip >/dev/null
-          for i in 1 2 3; do
-            curl -L -H "Accept: application/octet-stream" -H "User-Agent: SIL-CI" \
-              --fail --silent --show-error --max-time 60 \
-              -o z3.zip "https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-ubuntu-22.04.zip" && break || sleep 5
-          done
-          unzip -q z3.zip
-          sudo cp z3-4.13.0-x64-ubuntu-22.04/bin/libz3.so* /usr/local/lib/
-          sudo cp z3-4.13.0-x64-ubuntu-22.04/include/z3*.h /usr/local/include/
-          sudo ldconfig
-          # Verificar instalación
-          pkg-config --cflags --libs z3 2>/dev/null || echo "pkg-config z3 no disponible, usando lib directa"
+          # Intentar con gh CLI primero (pre-autenticado en GitHub Actions)
+          if command -v gh >/dev/null 2>&1; then
+            gh release download z3-4.13.0 --repo Z3Prover/z3 \
+              --pattern "z3-4.13.0-x64-ubuntu-22.04.zip" --clobber 2>/dev/null && \
+            unzip -q z3-4.13.0-x64-ubuntu-22.04.zip || true
+          fi
+          # Fallback: curl con User-Agent si gh falla
+          if [ ! -f z3-4.13.0-x64-ubuntu-22.04.zip ]; then
+            for i in 1 2 3; do
+              curl -L -H "Accept: application/octet-stream" -H "User-Agent: SIL-CI" \
+                --fail --silent --show-error --max-time 60 \
+                -o z3.zip "https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-ubuntu-22.04.zip" && break || sleep 5
+            done
+            unzip -q z3.zip
+          fi
+          # Instalar libs/headers
+          if [ -d z3-4.13.0-x64-ubuntu-22.04 ]; then
+            sudo cp z3-4.13.0-x64-ubuntu-22.04/bin/libz3.so* /usr/local/lib/
+            sudo cp z3-4.13.0-x64-ubuntu-22.04/include/z3*.h /usr/local/include/
+            sudo ldconfig
+          fi
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
