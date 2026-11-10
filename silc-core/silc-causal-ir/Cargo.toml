@@ -21,4 +21,4 @@ silc-contracts.workspace = true
 
 [features]
 default = []
-smt = ["dep:z3", "z3/vendored"]
+smt = ["dep:z3"]

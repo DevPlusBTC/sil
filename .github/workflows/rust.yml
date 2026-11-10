@@ -59,8 +59,19 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar dependencias de build para feature vendored (z3-sys compila Z3 desde fuente)
-          sudo apt-get update -qq && sudo apt-get install -y -qq ninja-build python3 >/dev/null
+          # Compilar Z3 4.13.0 desde fuente (evita dependencias de sistema y descargas bloqueadas)
+          # z3-sys 0.13.1 requiere Z3 4.13.x; Ubuntu 22.04 tiene 4.8.x
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3 cmake ninja-build g++ >/dev/null
+          wget -q https://github.com/Z3Prover/z3/archive/refs/tags/z3-4.13.0.tar.gz
+          tar xzf z3-4.13.0.tar.gz
+          cd z3-4.13.0
+          python3 scripts/mk_make.py --prefix=/usr/local
+          cd build
+          make -j$(nproc)
+          sudo make install
+          cd ../..
+          # Verificar instalación
+          z3 --version
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
@@ -79,7 +90,7 @@ jobs:
           set +e
           for crate in silc-frontend silc-backend silc-causal-ir silc-runtime silc-test silc-contracts silc-cli; do
             echo "--- Build $crate ---"
-            cargo build -p "$crate" --locked --features vendored -j 1 > "/tmp/build_$crate.log" 2>&1
+            cargo build -p "$crate" --locked -j 1 > "/tmp/build_$crate.log" 2>&1
             CODE=$?
             if [ $CODE -ne 0 ]; then
               echo "::error title=\"Build failed: $crate\"::Exit code $CODE"
