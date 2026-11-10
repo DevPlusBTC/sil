@@ -43,6 +43,7 @@ jobs:
       RUST_TEST_THREADS: 1
       CARGO_INCREMENTAL: 0
       CARGO_BUILD_JOBS: 1
+      Z3_SYS_Z3_VERSION: "4.13.0"
     steps:
       - uses: actions/checkout@v5
 
@@ -62,7 +63,6 @@ jobs:
           # Instalar Z3 dev headers para feature smt (silc-cli, silc-test, test_counts.py)
           # Ubuntu 22.04 libz3-dev funciona con z3-sys 0.13.1 + Z3_SYS_Z3_VERSION=4.13.0
           sudo apt-get update -qq && sudo apt-get install -y -qq libz3-dev >/dev/null
-          export Z3_SYS_Z3_VERSION=4.13.0
           echo "=== Memoria disponible ==="
           free -h
           echo "=== Swap existente ==="
