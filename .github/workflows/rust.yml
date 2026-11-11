@@ -59,14 +59,20 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 4.13.x desde repositorio Ubuntu 24.04 (noble)
+          # Instalar Z3 4.13.0 desde binarios precompilados oficiales
           # Ubuntu 22.04 (jammy) libz3-dev 4.8.x es incompatible con z3-sys 0.13.1
           set -euo pipefail
-          echo "deb http://archive.ubuntu.com/ubuntu noble main universe" | sudo tee /etc/apt/sources.list.d/noble.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq -t noble libz3-dev >/dev/null
-          sudo rm /etc/apt/sources.list.d/noble.list
-          sudo apt-get update -qq
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3 >/dev/null
+          # Descargar Z3 4.13.0 precompilado para Ubuntu 22.04
+          for i in 1 2 3; do
+            curl -L -H "Accept: application/octet-stream" -H "User-Agent: SIL-CI" \
+              --fail --silent --show-error --max-time 60 \
+              -o z3.zip "https://github.com/Z3Prover/z3/releases/download/z3-4.13.0/z3-4.13.0-x64-ubuntu-22.04.zip" && break || sleep 5
+          done
+          unzip -q z3.zip
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/bin/libz3.so* /usr/local/lib/
+          sudo cp z3-4.13.0-x64-ubuntu-22.04/include/z3*.h /usr/local/include/
+          sudo ldconfig
           # Verificar instalación
           z3 --version
           echo "=== Memoria disponible ==="
