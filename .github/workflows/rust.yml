@@ -59,13 +59,14 @@ jobs:
       - name: Diagnostic memoria
         if: runner.os == 'Linux'
         run: |
-          # Instalar Z3 4.13.x descargando .deb desde repositorio Ubuntu 24.04 (noble)
-          # Evita problemas de apt -t noble y descargas bloqueadas de GitHub
+          # Instalar Z3 4.13.x desde espejo Ubuntu (evita bloqueos de archive.ubuntu.com)
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq wget >/dev/null
-          # Descargar libz3-dev y libz3-4 desde Ubuntu 24.04 (noble)
-          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-4_4.13.0-1_amd64.deb
-          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-dev_4.13.0-1_amd64.deb
+          # Usar espejo mirrors.ubuntu.com (menos propenso a bloqueos)
+          wget -q http://mirrors.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-4_4.13.0-1_amd64.deb || \
+          wget -q http://us.archive.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-4_4.13.0-1_amd64.deb
+          wget -q http://mirrors.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-dev_4.13.0-1_amd64.deb || \
+          wget -q http://us.archive.ubuntu.com/ubuntu/pool/universe/z/z3/libz3-dev_4.13.0-1_amd64.deb
           sudo dpkg -i libz3-4_4.13.0-1_amd64.deb libz3-dev_4.13.0-1_amd64.deb
           sudo apt-get install -f -y -qq >/dev/null
           # Verificar instalación
