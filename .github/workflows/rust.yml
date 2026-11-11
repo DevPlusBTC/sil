@@ -159,6 +159,13 @@ jobs:
         run: |
           echo "=== Memoria antes de clippy ==="
           free -h || true
+          # Aumentar swap antes de clippy
+          sudo fallocate -l 2G /swapfile_clippy 2>/dev/null || sudo dd if=/dev/zero of=/swapfile_clippy bs=1M count=2048
+          sudo chmod 600 /swapfile_clippy
+          sudo mkswap /swapfile_clippy
+          sudo swapon /swapfile_clippy
+          echo "=== Memoria con swap extra ==="
+          free -h
           cargo clippy --workspace --lib --bins --locked -j 1 -- -D warnings
         working-directory: silc-core
 
