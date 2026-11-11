@@ -159,13 +159,6 @@ jobs:
         run: |
           echo "=== Memoria antes de clippy ==="
           free -h || true
-          # Aumentar swap antes de clippy
-          sudo fallocate -l 2G /swapfile_clippy 2>/dev/null || sudo dd if=/dev/zero of=/swapfile_clippy bs=1M count=2048
-          sudo chmod 600 /swapfile_clippy
-          sudo mkswap /swapfile_clippy
-          sudo swapon /swapfile_clippy
-          echo "=== Memoria con swap extra ==="
-          free -h
           # Ejecutar clippy por crate con cap-lints=allow para evitar panic
           for crate in silc-frontend silc-backend silc-runtime silc-causal-ir silc-test silc-contracts silc-cli; do
             echo "=== Clippy $crate ==="
