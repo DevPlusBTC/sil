@@ -237,3 +237,4 @@ jobs:
         run: python3 test_sil_stdlib.py
       - name: Tests WASM
         run: python3 test_sil_wasm.py
+# CI fix
