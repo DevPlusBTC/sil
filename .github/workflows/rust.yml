@@ -38,11 +38,13 @@ jobs:
   build-test:
     name: build+test (ubuntu-latest)
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       RUST_TEST_THREADS: 1
       CARGO_INCREMENTAL: 0
       CARGO_BUILD_JOBS: 1
+      MAKEFLAGS: -j1
+      NINJAFLAGS: -j1
     steps:
       - uses: actions/checkout@v5
 
