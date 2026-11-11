@@ -166,7 +166,11 @@ jobs:
           sudo swapon /swapfile_clippy
           echo "=== Memoria con swap extra ==="
           free -h
-          cargo clippy --workspace --lib --bins --locked -j 1 -- -D warnings
+          # Ejecutar clippy por crate para evitar OOM
+          for crate in silc-frontend silc-backend silc-runtime silc-causal-ir silc-test silc-contracts silc-cli; do
+            echo "=== Clippy $crate ==="
+            cargo clippy -p "$crate" --lib --bins --locked -j 1 -- -D warnings
+          done
         working-directory: silc-core
 
       # V1: validar que los ejemplos válidos compilan con gcc/clang -Werror
