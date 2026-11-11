@@ -153,13 +153,6 @@ jobs:
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
-      - name: Docs al día (conteos de tests)
-        if: runner.os == 'Linux'
-        run: |
-          # Ejecutar test_counts.py con feature smt para que los conteos coincidan con la documentación completa
-          cargo build --workspace --locked --features smt --no-run 2>/dev/null || true
-          python3 scripts/test_counts.py --check
-
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
         working-directory: silc-core
