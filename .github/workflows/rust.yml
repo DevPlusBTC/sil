@@ -159,7 +159,7 @@ jobs:
         run: |
           echo "=== Memoria antes de clippy ==="
           free -h || true
-          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo clippy --workspace --all-targets --locked -j 1 -- -D warnings
         working-directory: silc-core
 
       # V1: validar que los ejemplos válidos compilan con gcc/clang -Werror
