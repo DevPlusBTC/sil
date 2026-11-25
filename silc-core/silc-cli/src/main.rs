@@ -11,15 +11,11 @@ use tracing::{debug, info};
 
 mod lsp;
 
-// Backend SMT: Z3 (feature `smt`) o Intervalos (fallback)
+// Backend SMT: Z3 (feature `smt`) o Intervalos (fallback).
+// Cuando feature "smt" está activo, se importan los símbolos Z3 vía alias cortos.
+// Sin el feature, solo se usa la ruta completa silc_causal_ir::smt::verificar_tarea.
 #[cfg(feature = "smt")]
-#[allow(unused_imports)]
-use silc_causal_ir::smt::{
-    verificar_tarea, verificar_tarea_con, CacheLemas, ErrorSMT, VerificadorZ3,
-};
-
-#[cfg(not(feature = "smt"))]
-use silc_causal_ir::smt::verificar_tarea;
+use silc_causal_ir::smt::{verificar_tarea_con, CacheLemas, ErrorSMT, VerificadorZ3};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -235,80 +231,85 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
 
     // Fase 4: SMT verify cada tarea
     // Estrategia: usar verificador de intervalos por defecto (rápido, siempre disponible).
-    // Z3 solo como opción experimental: setear variable de entorno SIL_USE_Z3=1
+    // Z3 solo como opción experimental (feature "smt"): setear variable de entorno SIL_USE_Z3=1
 
-    let usar_z3 = cfg!(feature = "smt") && std::env::var("SIL_USE_Z3").is_ok();
+    // Bloque Z3: solo compila cuando el feature "smt" está activado
+    #[cfg(feature = "smt")]
+    {
+        let usar_z3 = std::env::var("SIL_USE_Z3").is_ok();
+        if usar_z3 {
+            // Z3 habilitado vía variable de entorno: intentar Z3 primero con timeout agresivo
+            let timeout_z3 = 500; // Timeout agresivo (500ms) para no bloquear
+            let mut backend_z3 = silc_causal_ir::smt::VerificadorZ3::new();
+            let mut cache = silc_causal_ir::smt::CacheLemas::cargar();
 
-    if usar_z3 {
-        // Z3 habilitado vía variable de entorno: intentar Z3 primero con timeout agresivo
-        let timeout_z3 = 500; // Timeout agresivo (500ms) para no bloquear
-        let mut backend_z3 = silc_causal_ir::smt::VerificadorZ3::new();
-        let mut cache = silc_causal_ir::smt::CacheLemas::cargar();
-
-        for ir in &programa_ir.tareas {
-            match silc_causal_ir::smt::verificar_tarea_con(
-                ir,
-                &mut backend_z3,
-                &mut cache,
-                timeout_z3,
-            ) {
-                Ok(()) => {
-                    cache.persistir();
-                }
-                Err(silc_causal_ir::smt::ErrorSMT::Indecidible { .. }) => {
-                    // Z3 timeoutó o no pudo decidir → fallback a intervalos silencioso
-                    debug!(tarea = %ir.nombre, "Z3 indecidible, usando intervalos");
-                    silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
-                        miette::miette!(
-                            "{}: verificación SMT (intervalos) falló en '{}': {e}",
-                            path.display(),
-                            ir.nombre
-                        )
-                    })?;
-                }
-                Err(e) => {
-                    // Error real (invariante violada): propagar inmediatamente
-                    return Err(miette::miette!(
-                        "{}: verificación SMT (Z3) falló en '{}': {e}",
-                        path.display(),
-                        ir.nombre
-                    ));
-                }
-            }
-        }
-        info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT (Z3 + intervalos fallback) OK");
-    } else {
-        // Verificador de intervalos por defecto (rápido); fallback a Z3 si resulta indecidible.
-        for ir in &programa_ir.tareas {
-            match silc_causal_ir::smt::verificar_tarea(ir, smt_timeout) {
-                Ok(()) => {}
-                #[cfg(feature = "smt")]
-                Err(ErrorSMT::Indecidible { .. }) => {
-                    debug!(tarea = %ir.nombre, "Intervalos indecidible, usando Z3");
-                    let mut backend_z3 = VerificadorZ3::new();
-                    let mut cache = CacheLemas::cargar();
-                    verificar_tarea_con(ir, &mut backend_z3, &mut cache, smt_timeout).map_err(
-                        |e| {
+            for ir in &programa_ir.tareas {
+                match silc_causal_ir::smt::verificar_tarea_con(
+                    ir,
+                    &mut backend_z3,
+                    &mut cache,
+                    timeout_z3,
+                ) {
+                    Ok(()) => {
+                        cache.persistir();
+                    }
+                    Err(silc_causal_ir::smt::ErrorSMT::Indecidible { .. }) => {
+                        // Z3 timeoutó o no pudo decidir → fallback a intervalos silencioso
+                        debug!(tarea = %ir.nombre, "Z3 indecidible, usando intervalos");
+                        silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
                             miette::miette!(
-                                "{}: verificación SMT (Z3) falló en '{}': {e}",
+                                "{}: verificación SMT (intervalos) falló en '{}': {e}",
                                 path.display(),
                                 ir.nombre
                             )
-                        },
-                    )?;
-                    cache.persistir();
-                }
-                Err(e) => {
-                    return Err(miette::miette!(
-                        "{}: verificación SMT (intervalos) falló en '{}': {e}",
-                        path.display(),
-                        ir.nombre
-                    ));
+                        })?;
+                    }
+                    Err(e) => {
+                        // Error real (invariante violada): propagar inmediatamente
+                        return Err(miette::miette!(
+                            "{}: verificación SMT (Z3) falló en '{}': {e}",
+                            path.display(),
+                            ir.nombre
+                        ));
+                    }
                 }
             }
+            info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT (Z3 + intervalos fallback) OK");
+            return Ok(Compilado {
+                nombre_archivo: nombre,
+                programa_ir,
+            });
         }
-        info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT OK");
     }
+
+    // Verificador de intervalos por defecto (rápido); fallback a Z3 si resulta indecidible.
+    for ir in &programa_ir.tareas {
+        match silc_causal_ir::smt::verificar_tarea(ir, smt_timeout) {
+            Ok(()) => {}
+            #[cfg(feature = "smt")]
+            Err(ErrorSMT::Indecidible { .. }) => {
+                debug!(tarea = %ir.nombre, "Intervalos indecidible, usando Z3");
+                let mut backend_z3 = VerificadorZ3::new();
+                let mut cache = CacheLemas::cargar();
+                verificar_tarea_con(ir, &mut backend_z3, &mut cache, smt_timeout).map_err(|e| {
+                    miette::miette!(
+                        "{}: verificación SMT (Z3) falló en '{}': {e}",
+                        path.display(),
+                        ir.nombre
+                    )
+                })?;
+                cache.persistir();
+            }
+            Err(e) => {
+                return Err(miette::miette!(
+                    "{}: verificación SMT (intervalos) falló en '{}': {e}",
+                    path.display(),
+                    ir.nombre
+                ));
+            }
+        }
+    }
+    info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT OK");
 
     Ok(Compilado {
         nombre_archivo: nombre,

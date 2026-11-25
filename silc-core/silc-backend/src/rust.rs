@@ -53,9 +53,10 @@ pub fn emitir_tarea(tarea: &TareaIR) -> String {
         idx_map.insert(tarea.entrada, 0);
         orden.push((tarea.entrada, 0));
         for (bid, _) in tarea.bloques.iter() {
-            if !idx_map.contains_key(&bid) {
-                let idx = orden.len();
-                idx_map.insert(bid, idx);
+            let idx = orden.len();
+            let entry = idx_map.entry(bid);
+            if let std::collections::hash_map::Entry::Vacant(e) = entry {
+                e.insert(idx);
                 orden.push((bid, idx));
             }
         }
