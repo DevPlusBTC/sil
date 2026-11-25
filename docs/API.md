@@ -16,6 +16,7 @@ silc [--smt-timeout <ms>] [-v] <comando>
 | `silc check <archivos...>` | Lexer + parser + lowering + verificación de contratos. Exit 0 si todo es válido. |
 | `silc build <archivos...> [--target c99\|wasm] [-o <salida>] [--cc]` | Genera C99 (por defecto) o WASM. Con `--cc` compila el C con `cc`/`gcc`/`clang`. |
 | `silc emit-smt <archivos...>` | Imprime el script SMT-LIB2 de las tareas. |
+| `silc emit-rust <archivo> [-o <salida>]` | Emite código Rust legible para auditoría humana (no para producción). |
 | `silc run <archivos...>` | Compila a C, ejecuta con `cc`/`gcc`/`clang` y muestra la salida. Requiere una tarea principal sin parámetros. |
 | `silc lsp` | Servidor LSP por stdin/stdout. |
 
@@ -23,7 +24,7 @@ Opciones globales:
 
 | Opción | Valor |
 |--------|-------|
-| `--smt-timeout <ms>` | Timeout por consulta SMT (entero >= 1; por defecto 5000). |
+| `--smt-timeout <ms>` | Timeout por consulta SMT (entero >= 1; por defecto 60000). |
 | `-v`, `-vv` | Nivel de logs (van a stderr para no romper el LSP). |
 
 Convención de compilación: la **última tarea** es la principal. Si tiene
@@ -64,7 +65,7 @@ let programa = parsear(&tokens)?;            // Program
 let (tokens, errores) = lexear_con_errores(fuente);
 ```
 
-Módulos públicos: `ast`, `error`, `lexer`, `parser`.
+Módulos públicos: `ast`, `error`, `lexer`, `parser`, `ud` (experimental).
 
 ---
 
@@ -96,12 +97,13 @@ Módulos públicos: `lower`, `nodes`, `smt`. Reexporta `silc-contracts`.
 ## 5. Crate `silc-backend`
 
 ```rust
-use silc_backend::{c99, wasm};
+use silc_backend::{c99, rust, wasm};
 
 let c = c99::emitir(&tarea)?;                // una tarea
 let programa = c99::emitir_programa(&tareas)?; // todas + main/biblioteca
 let bytes = wasm::emitir(&tarea)?;           // módulo de una tarea
 let modulo = wasm::emitir_programa(&tareas)?; // todas + start/biblioteca
+let rs = rust::emitir_tarea(&tarea);         // código Rust para auditoría
 ```
 
 `llvm::emitir(&tarea)` existe detrás de la feature `llvm` (requiere LLVM 17) y

@@ -379,15 +379,24 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             Ok(())
         }
         A::Stmt::Mientras { cond, cuerpo, .. } => {
-            // Bucle mientras: emitir condicion y saltar al bloque de inicio
-            let _cond_val = bajar_expr(ctx, cond)?;
-            // Crear bloques: mientras y continuar
-            let blk_mientras = ctx.bloques.insert(Bloque {
+            // Bucle mientras: 3 bloques (condicion, cuerpo, continuar).
+            // El bloque actual salta a condicion; condicion ramifica a cuerpo o
+            // continuar; cuerpo salta de nuevo a condicion. Asi el IR es un bucle
+            // real (no un salto simple que se ejecuta una vez).
+            let cond_val = bajar_expr(ctx, cond)?;
+            let blk_cond = ctx.bloques.insert(Bloque {
                 id: BlockId::default(),
                 instrs: Vec::new(),
                 terminador: Terminador::Inalcanzable,
             });
-            ctx.bloques[blk_mientras].id = blk_mientras;
+            ctx.bloques[blk_cond].id = blk_cond;
+
+            let blk_cuerpo = ctx.bloques.insert(Bloque {
+                id: BlockId::default(),
+                instrs: Vec::new(),
+                terminador: Terminador::Inalcanzable,
+            });
+            ctx.bloques[blk_cuerpo].id = blk_cuerpo;
 
             let blk_cont = ctx.bloques.insert(Bloque {
                 id: BlockId::default(),
@@ -396,17 +405,24 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
             });
             ctx.bloques[blk_cont].id = blk_cont;
 
-            // El bloque actual salta al bloque mientras
-            ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_mientras);
+            // El bloque actual salta al bloque de condicion
+            ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cond);
+
+            // Condicion: ramificar entre cuerpo y continuar
+            ctx.bloques[blk_cond].terminador = Terminador::Rama {
+                cond: cond_val,
+                entonces: blk_cuerpo,
+                sino: blk_cont,
+            };
 
             // Bajar cuerpo del mientras
-            ctx.actual = blk_mientras;
+            ctx.actual = blk_cuerpo;
             for s in &cuerpo.stmts {
                 bajar_sentencia(ctx, s)?;
             }
-            // Si no hay terminador, saltar a continuar
+            // Volver a evaluar la condicion
             if matches!(ctx.bloques[ctx.actual].terminador, Terminador::Inalcanzable) {
-                ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cont);
+                ctx.bloques[ctx.actual].terminador = Terminador::Salto(blk_cond);
             }
 
             ctx.actual = blk_cont;

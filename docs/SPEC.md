@@ -15,10 +15,10 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | Backend C99 | Listo para probar | Emite C99; los tests lo compilan con gcc/clang `-Wall -Wextra -Werror` en Linux/macOS |
 | Backend WASM | Listo para probar | Magic `\0asm` válido |
 | Runtime FFI | Listo para probar | Arena O(1) + sub-arenas cíclicas (16 niveles), cap. HMAC, TPM 2.0, fibras, canales |
-| CLI (`silc`) | Listo para probar | 5 comandos: check, build, emit-smt, run, lsp |
+| CLI (`silc`) | Listo para probar | 6 comandos: check, build, emit-smt, emit-rust, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
-| Tests | Listo para probar | 188 Rust + 31 Python |
+| Tests | Listo para probar | 192 Rust + 31 Python |
 
 **Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM,
 migración de esquemas lazy, SPIR-V/GPU, eBPF (opt-in `SIL_EBPF=1`; la rama
@@ -150,6 +150,9 @@ Emite SMT-LIB2 (QF_LIA):
 | `silc check <file.sil>` | Verifica sintaxis + contratos SMT |
 | `silc build <file.sil> --target c99\|wasm -o <out>` | Genera C99 o WASM |
 | `silc emit-smt <file.sil>` | Emite script SMT-LIB2 QF_LIA |
+| `silc emit-rust <file.sil> -o <out.rs>` | Emite código Rust legible para auditoría humana |
+| `silc run <file.sil>` | Compila a C y ejecuta (requiere tarea principal sin parámetros) |
+| `silc lsp` | Inicia servidor LSP (JSON-RPC 2.0 por stdio) |
 
 **Códigos de salida:** 0=OK, 1=Error (sintaxis, SMT o E/S)
 
@@ -184,20 +187,20 @@ Emite SMT-LIB2 (QF_LIA):
 
 ---
 
-## 7. Limitaciones Conocidas v0.1.0
+## 8. Limitaciones Conocidas v0.1.0
 
 | Limitación | Workaround |
 |------------|------------|
 | La última tarea con parámetros se emite como biblioteca (sin `main`) | Añadir una tarea principal sin parámetros al final |
 | `generar` en C99 requiere tarea principal sin parámetros | Usar WASM (llamada directa) o una principal sin parámetros |
-| SMT timeout 5s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `demostrar` |
+| SMT timeout 60s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `demostrar` |
 | Sin stdlib/prelude | Definir tipos base en cada archivo |
 | Sin `silpm` / `silfmt` / `silup` | Usar `cargo build` + `silc` directo |
 | LSP sin hover, definición ni formateador | Usar completion y diagnósticos |
 
 ---
 
-## 8. Versionado y Compatibilidad
+## 9. Versionado y Compatibilidad
 
 - **SemVer:** v0.1.0 = Beta (breaking changes esperados)
 - **MSRV:** 1.88.0 (mínimo declarado por las dependencias); CI usa 1.97.1
@@ -206,7 +209,7 @@ Emite SMT-LIB2 (QF_LIA):
 
 ---
 
-## 9. Tests por crate (autogenerado)
+## 10. Tests por crate (autogenerado)
 
 Conteo generado con `python3 scripts/test_counts.py`; la CI ejecuta
 `--check` y falla si los documentos quedan desfasados.
@@ -214,14 +217,14 @@ Conteo generado con `python3 scripts/test_counts.py`; la CI ejecuta
 <!-- generado-por: scripts/test_counts.py -->
 | Crate | Tests |
 |---|---|
-| `silc-backend` | 28 |
-| `silc-causal-ir` | 40 |
-| `silc-cli` | 17 |
+| `silc-backend` | 30 |
+| `silc-causal-ir` | 41 |
+| `silc-cli` | 18 |
 | `silc-contracts` | 17 |
 | `silc-frontend` | 30 |
 | `silc-runtime` | 16 |
 | `silc-test` | 40 |
-| **Total** | **188** |
+| **Total** | **192** |
 <!-- /generado -->
 
 ---

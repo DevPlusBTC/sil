@@ -29,6 +29,9 @@ silc build mi_servicio.sil --target wasm -o mi_servicio.wasm
 
 # Emitir script SMT-LIB2
 silc emit-smt mi_servicio.sil
+
+# Emitir código Rust legible para auditoría humana
+silc emit-rust mi_servicio.sil -o mi_servicio.rs
 ```
 
 ## Ejemplo SIL
@@ -53,10 +56,7 @@ Ejecutar las pruebas del proyecto:
 cargo test --workspace
 ```
 
-**Tests Rust**: **188/188 ✅**  
-**Tests Python**: **31/31 ✅**
-
-| **Tests Rust** | **188/188 ✅** |
+| **Tests Rust** | **192/192 ✅** |
 | **Tests Python** | **31/31 ✅** |
 
 ---

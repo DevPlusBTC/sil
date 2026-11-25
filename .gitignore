@@ -68,3 +68,7 @@ fix_*.bat
 .superpowers/
 docs/superpowers/
 AGENTS.md
+
+# graphify (generado en cada build)
+graphify-out/
+silc-core/graphify-out/

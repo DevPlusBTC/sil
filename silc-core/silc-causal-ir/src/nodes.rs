@@ -415,8 +415,8 @@ impl TareaIR {
 
     /// Definiciones SSA que el verificador debe asumir (p. ej. `let x = a - b`).
     ///
-    /// Solo cubre valores enteros. Comparaciones (Bool), llamadas y E/S no se
-    /// traducen: `FormulaLogica` no tiene variables booleanas.
+    /// Cubre asignaciones enteras y comparaciones. Operaciones IO, canales y divisón
+    /// no se traducen por razones de soundness (TTL, acuerdo de división, estado externo).
     pub fn definiciones(&self) -> Vec<FormulaLogica> {
         let mut out = Vec::new();
         for (_, b) in self.bloques.iter() {
@@ -428,10 +428,20 @@ impl TareaIR {
                     rhs: Box::new(rhs),
                 };
                 match &i.op {
-                    Operacion::Const {
-                        valor: Constante::Int(n),
-                        ..
-                    } => out.push(igualdad(FormulaLogica::ConstInt(*n))),
+                    Operacion::Const { valor, .. } => match valor {
+                        Constante::Int(n) => {
+                            out.push(igualdad(FormulaLogica::ConstInt(*n)));
+                        }
+                        Constante::Float(f) => {
+                            out.push(igualdad(FormulaLogica::ConstInt(*f as i64)));
+                        }
+                        Constante::Bool(b) => {
+                            out.push(igualdad(FormulaLogica::ConstBool(*b)));
+                        }
+                        Constante::Texto(t) => {
+                            out.push(igualdad(FormulaLogica::Var(t.clone())));
+                        }
+                    },
                     Operacion::AsignarArena { valor, .. } => {
                         out.push(igualdad(FormulaLogica::VarId(*valor)));
                     }
@@ -450,7 +460,59 @@ impl TareaIR {
                             rhs: Box::new(FormulaLogica::VarId(*rhs)),
                         }));
                     }
-                    _ => {}
+                    Operacion::Comparar { op, lhs, rhs, .. } => {
+                        let op = match op {
+                            OpCmp::Gt => OpLogico::Gt,
+                            OpCmp::Lt => OpLogico::Lt,
+                            OpCmp::Eq => OpLogico::Eq,
+                            OpCmp::Ne => OpLogico::Ne,
+                            OpCmp::Ge => OpLogico::Ge,
+                            OpCmp::Le => OpLogico::Le,
+                        };
+                        out.push(igualdad(FormulaLogica::BinOp {
+                            op,
+                            lhs: Box::new(FormulaLogica::VarId(*lhs)),
+                            rhs: Box::new(FormulaLogica::VarId(*rhs)),
+                        }));
+                    }
+                    Operacion::Param { nombre, .. } => {
+                        out.push(igualdad(FormulaLogica::Var(nombre.clone())));
+                    }
+                    Operacion::Promover { valor, .. } => {
+                        out.push(igualdad(FormulaLogica::VarId(*valor)));
+                    }
+                    Operacion::Retornar { valor } => {
+                        if let Some(v) = valor {
+                            out.push(igualdad(FormulaLogica::VarId(*v)));
+                        }
+                    }
+                    Operacion::Ramificar { .. } => {
+                        continue;
+                    }
+                    Operacion::Saltar { .. } => {
+                        continue;
+                    }
+                    Operacion::SolicitarCapacidad { .. } => {
+                        continue;
+                    }
+                    Operacion::ValidarCapacidad { .. } => {
+                        continue;
+                    }
+                    Operacion::InvocarIO { .. } => {
+                        continue;
+                    }
+                    Operacion::CrearFibra { .. } => {
+                        continue;
+                    }
+                    Operacion::CrearCanal { .. } => {
+                        continue;
+                    }
+                    Operacion::EnviarCanal { .. } => {
+                        continue;
+                    }
+                    Operacion::RecibirCanal { .. } => {
+                        continue;
+                    }
                 }
             }
         }

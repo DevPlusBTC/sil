@@ -50,6 +50,10 @@ pub struct TareaDecl {
 }
 
 /// Parámetro: nombre + tipo.
+///
+/// NOTA: `para` y `mientras` en el parser son soportados pero `para` es código muerto
+/// hasta que se implemente soporte para literales de colección (Vector/Mapa/Tupla).
+///shortcut: colección iterable pendiente, cuando se implementen fat pointers
 #[derive(Debug, Clone)]
 pub struct Param {
     pub nombre: Ident,

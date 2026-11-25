@@ -9,26 +9,25 @@ use logos::Logos;
 fn unescape_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('\\') => result.push('\\'),
-                Some('"') => result.push('"'),
-                Some('n') => result.push('\n'),
-                Some('t') => result.push('\t'),
-                Some('r') => result.push('\r'),
-                Some(other) => {
-                    // Escape desconocido: mantener ambos caracteres
-                    result.push('\\');
-                    result.push(other);
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                match next {
+                    '\\' => result.push('\\'),
+                    '"' => result.push('"'),
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    'r' => result.push('\r'),
+                    _ => {
+                        result.push('\\');
+                        result.push(next);
+                    }
                 }
-                None => {
-                    // Backslash al final
-                    result.push('\\');
-                }
+            } else {
+                result.push(ch);
             }
         } else {
-            result.push(c);
+            result.push(ch);
         }
     }
     result

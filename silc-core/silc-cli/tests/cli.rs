@@ -129,3 +129,25 @@ fn emit_smt_muestra_script() {
         .stdout(predicate::str::contains("(set-logic QF_LIA)"))
         .stdout(predicate::str::contains("(check-sat)"));
 }
+
+#[test]
+fn emit_rust_genera_codigo_audit() {
+    // Sintaxis correcta: contratos antes de los dos puntos
+    let f = ejemplo(
+        "rust",
+        "definir tarea sumar(a: Entero64, b: Entero64) -> Entero64 requiere que a >= 0 garantiza que a >= 0:\n    retornar a + b\n",
+    );
+    let out = tempfile::Builder::new().suffix(".rs").tempfile().unwrap();
+    let out_path = out.path().to_str().unwrap().to_string();
+    drop(out);
+    Command::cargo_bin("silc")
+        .unwrap()
+        .args(["emit-rust", f.path().to_str().unwrap(), "--out", &out_path])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rust"));
+    let rust = std::fs::read_to_string(&out_path).unwrap();
+    assert!(rust.contains("// SIL-UD convertido a Rust para auditoría"));
+    assert!(rust.contains("pub fn sumar("));
+    let _ = std::fs::remove_file(&out_path);
+}

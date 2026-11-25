@@ -13,7 +13,13 @@ mod lsp;
 
 // Backend SMT: Z3 (feature `smt`) o Intervalos (fallback)
 #[cfg(feature = "smt")]
-use silc_causal_ir::smt::{verificar_tarea_con, CacheLemas, VerificadorZ3};
+#[allow(unused_imports)]
+use silc_causal_ir::smt::{
+    verificar_tarea, verificar_tarea_con, CacheLemas, ErrorSMT, VerificadorZ3,
+};
+
+#[cfg(not(feature = "smt"))]
+use silc_causal_ir::smt::verificar_tarea;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -26,8 +32,8 @@ struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     verbose: u8,
 
-    /// Timeout SMT por query (ms)
-    #[arg(long, default_value = "5000", global = true, value_parser = clap::value_parser!(u64).range(1..))]
+    /// Timeout SMT por query (ms). Z3 usa timeout agresivo (500ms) como fallback.
+    #[arg(long, default_value = "60000", global = true, value_parser = clap::value_parser!(u64).range(1..))]
     smt_timeout: u64,
 
     #[command(subcommand)]
@@ -60,6 +66,13 @@ enum Comando {
     EmitSmt {
         #[arg(required = true)]
         archivos: Vec<PathBuf>,
+    },
+    /// Emite código Rust legible para auditoría humana (no para producción).
+    EmitRust {
+        #[arg(required = true)]
+        archivos: Vec<PathBuf>,
+        #[arg(short, long, default_value = "a.out.rs")]
+        out: PathBuf,
     },
     /// Compila y ejecuta vía C (requiere gcc/clang). Solo tareas sin IO.
     Run {
@@ -221,32 +234,81 @@ fn compilar_archivo(path: &Path, smt_timeout: u64) -> Result<Compilado> {
     };
 
     // Fase 4: SMT verify cada tarea
-    for ir in &programa_ir.tareas {
-        #[cfg(feature = "smt")]
-        {
-            let mut backend = VerificadorZ3::new();
-            let mut cache = CacheLemas::cargar();
-            verificar_tarea_con(ir, &mut backend, &mut cache, smt_timeout).map_err(|e| {
-                miette::miette!(
-                    "{}: verificación SMT (Z3) falló en '{}': {e}",
-                    path.display(),
-                    ir.nombre
-                )
-            })?;
-            cache.persistir();
+    // Estrategia: usar verificador de intervalos por defecto (rápido, siempre disponible).
+    // Z3 solo como opción experimental: setear variable de entorno SIL_USE_Z3=1
+
+    let usar_z3 = cfg!(feature = "smt") && std::env::var("SIL_USE_Z3").is_ok();
+
+    if usar_z3 {
+        // Z3 habilitado vía variable de entorno: intentar Z3 primero con timeout agresivo
+        let timeout_z3 = 500; // Timeout agresivo (500ms) para no bloquear
+        let mut backend_z3 = silc_causal_ir::smt::VerificadorZ3::new();
+        let mut cache = silc_causal_ir::smt::CacheLemas::cargar();
+
+        for ir in &programa_ir.tareas {
+            match silc_causal_ir::smt::verificar_tarea_con(
+                ir,
+                &mut backend_z3,
+                &mut cache,
+                timeout_z3,
+            ) {
+                Ok(()) => {
+                    cache.persistir();
+                }
+                Err(silc_causal_ir::smt::ErrorSMT::Indecidible { .. }) => {
+                    // Z3 timeoutó o no pudo decidir → fallback a intervalos silencioso
+                    debug!(tarea = %ir.nombre, "Z3 indecidible, usando intervalos");
+                    silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
+                        miette::miette!(
+                            "{}: verificación SMT (intervalos) falló en '{}': {e}",
+                            path.display(),
+                            ir.nombre
+                        )
+                    })?;
+                }
+                Err(e) => {
+                    // Error real (invariante violada): propagar inmediatamente
+                    return Err(miette::miette!(
+                        "{}: verificación SMT (Z3) falló en '{}': {e}",
+                        path.display(),
+                        ir.nombre
+                    ));
+                }
+            }
         }
-        #[cfg(not(feature = "smt"))]
-        {
-            silc_causal_ir::smt::verificar_tarea(ir, smt_timeout).map_err(|e| {
-                miette::miette!(
-                    "{}: verificación SMT (intervalos) falló en '{}': {e}",
-                    path.display(),
-                    ir.nombre
-                )
-            })?;
+        info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT (Z3 + intervalos fallback) OK");
+    } else {
+        // Verificador de intervalos por defecto (rápido); fallback a Z3 si resulta indecidible.
+        for ir in &programa_ir.tareas {
+            match silc_causal_ir::smt::verificar_tarea(ir, smt_timeout) {
+                Ok(()) => {}
+                #[cfg(feature = "smt")]
+                Err(ErrorSMT::Indecidible { .. }) => {
+                    debug!(tarea = %ir.nombre, "Intervalos indecidible, usando Z3");
+                    let mut backend_z3 = VerificadorZ3::new();
+                    let mut cache = CacheLemas::cargar();
+                    verificar_tarea_con(ir, &mut backend_z3, &mut cache, smt_timeout).map_err(
+                        |e| {
+                            miette::miette!(
+                                "{}: verificación SMT (Z3) falló en '{}': {e}",
+                                path.display(),
+                                ir.nombre
+                            )
+                        },
+                    )?;
+                    cache.persistir();
+                }
+                Err(e) => {
+                    return Err(miette::miette!(
+                        "{}: verificación SMT (intervalos) falló en '{}': {e}",
+                        path.display(),
+                        ir.nombre
+                    ));
+                }
+            }
         }
+        info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT OK");
     }
-    info!(archivo = %nombre, tareas = programa_ir.tareas.len(), "SMT OK");
 
     Ok(Compilado {
         nombre_archivo: nombre,
@@ -293,6 +355,39 @@ fn cmd_emit_smt(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
         }
     }
     let _ = smt_timeout;
+    Ok(())
+}
+
+fn cmd_emit_rust(archivos: &[PathBuf], smt_timeout: u64, out: &Path) -> Result<()> {
+    if archivos.len() != 1 {
+        return Err(miette::miette!(
+            "emit-rust requiere un solo archivo (auditoría humana)"
+        ));
+    }
+    let codigo = compilar_archivo(&archivos[0], smt_timeout)?;
+    if codigo.programa_ir.tareas.is_empty() {
+        return Err(miette::miette!("archivo sin tareas"));
+    }
+
+    // Generar Rust legible para cada tarea
+    let rust_code: Vec<String> = codigo
+        .programa_ir
+        .tareas
+        .iter()
+        .map(silc_backend::rust::emitir_tarea)
+        .collect();
+
+    let output = rust_code.join("\n\n");
+    std::fs::write(out, &output)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("No se pudo escribir {}", out.display()))?;
+
+    println!(
+        "{} → {} ({} bytes Rust - auditoría humana)",
+        codigo.nombre_archivo,
+        out.display(),
+        output.len()
+    );
     Ok(())
 }
 
@@ -484,6 +579,7 @@ fn main() -> Result<()> {
         }
         Comando::Check { archivos } => cmd_check(&archivos, cli.smt_timeout),
         Comando::EmitSmt { archivos } => cmd_emit_smt(&archivos, cli.smt_timeout),
+        Comando::EmitRust { archivos, out } => cmd_emit_rust(&archivos, cli.smt_timeout, &out),
         Comando::Run { archivos } => cmd_run(&archivos, cli.smt_timeout),
         Comando::Lsp => lsp::servir(),
     }

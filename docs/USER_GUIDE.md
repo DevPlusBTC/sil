@@ -16,7 +16,7 @@
 
 ## Introducción
 
-SIL (Source Implementation Language) es un lenguaje de programación de sistemas diseñado para eliminar categorías fundamentales de errores de software directamente durante la compilación.
+SIL (Semantic Intention Language) es un lenguaje de programación de sistemas diseñado para eliminar categorías fundamentales de errores de software directamente durante la compilación.
 
 ### Filosofía
 
@@ -28,16 +28,16 @@ SIL (Source Implementation Language) es un lenguaje de programación de sistemas
 ### Primer Programa
 
 ```sil
-definir tarea saludar(nombre: Texto) -> Texto:
-    asumir nombre.len > 0
-    demostrar nombre.len > 0
-    retornar nombre
+definir tarea incrementar(x: Entero64) -> Entero64:
+    asumir x > 0
+    demostrar x + 1 > 1
+    retornar x + 1
 ```
 
 Verificar:
 ```bash
-silc check saludar.sil
-# saludar.sil: OK (1 tareas verificadas)
+silc check incrementar.sil
+# incrementar.sil: OK (1 tareas verificadas)
 ```
 
 ---

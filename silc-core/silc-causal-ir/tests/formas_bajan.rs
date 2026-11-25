@@ -76,6 +76,39 @@ fn si_sino_si_cascada() {
     assert_eq!(ramas, 2, "se esperan 2 ramas (si + sino si), got {ramas}");
 }
 
+/// Un `mientras` baja a un bucle real: bloque condicion con terminador Rama,
+/// y el cuerpo salta de vuelta a condicion (arista atras, no un salto simple).
+///
+/// NOTA: `para` está en el lowering pero el iterable no tiene soporte de
+/// literal de colección (Vector/Mapa/Tupla). shortcut: colección iterable pendiente.
+#[test]
+fn mientras_es_un_bucle_real() {
+    let ir = baja(
+        "definir tarea sumar(n: Entero64) -> Entero64:\n    let _: Entero64 = n\n    mientras n > 0:\n        let _: Entero64 = n\n    retornar 0\n",
+    );
+    let ramas: Vec<_> = ir
+        .bloques
+        .values()
+        .filter(|b| matches!(b.terminador, silc_causal_ir::nodes::Terminador::Rama { .. }))
+        .collect();
+    assert!(
+        !ramas.is_empty(),
+        "esperaba al menos un bloque con terminador Rama (la condicion del bucle)"
+    );
+    // El bloque de entrada salta a la condicion, y el cuerpo vuelve a ella:
+    // eso es una arista atras, por lo que el IR es ciclico.
+    let saltos: Vec<_> = ir
+        .bloques
+        .values()
+        .filter(|b| matches!(b.terminador, silc_causal_ir::nodes::Terminador::Salto(_)))
+        .collect();
+    assert!(
+        saltos.len() >= 2,
+        "esperaba al menos 2 saltos (entrada->condicion y cuerpo->condicion), got {}",
+        saltos.len()
+    );
+}
+
 #[test]
 fn usos_sin_declarar_fallan() {
     for src in [
