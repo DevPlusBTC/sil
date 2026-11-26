@@ -1226,6 +1226,140 @@ pub fn verificar_tarea(tarea: &TareaIR, timeout_ms: u64) -> Result<(), ErrorSMT>
 }
 
 // =============================================================================
+// Helpers de soundness para el verificador de intervalos
+// =============================================================================
+
+/// Retorna true si la fórmula contiene aritmética que puede desbordar dadas
+/// las cotas actuales en `ivs`. Retorna false si la fórmula no tiene aritmética
+/// riesgosa o si todas las vars tienen intervalos puntuales (exactos).
+fn aritmetica_puede_desbordar(
+    f: &FormulaLogica,
+    ivs: &Map<String, Intervalo>,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> bool {
+    use std::collections::HashSet;
+    let mut vars_en_aritmetica: HashSet<String> = HashSet::new();
+
+    // Recolectar SOLO variables que participan en operaciones aritméticas (Add/Sub/Mul/Div)
+    fn recoge_vars_aritmeticas(
+        f: &FormulaLogica,
+        vars: &mut HashSet<String>,
+        nombres: &std::collections::HashMap<ValueId, String>,
+    ) {
+        let mut stack = vec![f];
+        while let Some(x) = stack.pop() {
+            match x {
+                FormulaLogica::Var(v) => { vars.insert(v.clone()); }
+                FormulaLogica::VarId(v) => {
+                    if let Some(nombre) = nombres.get(v) {
+                        vars.insert(nombre.clone());
+                    }
+                }
+                FormulaLogica::BinOp { op, lhs, rhs } => {
+                    // Solo recolectar vars si la operación es aritmética
+                    if matches!(op, OpLogico::Add | OpLogico::Sub | OpLogico::Mul | OpLogico::Div) {
+                        if let FormulaLogica::Var(v) = lhs.as_ref() { vars.insert(v.clone()); }
+                        if let FormulaLogica::Var(v) = rhs.as_ref() { vars.insert(v.clone()); }
+                        if let FormulaLogica::VarId(v) = lhs.as_ref() {
+                            if let Some(n) = nombres.get(v) { vars.insert(n.clone()); }
+                        }
+                        if let FormulaLogica::VarId(v) = rhs.as_ref() {
+                            if let Some(n) = nombres.get(v) { vars.insert(n.clone()); }
+                        }
+                        // Solo recurse en hijos si es aritmética
+                        stack.push(lhs);
+                        stack.push(rhs);
+                    } else {
+                        // Para comparaciones/booleanas: NO recolectar vars, NO recurse
+                        // porque no hay riesgo de overflow en comparación
+                    }
+                }
+                FormulaLogica::No(y) => stack.push(y),
+                _ => {}
+            }
+        }
+    }
+    recoge_vars_aritmeticas(f, &mut vars_en_aritmetica, nombres);
+
+    // Si no hay variables en operaciones aritméticas, no hay riesgo de overflow
+    if vars_en_aritmetica.is_empty() {
+        return false;
+    }
+
+    for v in &vars_en_aritmetica {
+        if let Some(iv) = ivs.get(v) {
+            // Sin cota conocida → riesgo
+            if iv.lo == i64::MIN || iv.hi == i64::MAX {
+                return true;
+            }
+            // Si no es intervalo punto (lo < hi), hay riesgo de overflow en aritmética
+            if iv.lo != iv.hi {
+                return true;
+            }
+        } else {
+            // Variable sin cota conocida → riesgo
+            return true;
+        }
+    }
+    false
+}
+
+/// Retorna true si la fórmula contiene división cuyo divisor puede ser cero
+/// en algún punto de los intervalos actuales.
+fn division_con_divisor_cero_posible(
+    f: &FormulaLogica,
+    ivs: &Map<String, Intervalo>,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> bool {
+    fn rec(
+        f: &FormulaLogica,
+        ivs: &Map<String, Intervalo>,
+        nombres: &std::collections::HashMap<ValueId, String>,
+    ) -> bool {
+        match f {
+            FormulaLogica::BinOp { op, lhs, rhs } => {
+                if matches!(op, OpLogico::Div) {
+                    // Verificar si rhs puede ser cero
+                    if puede_ser_cero(rhs, ivs, nombres) {
+                        return true;
+                    }
+                }
+                // Recursively check both sides for more divisions
+                rec(lhs, ivs, nombres) || rec(rhs, ivs, nombres)
+            }
+            FormulaLogica::No(x) => rec(x, ivs, nombres),
+            _ => false,
+        }
+    }
+    rec(f, ivs, nombres)
+}
+
+fn puede_ser_cero(
+    f: &FormulaLogica,
+    ivs: &Map<String, Intervalo>,
+    nombres: &std::collections::HashMap<ValueId, String>,
+) -> bool {
+    match f {
+        FormulaLogica::ConstInt(n) => *n == 0,
+        FormulaLogica::Var(v) => {
+            ivs.get(v).map(|iv| iv.lo <= 0 && iv.hi >= 0).unwrap_or(true)
+        }
+        FormulaLogica::VarId(v) => {
+            nombres.get(v).and_then(|n| ivs.get(n)).map(|iv| iv.lo <= 0 && iv.hi >= 0).unwrap_or(true)
+        }
+        FormulaLogica::BinOp { op, lhs, rhs } => {
+            // Para soundness simple: si es una operación que puede dar cero, asumimos riesgo
+            match op {
+                OpLogico::Sub | OpLogico::Add | OpLogico::Mul | OpLogico::Div => true,
+                _ => puede_ser_cero(lhs, ivs, nombres) || puede_ser_cero(rhs, ivs, nombres),
+            }
+        }
+        FormulaLogica::No(x) => puede_ser_cero(x, ivs, nombres),
+        _ => false,
+    }
+}
+
+// =============================================================================
 // Tests M4 (disciplina elite)
 // =============================================================================
 

@@ -1415,12 +1415,12 @@ fn emitir_instr(
 fn formula_a_c(
     f: &silc_causal_ir::nodes::FormulaLogica,
     e: &Emisor,
-    mapa_params: &HashMap<ValueId, String>,
+    _mapa_params: &HashMap<ValueId, String>,
 ) -> String {
     use silc_causal_ir::nodes::{FormulaLogica, OpLogico};
     match f {
         FormulaLogica::Var(v) => v.clone(),
-        FormulaLogica::VarId(v) => mapa_params
+        FormulaLogica::VarId(v) => e.vars
             .get(v)
             .cloned()
             .unwrap_or_else(|| format!("v{}", v.data().as_ffi())),
@@ -1443,11 +1443,11 @@ fn formula_a_c(
             };
             format!(
                 "({} {o} {})",
-                formula_a_c(lhs, e, mapa_params),
-                formula_a_c(rhs, e, mapa_params)
+                formula_a_c(lhs, e, _mapa_params),
+                formula_a_c(rhs, e, _mapa_params)
             )
         }
-        FormulaLogica::No(x) => format!("(!{})", formula_a_c(x, e, mapa_params)),
+        FormulaLogica::No(x) => format!("(!{})", formula_a_c(x, e, _mapa_params)),
     }
 }
 

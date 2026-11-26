@@ -837,13 +837,13 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
     let precondiciones = tarea
         .precondiciones
         .iter()
-        .map(|e| a_formula(&ctx, e).unwrap())
-        .collect();
+        .map(|e| a_formula(&ctx, e))
+        .collect::<Result<Vec<_>, _>>()?;
     let postcondiciones = tarea
         .postcondiciones
         .iter()
-        .map(|e| a_formula(&ctx, e).unwrap())
-        .collect();
+        .map(|e| a_formula(&ctx, e))
+        .collect::<Result<Vec<_>, _>>()?;
 
     // 5. Tipo de retorno (ya calculado en ctx al iniciar, para F3).
 
