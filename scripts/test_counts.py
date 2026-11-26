@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -29,6 +30,7 @@ PY_TESTS = [
     RAIZ / "test_sil_stdlib.py",
     RAIZ / "test_sil_wasm.py",
 ]
+C_TESTS = sorted((RAIZ / "silc-core" / "sil-rt" / "tests").glob("test_*.c"))
 
 MARCA_INICIO = "<!-- generado-por: scripts/test_counts.py -->"
 MARCA_FIN = "<!-- /generado -->"
@@ -52,6 +54,41 @@ def escribir(ruta: Path, texto: str, crlf: bool) -> None:
         f.write(salida)
 
 
+def contar_rust_falso() -> dict[str, int] | None:
+    """Conteos inyectados (solo pruebas locales sin toolchain de Rust).
+
+    Formato: TEST_COUNTS_FAKE_RUST="crate=n,crate=n". Documentado en el propio
+    script para que nadie lo confunda con una fuente de verdad: en CI nunca se
+    define y los conteos salen de `cargo test`.
+    """
+    crudo = os.environ.get("TEST_COUNTS_FAKE_RUST")
+    if not crudo:
+        return None
+    conteos: dict[str, int] = {}
+    for trozo in crudo.split(","):
+        nombre, _, valor = trozo.partition("=")
+        if not nombre or not valor.strip().isdigit():
+            sys.exit(f"error: TEST_COUNTS_FAKE_RUST invalido en {trozo!r}")
+        conteos[nombre.strip()] = int(valor)
+    return dict(sorted(conteos.items()))
+
+
+def contar_c() -> tuple[int, int]:
+    """Casos y comprobaciones del runtime C (statics, sin compilar).
+
+    Un `ST_CASO(...)` es un caso de prueba; las macros `ST_CHECK*` cuentan
+    comprobaciones escritas (algunas viven en bucles, asi que el numero real
+    ejecutado es mayor: `scripts/run_c_tests.sh` lo imprime).
+    """
+    casos = 0
+    comprobaciones = 0
+    for archivo in C_TESTS:
+        texto = archivo.read_text(encoding="utf-8")
+        casos += len(re.findall(r"^\s*ST_CASO\(", texto, re.M))
+        comprobaciones += len(re.findall(r"^\s*ST_CHECK(?:_EQ|_STR)?\(", texto, re.M))
+    return casos, comprobaciones
+
+
 def contar_rust() -> dict[str, int]:
     """Tests por crate, contados sobre los binarios reales del workspace.
 
@@ -61,6 +98,10 @@ def contar_rust() -> dict[str, int]:
     `silc-causal-ir` sólo cuando se construye todo junto), no lo que vería un
     `cargo test -p <crate>` aislado.
     """
+    falso = contar_rust_falso()
+    if falso is not None:
+        return falso
+
     compilacion = subprocess.run(
         ["cargo", "test", "--workspace", "--no-run", "--message-format=json"],
         cwd=WORKSPACE,
@@ -142,6 +183,23 @@ def reemplazar_una_vez(texto: str, patron: str, nuevo: str, archivo: Path) -> st
     return regex.sub(lambda _m: nuevo, texto)
 
 
+def fila_c(etiqueta: str, casos: int, comprobaciones: int) -> str:
+    return f"| **{etiqueta}** | **{casos} casos / {comprobaciones} comprobaciones ✅** |"
+
+
+def actualizar_fila_c(texto: str, etiqueta: str, casos: int, comprobaciones: int,
+                      archivo: Path, tras: str) -> str:
+    """Inserta o actualiza la fila de tests C justo despues de la fila `tras`."""
+    nueva = fila_c(etiqueta, casos, comprobaciones)
+    patron_existente = re.compile(r"^\| \*\*" + re.escape(etiqueta) + r"\*\* \|.*$", re.M)
+    if patron_existente.search(texto):
+        return reemplazar_una_vez(texto, patron_existente.pattern, nueva, archivo)
+    patron_ancla = re.compile(r"^" + re.escape(tras) + r"$", re.M)
+    if len(patron_ancla.findall(texto)) != 1:
+        sys.exit(f"error: {archivo.relative_to(RAIZ)}: falta el ancla {tras!r}")
+    return patron_ancla.sub(lambda m: m.group(0) + "\n" + nueva, texto)
+
+
 def tabla_crates(conteos: dict[str, int]) -> str:
     lineas = [MARCA_INICIO, "| Crate | Tests |", "|---|---|"]
     lineas += [f"| `{c}` | {n} |" for c, n in conteos.items()]
@@ -158,12 +216,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not shutil.which("cargo"):
-        sys.exit("error: cargo no está en PATH")
+    inyectado = contar_rust_falso() is not None
+    if not inyectado and not shutil.which("cargo"):
+        sys.exit("error: cargo no está en PATH (o define TEST_COUNTS_FAKE_RUST)")
 
     conteos = contar_rust()
     rust_total = sum(conteos.values())
     py_total = contar_python()
+    c_casos, c_checks = contar_c()
 
     cambios: list[tuple[Path, str, str, bool]] = []
 
@@ -181,21 +241,26 @@ def main() -> int:
         f"| **Tests Python** | **{py_total}/{py_total} ✅** |",
         readme,
     )
+    t2 = actualizar_fila_c(
+        t2, "Tests C (runtime)", c_casos, c_checks, readme,
+        f"| **Tests Python** | **{py_total}/{py_total} ✅** |",
+    )
     cambios.append((readme, t, t2, readme_crlf))
 
     paper = RAIZ / "docs/WHITE_PAPER.md"
     t, paper_crlf = leer(paper)
     t2 = reemplazar_una_vez(
         t,
-        r"\| \*\*Tests Totales\*\* \| \*\*\d+/\d+ Rust \+ \d+ Python ✅\*\* \|",
-        f"| **Tests Totales** | **{rust_total}/{rust_total} Rust + {py_total} Python ✅** |",
+        r"\| \*\*Tests Totales\*\* \|.*$",
+        f"| **Tests Totales** | **{rust_total}/{rust_total} Rust + {py_total} Python + "
+        f"{c_casos} C ✅** |",
         paper,
     )
     t2 = reemplazar_una_vez(
         t2,
-        r"^- \d+ tests Rust \+ \d+ Python pasando.*$",
-        f"- {rust_total} tests Rust + {py_total} Python pasando, CI verde en los 3 OS "
-        "(incluye fuzz y reproducibilidad)",
+        r"^- \d+ tests Rust \+ \d+ Python.*$",
+        f"- {rust_total} tests Rust + {py_total} Python + {c_casos} casos C ({c_checks} "
+        "comprobaciones) pasando; CI verde en los 3 OS (incluye fuzz y reproducibilidad)",
         paper,
     )
     cambios.append((paper, t, t2, paper_crlf))
@@ -204,8 +269,9 @@ def main() -> int:
     t, spec_crlf = leer(spec)
     t2 = reemplazar_una_vez(
         t,
-        r"\| Tests \| Listo para probar \| \d+ Rust \+ \d+ Python \|",
-        f"| Tests | Listo para probar | {rust_total} Rust + {py_total} Python |",
+        r"\| Tests \| Listo para probar \|.*$",
+        f"| Tests | Listo para probar | {rust_total} Rust + {py_total} Python + "
+        f"{c_casos} C |",
         spec,
     )
     bloque = re.compile(re.escape(MARCA_INICIO) + r".*?" + re.escape(MARCA_FIN), re.S)
@@ -214,20 +280,24 @@ def main() -> int:
             f"error: {spec.name}: falta el bloque {MARCA_INICIO} … {MARCA_FIN} "
             "donde va la tabla por crate"
         )
-    t2 = bloque.sub(lambda _m: tabla_crates(conteos), t2)
+    tabla = tabla_crates({**conteos, "sil-rt (C, casos)": c_casos})
+    t2 = bloque.sub(lambda _m: tabla, t2)
     cambios.append((spec, t, t2, spec_crlf))
 
     desfasados = [ruta for ruta, antes, despues, _crlf in cambios if antes != despues]
 
     if args.check:
         if not desfasados:
-            print(f"OK: docs al día ({rust_total} Rust + {py_total} Python)")
+            print(
+                f"OK: docs al día ({rust_total} Rust + {py_total} Python + "
+                f"{c_casos} C)"
+            )
             return 0
         for ruta in desfasados:
             print(f"desfasado: {ruta.relative_to(RAIZ)}")
         print(
             f"\nEjecuta `python3 scripts/test_counts.py` y commitea el resultado "
-            f"(esperado: {rust_total} Rust + {py_total} Python)."
+            f"(esperado: {rust_total} Rust + {py_total} Python + {c_casos} C)."
         )
         return 1
 
@@ -235,7 +305,8 @@ def main() -> int:
         escribir(ruta, despues, crlf)
 
     estado = "actualizados" if desfasados else "sin cambios"
-    print(f"{estado}: {rust_total} Rust + {py_total} Python")
+    print(f"{estado}: {rust_total} Rust + {py_total} Python + {c_casos} casos C "
+          f"({c_checks} comprobaciones)")
     for crate, n in conteos.items():
         print(f"  {crate}: {n}")
     return 0

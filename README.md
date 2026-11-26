@@ -4,7 +4,45 @@
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
+## 📊 Estado Real del Proyecto
+
+| Métrica | Valor |
+|---------|-------|
+| **Tests Rust** | **193/193 ✅** |
+| **Tests Python** | **31/31 ✅** |
+| **Tests C (runtime)** | **52 casos / 318 comprobaciones ✅** |
+| **Crates** | 7/7 compilan |
+| **Líneas código** | ~15,000 Rust |
+| **Estado real** | **Fase 0 (Semilla)** |
+| **Próximo hito** | Codegen de servicios/red; decidir LLVM (job de CI o experimental); validar eBPF con libbpf 1.x |
+
 ---
+
+## Verificación en local
+
+Un solo comando ejecuta los mismos gates que la CI antes de abrir un PR:
+
+```bash
+scripts/pre-pr.sh                 # todos los gates de la CI, en local
+├─ fmt, clippy, cargo test        # gates de Rust (se omiten sin toolchain)
+├─ scripts/run_c_tests.sh         # runtime C: estricto + ASan/UBSan + TSan
+├─ tests Python                   # pytest si está, si no unittest
+└─ test_counts.py --check         # los conteos de tests no se desfasan
+```
+
+Los gates que no se pueden ejecutar (p. ej. sin toolchain de Rust) se marcan
+**OMITIDO**, nunca como éxito. Para trabajar solo el runtime:
+`scripts/run_c_tests.sh` y `scripts/run_c_tests.sh --bench` (medidas
+reproducibles de arena y canales).
+
+El flujo de ramas, mensajes y evidencia que se espera en un PR está en
+[`CONTRIBUTING.md`](CONTRIBUTING.md#flujo-de-trabajo-con-git).
+
+Cubre arenas (alineación, desbordamiento, ciclos, promoción), canales SPSC/MPSC
+(contrapresión, concurrencia real), fibras (round-robin, `yield`), SHA-256/HMAC
+contra vectores FIPS 180-4 y RFC 4231, capacidades Zero-Trust y el runtime
+embebido que `silc build --target c99` inyecta en cada programa.
+Estado, hallazgos y hoja de ruta: [`docs/AUDITORIA.md`](docs/AUDITORIA.md).
 
 ## Instalación
 
@@ -55,9 +93,6 @@ Ejecutar las pruebas del proyecto:
 ```bash
 cargo test --workspace
 ```
-
-| **Tests Rust** | **192/192 ✅** |
-| **Tests Python** | **31/31 ✅** |
 
 ---
 

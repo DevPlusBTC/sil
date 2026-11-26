@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 85f9c6c2e2b662d039f14d0f5f1cfbc6d237eb4f1ad388f77079bf45c8296517 # shrinks to ast = Program { defs: [Tarea(TareaDecl { nombre: Ident { nombre: "A", span: 0..0 }, params: [], retorno: None, cuerpo: Cuerpo { stmts: [Verificar { cond: BinOp { op: Add, lhs: Lit(Texto("¡")), rhs: Var(Ident { nombre: "A", span: 0..0 }), span: 0..0 }, span: 0..0 }], restricciones: [] }, span: 0..0, precondiciones: [], postcondiciones: [] })] }

@@ -18,7 +18,7 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | CLI (`silc`) | Listo para probar | 6 comandos: check, build, emit-smt, emit-rust, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
-| Tests | Listo para probar | 192 Rust + 31 Python |
+| Tests | Listo para probar | 193 Rust + 31 Python + 52 C |
 
 **Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM,
 migración de esquemas lazy, SPIR-V/GPU, eBPF (opt-in `SIL_EBPF=1`; la rama
@@ -193,6 +193,9 @@ Emite SMT-LIB2 (QF_LIA):
 |------------|------------|
 | La última tarea con parámetros se emite como biblioteca (sin `main`) | Añadir una tarea principal sin parámetros al final |
 | `generar` en C99 requiere tarea principal sin parámetros | Usar WASM (llamada directa) o una principal sin parámetros |
+| Los canales tienen capacidad acotada: `enviar` falla con el canal lleno | Dimensionar con `crear canal con capacidad N` o drenar antes de enviar |
+| El C emitido no emite `cerrar canal`: el pool es de 16 canales por programa | Evitar crear canales dentro de bucles largos (ver AUDITORIA.md R-02) |
+| Los canales aceptan `void *` no nulo; `enviar NULL` devuelve `false` | Enviar un puntero a un valor (el canal no transporta `nulo`) |
 | SMT timeout 60s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `demostrar` |
 | Sin stdlib/prelude | Definir tipos base en cada archivo |
 | Sin `silpm` / `silfmt` / `silup` | Usar `cargo build` + `silc` directo |
@@ -221,10 +224,11 @@ Conteo generado con `python3 scripts/test_counts.py`; la CI ejecuta
 | `silc-causal-ir` | 41 |
 | `silc-cli` | 18 |
 | `silc-contracts` | 17 |
-| `silc-frontend` | 30 |
+| `silc-frontend` | 31 |
 | `silc-runtime` | 16 |
 | `silc-test` | 40 |
-| **Total** | **192** |
+| `sil-rt (C, casos)` | 52 |
+| **Total** | **245** |
 <!-- /generado -->
 
 ---

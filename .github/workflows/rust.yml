@@ -155,6 +155,10 @@ jobs:
 
       # Los conteos de tests de README/SPEC/WHITE_PAPER se generan con un script.
       # Si alguien añade tests y no lo regenera, este paso falla con el total real.
+      - name: Docs al día (conteos de tests)
+        if: runner.os == 'Linux'
+        run: python3 scripts/test_counts.py --check
+
       - name: Clippy (deny warnings)
         run: |
           echo "=== Memoria antes de clippy ==="
@@ -229,7 +233,25 @@ jobs:
 
           echo "Todos los ejemplos inválidos fallaron como se esperaba"
 
-  # --- 3. Python prototipo (ligero) ---
+  # --- 3. Runtime C (sil-rt) + runtime que emite el backend C99 ---
+  #
+  # Los tests de Rust de `silc-runtime` solo cubren arenas y capacidades;
+  # canales, fibras, HMAC y el runtime embebido en el C emitido no tenían
+  # ninguna prueba ejecutable. Este job compila cada fuente con
+  # -std=c99 -pedantic-errors -Wall -Wextra -Werror y ejecuta la suite con
+  # ASan/UBSan/TSan, además de compilar la extracción verbatim del runtime de
+  # silc-backend (scripts/extraer_runtime_c.py).
+  runtime-c:
+    name: runtime C (estricto + ASan/UBSan/TSan)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compilador
+        run: cc --version
+      - name: Suite del runtime C
+        run: ./scripts/run_c_tests.sh
+
+  # --- 4. Python prototipo (ligero) ---
   python-proto:
     name: python prototipo (31 tests)
     runs-on: ubuntu-22.04
