@@ -521,6 +521,7 @@ fn cmd_run(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
     // Compilar a binario temporal.
     let tmp_bin = tmp_c.with_extension(if cfg!(windows) { "exe" } else { "out" });
     let comps = ["cc", "gcc", "clang"];
+    let mut last_err = String::new();
     let mut compilado = false;
     for cc in comps {
         let mut cmd = std::process::Command::new(cc);
@@ -532,13 +533,25 @@ fn cmd_run(archivos: &[PathBuf], smt_timeout: u64) -> Result<()> {
             cmd.arg("-lws2_32");
         }
         let r = cmd.output();
-        if matches!(r, Ok(o) if o.status.success()) {
-            compilado = true;
-            break;
+        match r {
+            Ok(o) if o.status.success() => {
+                compilado = true;
+                break;
+            }
+            Ok(o) => {
+                last_err = String::from_utf8_lossy(&o.stderr).to_string();
+            }
+            Err(e) => {
+                last_err = e.to_string();
+            }
         }
     }
     if !compilado {
-        return Err(miette::miette!("sin compilador C para `silc run`"));
+        let _ = std::fs::remove_file(&tmp_c);
+        return Err(miette::miette!(
+            "falló la compilación C para `silc run`:\n{}",
+            last_err
+        ));
     }
     let out = std::process::Command::new(&tmp_bin)
         .output()

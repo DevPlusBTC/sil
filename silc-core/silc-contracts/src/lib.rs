@@ -14,6 +14,16 @@ pub fn require(cond: bool, msg: &str) {
     }
 }
 
+/// Versión que retorna `Result` en vez de hacer panic.
+#[inline(always)]
+pub fn try_require(cond: bool, msg: &str) -> Result<(), String> {
+    if !cond {
+        Err(format!("PRECONDICIÓN VIOLADA: {msg}"))
+    } else {
+        Ok(())
+    }
+}
+
 /// Ejecuta un contrato postcondición. Panic si falla.
 #[inline(always)]
 pub fn ensure(cond: bool, msg: &str) {
@@ -22,11 +32,31 @@ pub fn ensure(cond: bool, msg: &str) {
     }
 }
 
+/// Versión que retorna `Result` en vez de hacer panic.
+#[inline(always)]
+pub fn try_ensure(cond: bool, msg: &str) -> Result<(), String> {
+    if !cond {
+        Err(format!("POSTCONDICIÓN VIOLADA: {msg}"))
+    } else {
+        Ok(())
+    }
+}
+
 /// Ejecuta un invariante de estructura. Panic si falla.
 #[inline(always)]
 pub fn invariant(cond: bool, msg: &str) {
     if !cond {
         panic!("INVARIANTE VIOLADO: {msg}");
+    }
+}
+
+/// Versión que retorna `Result` en vez de hacer panic.
+#[inline(always)]
+pub fn try_invariant(cond: bool, msg: &str) -> Result<(), String> {
+    if !cond {
+        Err(format!("INVARIANTE VIOLADO: {msg}"))
+    } else {
+        Ok(())
     }
 }
 
@@ -145,12 +175,45 @@ pub fn require_valid_ident(s: &str, max_len: usize, msg: &str) {
     );
 }
 
+/// Versión que retorna `Result` en vez de hacer panic.
+#[inline(always)]
+pub fn try_require_valid_ident(s: &str, max_len: usize, msg: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Err(format!("{msg}: identificador vacío"));
+    }
+    if s.len() > max_len {
+        return Err(format!("{msg}: identificador excede {max_len} caracteres"));
+    }
+    if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(format!("{msg}: caracteres inválidos (solo ASCII alfanumérico + _)"));
+    }
+    if !s.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+        return Err(format!("{msg}: debe empezar por letra o _"));
+    }
+    Ok(())
+}
+
 /// Verifica que un path es seguro (sin traversal).
 #[inline(always)]
 pub fn require_safe_path(path: &str, msg: &str) {
     require(!path.is_empty(), msg);
     require(!path.contains(".."), msg);
     require(!path.contains('\0'), msg);
+}
+
+/// Versión que retorna `Result` en vez de hacer panic.
+#[inline(always)]
+pub fn try_require_safe_path(path: &str, msg: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err(format!("{msg}: path vacío"));
+    }
+    if path.contains("..") {
+        return Err(format!("{msg}: traversal '..' no permitido"));
+    }
+    if path.contains('\0') {
+        return Err(format!("{msg}: null byte no permitido"));
+    }
+    Ok(())
 }
 
 /// Ejecuta una closure capturando panics, retorna `Err` si panica.

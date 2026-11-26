@@ -228,9 +228,7 @@ SIL/
 ├── silc_bootstrap.py    # Bootstrapper del compilador (Python)
 ├── sil_stdlib.py        # Biblioteca estándar SIL (C99)
 ├── sil_wasm.py          # Backend WASM (Python)
-├── sil_lsp.py           # Prototipo LSP legado en Python (el canónico es `silc lsp`)
 ├── README.md            # Documentación principal
-├── sil.toml             # Archivo de configuración de proyecto SIL
 ├── CONTRIBUTING.md      # Esta guía de contribución
 └── docs/                # Documentación técnica
     ├── SPEC.md          # Especificación del lenguaje

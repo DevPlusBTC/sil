@@ -24,6 +24,8 @@ pub enum ErrorBajada {
     VariableNoDefinida(String),
     #[error("Expresion no bajable: {0}")]
     ExpresionNoBajable(String),
+    #[error("Identificador inválido: {0}")]
+    IdentificadorInvalido(String),
 }
 
 // =============================================================================
@@ -776,7 +778,8 @@ fn bajar_sentencia(ctx: &mut Ctx, s: &A::Stmt) -> Result<(), ErrorBajada> {
 pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
     // Precondición: nombre de tarea no vacío
     require(!tarea.nombre.nombre.is_empty(), "nombre de tarea vacío");
-    require_valid_ident(&tarea.nombre.nombre, 64, "identificador de tarea inválido");
+    try_require_valid_ident(&tarea.nombre.nombre, 64, "identificador de tarea inválido")
+        .map_err(ErrorBajada::IdentificadorInvalido)?;
 
     let mut ctx = Ctx::new();
     ctx.retorno = match &tarea.retorno {
@@ -787,7 +790,8 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
     // 1. Parámetros → nodos Param + registro en vars.
     let mut params = Vec::new();
     for p in &tarea.params {
-        require_valid_ident(&p.nombre.nombre, 64, "parámetro inválido");
+        try_require_valid_ident(&p.nombre.nombre, 64, "parámetro inválido")
+            .map_err(ErrorBajada::IdentificadorInvalido)?;
         let t = bajar_tipo(&p.tipo)?;
         let id = ctx.nuevo_valor(t.clone());
         ctx.emitir(InstrCausal {
@@ -897,7 +901,8 @@ pub fn bajar_tarea(tarea: &A::TareaDecl) -> Result<TareaIR, ErrorBajada> {
 // =============================================================================
 
 fn bajar_campo(campo: &A::Campo) -> Result<CampoIR, ErrorBajada> {
-    require_valid_ident(&campo.nombre.nombre, 64, "nombre de campo inválido");
+    try_require_valid_ident(&campo.nombre.nombre, 64, "nombre de campo inválido")
+        .map_err(ErrorBajada::IdentificadorInvalido)?;
     let t = bajar_tipo(&campo.tipo)?;
     Ok(CampoIR {
         nombre: campo.nombre.nombre.clone(),
@@ -906,7 +911,8 @@ fn bajar_campo(campo: &A::Campo) -> Result<CampoIR, ErrorBajada> {
 }
 
 fn bajar_estructura(est: &A::EstructuraDecl) -> Result<TipoDefinido, ErrorBajada> {
-    require_valid_ident(&est.nombre.nombre, 64, "nombre de estructura inválido");
+    try_require_valid_ident(&est.nombre.nombre, 64, "nombre de estructura inválido")
+        .map_err(ErrorBajada::IdentificadorInvalido)?;
     let mut campos = Vec::new();
     for c in &est.campos {
         campos.push(bajar_campo(c)?);
@@ -920,10 +926,12 @@ fn bajar_estructura(est: &A::EstructuraDecl) -> Result<TipoDefinido, ErrorBajada
 }
 
 fn bajar_variante(var: &A::VarianteDecl) -> Result<TipoDefinido, ErrorBajada> {
-    require_valid_ident(&var.nombre.nombre, 64, "nombre de variante inválido");
+    try_require_valid_ident(&var.nombre.nombre, 64, "nombre de variante inválido")
+        .map_err(ErrorBajada::IdentificadorInvalido)?;
     let mut constructores = Vec::new();
     for caso in &var.casos {
-        require_valid_ident(&caso.nombre.nombre, 64, "nombre de constructor inválido");
+        try_require_valid_ident(&caso.nombre.nombre, 64, "nombre de constructor inválido")
+            .map_err(ErrorBajada::IdentificadorInvalido)?;
         let mut campos = Vec::new();
         for c in &caso.datos {
             campos.push(bajar_campo(c)?);
@@ -942,7 +950,8 @@ fn bajar_variante(var: &A::VarianteDecl) -> Result<TipoDefinido, ErrorBajada> {
 }
 
 fn bajar_modelo(r#mod: &A::ModeloDecl) -> Result<TipoDefinido, ErrorBajada> {
-    require_valid_ident(&r#mod.nombre.nombre, 64, "nombre de modelo inválido");
+    try_require_valid_ident(&r#mod.nombre.nombre, 64, "nombre de modelo inválido")
+        .map_err(ErrorBajada::IdentificadorInvalido)?;
     let mut campos = Vec::new();
     for c in &r#mod.campos {
         campos.push(bajar_campo(c)?);
