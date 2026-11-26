@@ -26,7 +26,11 @@ struct P<'a> {
 
 impl<'a> P<'a> {
     fn new(toks: &'a [TokenFull]) -> Self {
-        Self { toks, pos: 0, depth: 0 }
+        Self {
+            toks,
+            pos: 0,
+            depth: 0,
+        }
     }
 
     fn peek(&self) -> &TokenFull {

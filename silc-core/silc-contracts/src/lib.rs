@@ -185,9 +185,15 @@ pub fn try_require_valid_ident(s: &str, max_len: usize, msg: &str) -> Result<(),
         return Err(format!("{msg}: identificador excede {max_len} caracteres"));
     }
     if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(format!("{msg}: caracteres inválidos (solo ASCII alfanumérico + _)"));
+        return Err(format!(
+            "{msg}: caracteres inválidos (solo ASCII alfanumérico + _)"
+        ));
     }
-    if !s.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
+    if !s
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    {
         return Err(format!("{msg}: debe empezar por letra o _"));
     }
     Ok(())

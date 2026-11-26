@@ -425,7 +425,10 @@ fn parser_rechaza_expresion_profunda() {
     assert!(result.is_err(), "Debería rechazar profundidad > 256");
     if let Err(e) = result {
         let msg = format!("{e:?}");
-        assert!(msg.contains("ExpresionDemasiadoProfunda") || msg.contains("profund"), "Error debe ser por profundidad: {msg}");
+        assert!(
+            msg.contains("ExpresionDemasiadoProfunda") || msg.contains("profund"),
+            "Error debe ser por profundidad: {msg}"
+        );
     }
 }
 
