@@ -21,11 +21,12 @@ use miette::SourceSpan;
 struct P<'a> {
     toks: &'a [TokenFull],
     pos: usize,
+    depth: u32,
 }
 
 impl<'a> P<'a> {
     fn new(toks: &'a [TokenFull]) -> Self {
-        Self { toks, pos: 0 }
+        Self { toks, pos: 0, depth: 0 }
     }
 
     fn peek(&self) -> &TokenFull {
@@ -1316,8 +1317,17 @@ fn parse_primary(p: &mut P) -> Result<Expr, ErrorFrontend> {
                 }
             }
             Token::LParen => {
+                const MAX_DEPTH: u32 = 256;
+                if p.depth >= MAX_DEPTH {
+                    return Err(ErrorFrontend::ExpresionDemasiadoProfunda {
+                        max: MAX_DEPTH,
+                        span: span_of(p.peek()),
+                    });
+                }
+                p.depth += 1;
                 p.bump();
                 let e = parse_expr(p)?;
+                p.depth -= 1;
                 p.expect_sym(Token::RParen)?;
                 Ok(e)
             }

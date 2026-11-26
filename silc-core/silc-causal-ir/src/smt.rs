@@ -148,26 +148,37 @@ pub struct CacheLemas {
 }
 
 const CACHE_VERSION: u32 = 1;
+/// Clave secreta para HMAC del cache. Cambiar esto invalida todos los caches existentes.
+/// Generado con: `openssl rand -hex 32`
+const CACHE_HMAC_KEY: &[u8] = b"silc-smt-cache-hmac-key-2025-v1-32by";
 
 impl CacheLemas {
     pub fn cargar() -> Self {
         let path = cache_path();
         let mut probados = HashMap::new();
         if let Ok(bytes) = std::fs::read(&path) {
-            // Formato: [version:u32 LE][n:u64 LE][hash:64]*n
-            if bytes.len() >= 12 {
+            // Formato: [version:u32 LE][n:u64 LE][hash:64]*n[hmac:32]
+            const HMAC_LEN: usize = 32;
+            if bytes.len() >= 12 + HMAC_LEN {
                 let ver = u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4]));
                 if ver == CACHE_VERSION {
                     let n = u64::from_le_bytes(bytes[4..12].try_into().unwrap_or([0; 8])) as usize;
-                    let mut off = 12;
-                    for _ in 0..n {
-                        if off + 64 > bytes.len() {
-                            break;
+                    let expected_len = 12 + n * 64 + HMAC_LEN;
+                    if bytes.len() >= expected_len {
+                        let payload = &bytes[..12 + n * 64];
+                        let hmac = &bytes[12 + n * 64..expected_len];
+                        if Self::verificar_hmac(payload, hmac) {
+                            let mut off = 12;
+                            for _ in 0..n {
+                                if off + 64 > payload.len() {
+                                    break;
+                                }
+                                let mut h = [0u8; 64];
+                                h.copy_from_slice(&payload[off..off + 64]);
+                                probados.insert(h, ());
+                                off += 64;
+                            }
                         }
-                        let mut h = [0u8; 64];
-                        h.copy_from_slice(&bytes[off..off + 64]);
-                        probados.insert(h, ());
-                        off += 64;
                     }
                 }
             }
@@ -177,6 +188,27 @@ impl CacheLemas {
             path,
             dirty: false,
         }
+    }
+
+    fn verificar_hmac(payload: &[u8], hmac: &[u8]) -> bool {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = HmacSha256::new_from_slice(CACHE_HMAC_KEY).expect("HMAC key");
+        mac.update(payload);
+        mac.verify_slice(hmac).is_ok()
+    }
+
+    fn calcular_hmac(payload: &[u8]) -> [u8; 32] {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = HmacSha256::new_from_slice(CACHE_HMAC_KEY).expect("HMAC key");
+        mac.update(payload);
+        let result = mac.finalize().into_bytes();
+        let mut out = [0u8; 32];
+        out.copy_from_slice(&result);
+        out
     }
 
     pub fn contiene(&self, hash: &[u8; 64]) -> bool {
@@ -195,7 +227,7 @@ impl CacheLemas {
     ///
     /// # Contrato
     /// - Pre: `self.path` debe ser ruta válida
-    /// - Post: Cache persistido atómicamente (tmp + rename)
+    /// - Post: Cache persistido atómicamente (tmp + rename) con HMAC
     /// - Invariante: Solo persiste si `dirty == true`
     pub fn persistir(&self) {
         require(!self.path.as_os_str().is_empty(), "path de cache vacío");
@@ -211,12 +243,14 @@ impl CacheLemas {
                 return;
             }
         }
-        let mut buf = Vec::with_capacity(12 + 64 * self.probados.len());
+        let mut buf = Vec::with_capacity(12 + 64 * self.probados.len() + 32);
         buf.extend_from_slice(&CACHE_VERSION.to_le_bytes());
         buf.extend_from_slice(&(self.probados.len() as u64).to_le_bytes());
         for h in self.probados.keys() {
             buf.extend_from_slice(h);
         }
+        let hmac = Self::calcular_hmac(&buf);
+        buf.extend_from_slice(&hmac);
         // Escritura atómica best-effort: tmp único por proceso + rename.
         // Si el directorio no es escribible (p. ej. sandbox/CI), no abortar la compilación.
         let tmp = self

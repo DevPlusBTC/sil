@@ -38,4 +38,15 @@ pub enum ErrorFrontend {
         help("Falta cerrar un bloque con la indentación correcta o falta el cuerpo de la tarea.")
     )]
     FinInesperado,
+
+    #[error("Expresión anidada demasiado profunda (máximo {max})")]
+    #[diagnostic(
+        code(silc::parser::expresion_profunda),
+        help("Simplifica la expresión. SIL limita el anidamiento para evitar desbordamiento de pila en el parser.")
+    )]
+    ExpresionDemasiadoProfunda {
+        max: u32,
+        #[label("aquí")]
+        span: SourceSpan,
+    },
 }

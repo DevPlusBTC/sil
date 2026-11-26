@@ -213,7 +213,8 @@ fn diagnosticos(fuente: &str) -> Vec<Value> {
 fn span_de_error(error: &ErrorFrontend) -> (usize, usize) {
     match error {
         ErrorFrontend::CaracterDesconocido { span, .. }
-        | ErrorFrontend::TokenInesperado { span, .. } => (span.offset(), span.len()),
+        | ErrorFrontend::TokenInesperado { span, .. }
+        | ErrorFrontend::ExpresionDemasiadoProfunda { span, .. } => (span.offset(), span.len()),
         ErrorFrontend::FinInesperado => (usize::MAX, 0),
     }
 }
