@@ -4,24 +4,24 @@
   "scopeName": "source.sil",
   "patterns": [
     {
-      "name": "comment.line.double-slash.sil",
-      "match": "//.*$"
+      "name": "comment.line.semicolon.sil",
+      "match": ";.*$"
     },
     {
       "name": "keyword.control.sil",
-      "match": "\\b(definir|tarea|servicio|estructura|variante|opcion|memoria_persistente|migrar|capacidad|requerir|importar|exportar|modulo|vincular|biblioteca_nativa|funcion_externa|asumir|demostrar|verificar|que|retornar|let|mut|ejecutar|enviar|guardar|convertir|a|usando|coincidir|en|caso|si|entonces|cualquier|otro|bajo|restricciones|escuchar|en|puerto|con|protocolo|cuando|llegue|evento|para|cada|mientras|verdadero|falso|nulo|permitir|conectar|limite_ancho_banda|probar|propiedad|demostrar|al|cargar|acceder_campo|valor_predeterminado|desde|hasta|como|con|datos|de|forma|atomica|asincrona|en_memoria|promover|arena|hoisting|zero_copy|mmap|durabilidad|hardware|recuperacion|tiempo|constante|branchless|tpm|enclave|firma|validar|capacidad|efimera|ttl|microsegundos|nanosegundos|milisegundos|segundos)\\b"
+      "match": "\\b(task|struct|model|memory|variant|case|service|handler|net|protocol|capability|resource|port|bandwidth|module|export|migration|from|to|field|record|default|restrictions|params|returns|requires|ensures|body|if|else|assert|assume|prove|invariant|while|for|let|let-mut|return|request|validate|send|recv|spawn|chan|capacity|io-read|io-write|io-send|io-recv)\\b"
     },
     {
       "name": "storage.type.sil",
-      "match": "\\b(Entero64|Flotante64|Booleano|Texto|CapacidadHardware|Void|Tensor|Lista|Mapa|Conjunto|Tupla|USD|EUR)\\b"
+      "match": "\\b(i64|f64|booleano|texto|capacidad|void|USD|EUR|list|map|set|tuple)\\b"
     },
     {
       "name": "constant.numeric.sil",
-      "match": "\\b[0-9]+\\b"
+      "match": "\\b[+-]?[0-9]+(\\.[0-9]+)?\\b"
     },
     {
       "name": "constant.language.sil",
-      "match": "\\b(verdadero|falso|nulo)\\b"
+      "match": "\\b(verdadero|falso)\\b"
     },
     {
       "name": "string.quoted.double.sil",
@@ -31,28 +31,24 @@
         {
           "name": "constant.character.escape.sil",
           "match": "\\\\."
-        },
-        {
-          "name": "variable.interpolation.sil",
-          "match": "\\{[^}]+\\}"
         }
       ]
     },
     {
-      "name": "variable.parameter.sil",
-      "match": "\\b[a-z_][a-z0-9_]*\\b(?=\\s*:)"
-    },
-    {
-      "name": "entity.name.function.sil",
-      "match": "\\b[A-Z][a-zA-Z0-9_]*\\b(?=\\s*\\()"
-    },
-    {
       "name": "keyword.operator.sil",
-      "match": "==|!=|<=|>=|<|>|\\+|-|\\*|/|="
+      "match": ">|<|==|!=|>=|<=|\\+|-|\\*|/"
     },
     {
-      "name": "punctuation.sil",
-      "match": "[:()\\[\\]{},.->]"
+      "name": "punctuation.definition.list.begin.sil",
+      "match": "\\("
+    },
+    {
+      "name": "punctuation.definition.list.end.sil",
+      "match": "\\)"
+    },
+    {
+      "name": "variable.other.sil",
+      "match": "[A-Za-z_][A-Za-z0-9_]*"
     }
   ]
 }

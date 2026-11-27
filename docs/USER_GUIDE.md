@@ -5,12 +5,11 @@
 1. [Introducción](#introducción)
 2. [Sintaxis Básica](#sintaxis-básica)
 3. [Tipos de Datos](#tipos-de-datos)
-4. [Contratos: asumir y demostrar](#contratos-asumir-y-demostrar)
+4. [Contratos: assume y prove](#contratos-assume-y-prove)
 5. [Gestión de Memoria](#gestión-de-memoria)
-6. [Capacidades](#capacidades)
-7. [Control de Flujo](#control-de-flujo)
-8. [Ejemplos](#ejemplos)
-9. [Errores Comunes](#errores-comunes)
+6. [Control de Flujo](#control-de-flujo)
+7. [Ejemplos](#ejemplos)
+8. [Errores Comunes](#errores-comunes)
 
 ---
 
@@ -27,11 +26,14 @@ SIL (Semantic Intention Language) es un lenguaje de programación de sistemas di
 
 ### Primer Programa
 
-```sil
-definir tarea incrementar(x: Entero64) -> Entero64:
-    asumir x > 0
-    demostrar x + 1 > 1
-    retornar x + 1
+```lisp
+(task incrementar
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> (+ x 1) 1))
+    (return (+ x 1))))
 ```
 
 Verificar:
@@ -46,34 +48,31 @@ silc check incrementar.sil
 
 ### Estructura de un Programa
 
-Un programa SIL consiste en una o más definiciones de tareas:
+Un programa SIL consiste en formas S-expression entre paréntesis. La cabeza de
+cada lista dice de qué forma se trata; los hijos son sus argumentos:
 
-```sil
-definir tarea nombre(parametro: Tipo) -> TipoRetorno:
-    asumir condicion
-    demostrar condicion
-    expresion
+```lisp
+(task nombre
+  (params (parametro Tipo))
+  (returns TipoRetorno)
+  (body
+    (assume condicion)
+    (prove condicion)))
 ```
 
-### Indentación
+### Delimitadores y Comentarios
 
-SIL usa **4 espacios** por nivel de indentación. No se usan tabs ni llaves.
+SIL v0.1.0 usa **paréntesis** como único delimitador. No hay INDENT/DEDENT ni
+llaves: el anidamiento de listas define la estructura.
 
-```sil
-definir tarea ejemplo(x: Entero64) -> Entero64:
-    asumir x > 0
-    demostrar x > 0
-    retornar x + 1
-```
+Los comentarios empiezan con `;` y llegan hasta el final de la línea:
 
-### Comentarios
-
-```sil
-// Esto es un comentario de línea
-
-// Los comentarios no afectan la verificación
-definir tarea sin_comentarios() -> Entero64:
-    retornar 42
+```lisp
+; Esto es un comentario
+(task sin_comentarios
+  (params)
+  (returns i64)
+  (body (return 42)))   ; comentario al final de línea
 ```
 
 ---
@@ -84,76 +83,92 @@ definir tarea sin_comentarios() -> Entero64:
 
 | Tipo | Descripción | Ejemplo |
 |------|-------------|---------|
-| `Entero64` | Entero de 64 bits | `42`, `-7` |
-| `Flotante64` | Punto flotante 64 bits | `3.14`, `-0.5` |
-| `Booleano` | Valor booleano | `verdadero`, `falso` |
-| `Texto` | Cadena UTF-8 | `"hola"` |
-| `Void` | Sin valor | - |
+| `i64` | Entero de 64 bits | `42`, `-7` |
+| `f64` | Punto flotante 64 bits | `3.14`, `-0.5` |
+| `booleano` | Valor booleano | `verdadero`, `falso` |
+| `texto` | Cadena UTF-8 | `"hola"` |
+| `capacidad` | Token de capacidad | - |
+| `void` | Sin valor | - |
+| `USD` / `EUR` | Moneda | `100` |
 
-### Literales
+### Tipos Compuestos
 
-```sil
-definir tarea literales() -> Entero64:
-    retornar 42
-```
+| Tipo | S-exp | Descripción |
+|------|-------|-------------|
+| Lista | `(list TIPO)` | Secuencia homogénea |
+| Mapa | `(map CLAVE VALOR)` | Asociación clave→valor |
+| Conjunto | `(set TIPO)` | Colección sin duplicados |
+| Tupla | `(tuple T1 T2 ...)` | Producto heterogéneo |
+| Nominal | `MiTipo` | Tipo definido por el usuario |
 
 ### Operadores Aritméticos
 
+Prefijo uniforme: `(op a b)`.
+
 | Operador | Descripción | Ejemplo |
 |----------|-------------|---------|
-| `+` | Suma | `a + b` |
-| `-` | Resta | `a - b` |
-| `*` | Multiplicación | `a * b` |
-| `/` | División | `a / b` |
+| `+` | Suma | `(+ a b)` |
+| `-` | Resta | `(- a b)`; `-x` → `(- 0 x)` |
+| `*` | Multiplicación | `(* a b)` |
+| `/` | División | `(/ a b)` |
 
 ### Operadores Relacionales
 
 | Operador | Descripción | Ejemplo |
 |----------|-------------|---------|
-| `>` | Mayor que | `x > 0` |
-| `<` | Menor que | `x < 100` |
-| `>=` | Mayor o igual | `x >= 0` |
-| `<=` | Menor o igual | `x <= 100` |
-| `==` | Igual | `x == 0` |
-| `!=` | Diferente | `x != 0` |
+| `>` | Mayor que | `(> x 0)` |
+| `<` | Menor que | `(< x 100)` |
+| `>=` | Mayor o igual | `(>= x 0)` |
+| `<=` | Menor o igual | `(<= x 100)` |
+| `==` | Igual | `(== x 0)` |
+| `!=` | Diferente | `(!= x 0)` |
 
 ---
 
-## Contratos: asumir y demostrar
+## Contratos: assume y prove
 
-El corazón de SIL son los **contratos**: precondiciones (`asumir`) y postcondiciones (`demostrar`).
+El corazón de SIL son los **contratos**: precondiciones (`assume`) y postcondiciones (`prove`).
 
-### `asumir` (Precondición)
+### `assume` (Precondición)
 
 Declara qué debe ser verdadero antes de que la tarea se ejecute.
 
-```sil
-definir tarea dividir(a: Entero64, b: Entero64) -> Entero64:
-    asumir b != 0
-    retornar a / b
+```lisp
+(task dividir
+  (params (a i64) (b i64))
+  (returns i64)
+  (body
+    (assume (!= b 0))
+    (return (/ a b))))
 ```
 
-### `demostrar` (Postcondición)
+### `prove` (Postcondición)
 
 Declara qué debe ser verdadero después de que la tarea se ejecute.
 
-```sil
-definir tarea absoluto(x: Entero64) -> Entero64:
-    demostrar resultado >= 0
-    si x < 0:
-        retornar -x
-    retornar x
+```lisp
+(task absoluto
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (>= x 0))
+    (if (< x 0)
+      (body (return (- 0 x)))
+      (body (return x)))))
 ```
 
 ### Múltiples Contratos
 
-```sil
-definir tarea transferir(saldo: Entero64, monto: Entero64) -> Entero64:
-    asumir saldo > 0
-    asumir monto > 0
-    asumir monto <= saldo
-    demostrar saldo - monto >= 0
-    retornar saldo - monto
+```lisp
+(task transferir
+  (params (saldo i64) (monto i64))
+  (returns i64)
+  (body
+    (assume (> saldo 0))
+    (assume (> monto 0))
+    (assume (<= monto saldo))
+    (prove (>= (- saldo monto) 0))
+    (return (- saldo monto))))
 ```
 
 ---
@@ -164,12 +179,13 @@ definir tarea transferir(saldo: Entero64, monto: Entero64) -> Entero64:
 
 SIL gestiona la memoria con **Arenas** que asignan y liberan en tiempo constante.
 
-```sil
-definir tarea procesar(datos: Texto) -> Entero64:
-    asumir datos.len > 0
-    // La memoria se asigna en la arena de la tarea
-    // y se libera automáticamente al retornar
-    retornar datos.len
+```lisp
+(task procesar
+  (params (datos texto))
+  (returns i64)
+  (body
+    (assume (> (get datos len) 0))
+    (return (get datos len))))
 ```
 
 ### Sin Garbage Collector
@@ -182,70 +198,88 @@ SIL no tiene recolector de basura. La memoria se libera determinísticamente.
 
 ### Ejemplo 1: Función Simple
 
-```sil
-definir tarea cuadrado(x: Entero64) -> Entero64:
-    asumir x >= 0
-    asumir x <= 46340
-    demostrar x * x >= 0
-    retornar x * x
+```lisp
+(task cuadrado
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (>= x 0))
+    (assume (<= x 46340))
+    (prove (>= (* x x) 0))
+    (return (* x x))))
 ```
 
 ### Ejemplo 2: Validación
 
-```sil
-definir tarea validar_edad(edad: Entero64) -> Booleano:
-    asumir edad >= 0
-    asumir edad <= 150
-    retornar edad >= 18
+```lisp
+(task validar_edad
+  (params (edad i64))
+  (returns booleano)
+  (body
+    (assume (>= edad 0))
+    (assume (<= edad 150))
+    (return (>= edad 18))))
 ```
 
 ### Ejemplo 3: Múltiples Tareas
 
-```sil
-definir tarea sumar(a: Entero64, b: Entero64) -> Entero64:
-    retornar a + b
+```lisp
+(task sumar
+  (params (a i64) (b i64))
+  (returns i64)
+  (body (return (+ a b))))
 
-definir tarea restar(a: Entero64, b: Entero64) -> Entero64:
-    retornar a - b
-
-definir tarea calcular(x: Entero64, y: Entero64) -> Entero64:
-    retornar sumar(x, y)
+(task restar
+  (params (a i64) (b i64))
+  (returns i64)
+  (body (return (- a b))))
 ```
 
 ### Ejemplo 4: Control de Flujo
 
-El lenguaje soporta sentencias condicionales mediante la estructura `si`, `sino si` y `sino`.
+El lenguaje soporta condicionales con `if`, `else` y anidamiento:
 
-```sil
-definir tarea clasificar(nota: Entero64) -> Texto:
-    asumir nota >= 0
-    asumir nota <= 100
-    si nota >= 90:
-        retornar "A"
-    sino si nota >= 80:
-        retornar "B"
-    sino si nota >= 70:
-        retornar "C"
-    sino:
-        retornar "F"
+```lisp
+(task clasificar
+  (params (nota i64))
+  (returns texto)
+  (body
+    (assume (>= nota 0))
+    (assume (<= nota 100))
+    (if (>= nota 90)
+      (body (return "A"))
+      (else (body
+        (if (>= nota 80)
+          (body (return "B"))
+          (else (body
+            (if (>= nota 70)
+              (body (return "C"))
+              (else (body (return "F"))))))))))))
 ```
 
 **Notas de sintaxis:**
-- La condición debe ir seguida de `:`.
-- Los bloques de código deben estar indentados.
-- `entonces` es opcional (se puede omitir como en el ejemplo).
-- `sino si` permite encadenar múltiples condiciones de forma limpia.
-
+- Cada condición va en posición prefija: `(if COND CUERPO (else CUERPO)?)`.
+- Un `CUERPO` es `(body SENTENCIA*)`; `restrictions` debe ser su último hijo si aparece.
+- `else` anida otra forma `if` dentro de su cuerpo para expresar `sino si`.
 
 ---
 
 ## Control de Flujo
 
-SIL admite condicionales mediante `si`/`sino`/`sino si` (ver Ejemplo 4).
+SIL admite condicionales con `if`/`else` (ver Ejemplo 4), bucles con
+`while`/`for` y sus invariantes con `invariant`.
 
-### Funcionalidades planificadas
-
-Los tokens `mientras` y `para` están definidos en el lexer pero **aún no están implementados** en el parser ni en el lowering. Su implementación está planificada para versiones futuras.
+```lisp
+(task contar
+  (params (n i64))
+  (returns i64)
+  (body
+    (while (> n 0)
+      (body
+        (invariant (>= n 0))
+        (return n)))
+    (return 0)))
+```
 
 ---
 

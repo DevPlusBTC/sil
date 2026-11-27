@@ -1,6 +1,6 @@
 # SIL - Semantic Intention Language
 
-**Estado:** Fase 0 (Semilla) — **Parser completo (tareas, servicios, modelos, memoria persistente, capacidades, módulos, migraciones) + IR de tareas + Intervalos (sound) + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`) ✅ | CI: **build+test pasa en ubuntu/macOS/windows** | LLVM: test pasa (job llvm-test) | SMT verifier: Verificación formal de invariantes, funciona con Z3 o backend de intervalos | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas ✅ (16 niveles, reclamo O(1)); NVM y migración = declaradas en AST, sin runtime**
+**Estado:** Fase 0 (Semilla) — **Frontend S-exp completo (23 formas, 10 BinOp, 13 TipoDato; paridad AST verificada contra CNL legacy) + IR de tareas + Intervalos (sound) + C99/WASM + Capacidades HMAC + Fibras (Win32 y ucontext) + Canales + E/S Async ✅ | Z3 (feature `smt`) ✅ | CI: **build+test pasa en ubuntu/macOS/windows** | LLVM: test pasa (job llvm-test) | SMT verifier: Verificación formal de invariantes, funciona con Z3 o backend de intervalos | eBPF e io_uring = opt-in (`SIL_EBPF=1`, `SIL_IO_URING=1`) | TPM 2.0 = sólo Windows | sub-arenas cíclicas ✅ (16 niveles, reclamo O(1)); NVM y migración = declaradas en AST, sin runtime**
 
 Lenguaje de sistemas de ultra alto rendimiento con verificación formal en tiempo de compilación. Elimina corrupción de memoria, desbordamientos de búfer, condiciones de carrera y comportamientos no definidos directamente durante la fase de compilación.
 
@@ -74,16 +74,19 @@ silc emit-rust mi_servicio.sil -o mi_servicio.rs
 
 ## Ejemplo SIL
 
-```sil
-definir tarea procesar_pago(monto: Entero64, saldo: Entero64) -> Booleano:
-    asumir que monto > 0
-    asumir que saldo >= monto
-    let nuevo_saldo = saldo - monto
-    demostrar que nuevo_saldo >= 0
-    retornar verdadero
-    bajo restricciones:
-        latencia_maxima: baja
-        gestion_memoria: arena
+```lisp
+(task procesar_pago
+  (params (monto i64) (saldo i64))
+  (returns booleano)
+  (body
+    (assume (> monto 0))
+    (assume (>= saldo monto))
+    (let nuevo_saldo (- saldo monto))
+    (prove (>= nuevo_saldo 0))
+    (return verdadero)
+    (restrictions
+      (latencia_maxima baja)
+      (gestion_memoria arena))))
 ```
 
 ## Pruebas
@@ -100,7 +103,7 @@ cargo test --workspace
 
 ```
 silc-core/
-├── silc-frontend/     # Lexer + Parser CNL → AST  ✅
+├── silc-frontend/     # S-exp Reader + AST Builder  ✅
 ├── silc-causal-ir/    # Causal-IR + SMT (Intervalos; Z3 por defecto)  ✅
 ├── silc-backend/      # Codegen C99, WASM; LLVM con feature `llvm` (sin validar en CI)  ✅
 ├── silc-runtime/      # Arenas O(1) + ciclos, Capacidades HMAC + TPM 2.0 + Scheduler Fibras + Canales  ✅
@@ -109,6 +112,8 @@ silc-core/
 └── silc-test/         # Tests integración  ✅
 
 silc-vscode/           # Extensión VS Code (cliente LSP; compila con `npm run compile`)  ✅
+syntaxes/              # TextMate grammar para S-exp
+examples/              # Ejemplos S-exp (valid/, invalid/, sexp/)
 docs/                  # Documentación técnica
 ```
 
@@ -116,7 +121,7 @@ docs/                  # Documentación técnica
 
 | Crate | Versión | Estado |
 |-------|---------|--------|
-| `silc-frontend` | 0.1.0 | ✅ Lexer, Parser CNL, AST |
+| `silc-frontend` | 0.1.0 | ✅ S-exp Reader, AST Builder |
 | `silc-causal-ir` | 0.1.0 | ✅ Causal-IR, SMT (Intervalos; Z3 por defecto) |
 | `silc-backend` | 0.1.0 | ✅ Codegen C99, WASM |
 | `silc-runtime` | 0.1.0 | ✅ Arenas O(1), Capacidades HMAC, TPM 2.0, Scheduler Fibras, Canales |

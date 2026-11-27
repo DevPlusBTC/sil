@@ -10,7 +10,7 @@
 
 | Componente | Estado | Tests | Notas |
 |------------|--------|-------|-------|
-| **Frontend CNL** (Lexer/Parser) | Listo para probar | 14/14 integración ✅ | Keywords español, EBNF completo (tareas, servicios, modelos, memoria, capacidades, módulos, migraciones) |
+| **Frontend S-exp** (Reader + AST Builder) | Listo para probar | 14/14 integración ✅ | S-exp mínimas, 23 formas, 10 BinOp, 13 TipoDato; CNL legacy removido |
 | **Causal-IR** (SSA + SMT) | Listo para probar | 31/31 ✅ | SSA, invariantes, definiciones `let`, lowering |
 | **SMT Intervalos (Rust)** | Listo para probar | 21/21 ✅ | Sound/incompleto, cache SHA3-512 |
 | **SMT Z3 Backend** | Listo para probar | 10/10 ✅ | `vendored`, feature `smt` (activa por defecto en el CLI) |
@@ -58,86 +58,60 @@ El **Lenguaje de Intención Semántica (SIL)** es un lenguaje de programación d
 
 ---
 
-## 2. Gramática Formal (EBNF) y Sintaxis CNL
+## 2. Gramática Formal (S-expressions) y Sintaxis
 
-SIL utiliza una gramática de **Lenguaje Natural Controlado (CNL)** determinista, basada en reglas de *Longest-Match* sobre una pila de indentación explícita (4 espacios por nivel). No existe el retroceso (*backtracking*) durante la fase de análisis léxico y sintáctico.
+SIL v0.1.0 usa **S-expressions mínimas** como sintaxis de superficie. El lector
+(`silc-frontend/src/reader.rs`) produce átomos, textos y listas; el constructor
+(`silc-frontend/src/a_ast.rs`) les da significado. No existe INDENT/DEDENT, no
+hay precedencia de operadores, no hay keywords reservadas fuera de posición de
+cabeza de forma. El contrato normativo completo está en `docs/SPEC-v2.md`.
 
 ### 2.1 Estructura Léxica
 
-* **Alfabeto:** Unicode (UTF-8), letras (incluye acentos, ñ), dígitos, `_`, `-`
-* **Identificadores:** PascalCase para tipos/entidades, snake_case para variables/tareas
-* **Literales:** Enteros, flotantes, cadenas con interpolación `"{var}"`, unidades (`2ms`, `500mb`)
+* **Alfabeto:** ASCII (UTF-8); identificadores `[A-Za-z_][A-Za-z0-9_]*` (sin acentos, sin `ñ`, sin `-`)
+* **Operadores:** `+ - * / > < == != >= <=` (átomos)
+* **Literales:** enteros `[+-]?[0-9]+`, flotantes `[+-]?[0-9]+\.[0-9]+`, textos `"..."` con escapes
+* **Comentarios:** `;` hasta fin de línea (los `//` y `/* */` del CNL desaparecen)
+* **Delimitadores:** `(` y `)` únicamente (los `:`, `,`, `.`, `[`, `]`, `{`, `}` del CNL son átomos inválidos)
 
-### 2.2 Palabras Clave Reservadas (Categorizadas) — **Listo para probar** ✅
+### 2.2 Formas de Cabeza (Head Forms) — **Listo para probar** ✅
 
-| Categoría | Palabras |
-|-----------|----------|
-| Definición | `definir`, `servicio`, `modelo`, `tarea`, `evento`, `estructura`, `variante`, `opcion`, `memoria_persistente`, `capacidad`, `modulo`, `requerir`, `importar`, `exportar`, `vincular`, `biblioteca_nativa`, `funcion_externa`, `migrar` |
-| Flujo | `cuando`, `llegue`, `escuchar`, `en`, `puerto`, `con`, `protocolo`, `para`, `cada`, `mientras`, `si`, `entonces`, `retornar`, `ejecutar` |
-| Validación | `verificar`, `que`, `sea`, `igual`, `mayor`, `menor`, `diferente`, `esta_activo`, `asumir`, `demostrar`, `probar`, `propiedad` |
-| Transformación | `convertir`, `a`, `usando`, `guardar`, `enviar`, `permitir`, `conectar`, `promover`, `al`, `acceder_campo`, `valor_predeterminado` |
-| Restricciones | `bajo`, `restricciones`, `latencia_maxima`, `gestion_memoria`, `concurrencia`, `seguridad_tipo`, `optimizacion`, `tiempo_ejecucion`, `mecanismo_io`, `persistencia`, `tolerancia_fallos`, `red`, `cifrado`, `instrucciones_hardware`, `migracion_memoria`, `reestructuracion_disco` |
-| Valores | `verdadero`, `falso`, `nulo`, `atomica`, `asincrona`, `en_memoria`, `cero_pausas`, `manual`, `arena` |
+| Categoría | Formas |
+|-----------|--------|
+| Declaración | `task`, `struct`, `model`, `memory`, `variant`, `service`, `capability`, `module`, `migration` |
+| Sub-formas de task | `params`, `returns`, `requires`, `ensures`, `body`, `fields`, `case` |
+| Sub-formas de service | `net`, `protocol`, `handler`, `restrictions` |
+| Sub-formas de capability | `resource`, `port`, `bandwidth` |
+| Sub-formas de module | `export` |
+| Sub-formas de migration | `from`, `to`, `field`, `record`, `default` |
+| Sentencias | `if`, `else`, `assert`, `assume`, `prove`, `invariant`, `while`, `for`, `let`, `let-mut`, `return`, `request`, `validate`, `send`, `recv`, `spawn`, `chan`, `capacity`, `io-read`, `io-write`, `io-send`, `io-recv` |
+| Tipos | `i64`, `f64`, `booleano`, `texto`, `capacidad`, `void`, `USD`, `EUR`, `list`, `map`, `set`, `tuple` |
+| Sub-formas de tipo | `list`, `map`, `set`, `tuple` |
+| Expresiones | `get`, los 10 operadores |
+| Accesorios | `ttl`, `as` |
 
-**Keywords:** Solo español (sin `true`/`false`/`let`/`mut`). **IMPLEMENTADO** ✅
+**Literales booleanos:** `verdadero` / `falso` en posición de expresión; reservados en posición de enlace (parámetro, campo, variable, token).
 
-### 2.3 Especificación EBNF del Núcleo de SIL — **Listo para probar** ✅ (lexer/parser)
-
-El EBNF del whitepaper original se perdió en una reescritura; esta es la
-gramática **realmente aceptada** por `silc-frontend` v0.1.0. Lo que no aparezca
-aquí es objetivo, no implementación.
+### 2.3 Gramática EBNF del Lector — **Listo para probar** ✅ (reader + a_ast)
 
 ```ebnf
-Programa        ::= { Declaracion } ;
-Declaracion     ::= Tarea | Estructura | Variante | Servicio
-                  | Modelo | MemoriaPersistente | Capacidad | Modulo | Migracion ;
-Tarea           ::= "definir" "tarea" Ident "(" [ Parametros ] ")" [ "->" Tipo ] ":" NL INDENT
-                    Cuerpo DEDENT ;
-Parametros      ::= Ident ":" Tipo { "," Ident ":" Tipo } ;
-Cuerpo          ::= { Sentencia } [ BloqueRestricciones ] ;
-Sentencia       ::= "verificar" [ "que" ] ExpresionLogica
-                  | "asumir" [ "que" ] ExpresionLogica
-                  | "demostrar" [ "que" ] ExpresionLogica
-                  | "let" [ "mut" ] Ident [ ":" Tipo ] "=" Expresion
-                  | "retornar" [ Expresion ]
-                  | "solicitar" "capacidad" Permiso "para" TEXTO
-                    [ "con" "ttl" NUM ] [ "como" Ident ]
-                  | "validar" Ident
-                  | "crear" "canal" [ "con" "capacidad" NUM ] "como" Ident
-                  | "enviar" Expresion "en" Ident
-                  | "enviar" Expresion "en" "red" TEXTO "con" Ident
-                  | "recibir" "de" Ident "como" Ident
-                  | "recibir" "de" "red" TEXTO "con" Ident "como" Ident
-                  | "generar" Ident
-                  | "leer" "archivo" TEXTO "con" Ident "como" Ident
-                  | "escribir" Expresion "en" "archivo" TEXTO "con" Ident ;
-ExpresionLogica ::= Expresion OperadorRelacional Expresion | Ident ;
-OperadorRelacional ::= ">" | "<" | ">=" | "<=" | "==" | "!=" ;
-Expresion       ::= Ident | Literal | Expresion OperadorAritmetico Expresion ;
-OperadorAritmetico ::= "+" | "-" | "*" | "/" ;
-Literal         ::= NUM | TEXTO | "verdadero" | "falso" | "nulo" ;
-Tipo            ::= "Entero64" | "Flotante64" | "Booleano" | "Texto"
-                  | "USD" | "EUR" | "CapacidadHardware" | "Void"
-                  | "Lista" "de" Tipo | "Mapa" "de" Tipo "a" Tipo
-                  | "Conjunto" "de" Tipo | "Tupla" "(" [ Tipo { "," Tipo } ] ")" ;
-Permiso         ::= "lectura_archivo" | "escritura_archivo" | "red" | "ejecucion" ;
-BloqueRestricciones ::= "bajo" "restricciones" ":" NL INDENT { Restriccion } DEDENT ;
-Restriccion     ::= Ident ":" Ident ;
+Documento       ::= { Sexp } ;
+Sexp            ::= Atomo | Texto | Numero | Lista ;
+Lista           ::= "(" { Sexp } ")" ;
+Atomo           ::= Identificador | Operador ;
+Identificador   ::= [A-Za-z_] [A-Za-z0-9_]* ;
+Operador        ::= "+" | "-" | "*" | "/" | ">" | "<" | "==" | "!=" | ">=" | "<=" ;
+Numero          ::= Entero | Flotante ;
+Entero          ::= [+-]? [0-9]+ ;
+Flotante        ::= [+-]? [0-9]+ "." [0-9]+ ;
+Texto           ::= '"' { CarTexto | Escape } '"' ;
+Comentario      ::= ";" { cualquier-carácter-salvo-NL } ;
 ```
 
-Alcance real por declaración (verificado contra el código, no contra la
-intención):
-
-| Declaración | Parser | Lowering a Causal-IR | Backend C99/WASM |
-|---|---|---|---|
-| `tarea` | ✅ | ✅ `bajar_tarea` | ✅ |
-| `servicio` (sus tareas + red + manejadores) | ✅ | ✅ `bajar_servicio` + `ProgramaIR` | ✅ (bootstrap + stubs) |
-| `estructura`, `variante`, `modelo` | ✅ | ❌ metadatos | ❌ (`TipoNoSoportado`) |
-| `memoria_persistente`, `migrar` | ✅ | ❌ metadatos | ❌ |
-| `capacidad`, `modulo` | ✅ | ❌ metadatos | ❌ |
-
-Los tipos `Lista`, `Mapa`, `Conjunto`, `Tupla` y los nominales se parsean pero
-el backend los rechaza con error limpio, no con panic.
+El significado de cada forma (`(task ...)`, `(let x i64 5)`, `(> a b)`, etc.)
+está definido en `docs/SPEC-v2.md` §2–§7 y es normativo. La aridad y la
+cardinalidad de cada sub-forma se validan en `a_ast.rs` con errores
+`FormaDesconocida`, `AridadIncorrecta` e `IdentificadorInvalido`.
 
 ---
 

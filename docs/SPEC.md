@@ -10,7 +10,7 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 
 | Componente | Implementado | Notas |
 |------------|--------------|-------|
-| Frontend (Lexer/Parser CNL) | Listo para probar | Crate del workspace |
+| Frontend (S-exp Reader + AST Builder) | Listo para probar | Crate del workspace; CNL legacy removido |
 | Causal-IR + SMT | Listo para probar | Intervalos + Z3 |
 | Backend C99 | Listo para probar | Emite C99; los tests lo compilan con gcc/clang `-Wall -Wextra -Werror` en Linux/macOS |
 | Backend WASM | Listo para probar | Magic `\0asm` válido |
@@ -27,80 +27,162 @@ certificaciones militares.
 
 ---
 
-## 2. Gramática SIL Implementada (Subconjunto CNL)
+## 2. Gramática SIL Implementada (S-expressions)
+
+La sintaxis de SIL v0.1.0 es un subconjunto mínimo de S-expressions.
+No hay INDENT/DEDENT, no hay precedencia de operadores, no hay keywords
+reservadas fuera de posición de cabeza de forma.
 
 ```ebnf
-Programa        ::= { Declaracion } ;
-Declaracion     ::= Tarea | Estructura | Variante | Servicio
-                  | Modelo | MemoriaPersistente | Capacidad | Modulo | Migracion ;
-Tarea           ::= "definir" "tarea" Ident "(" [ Parametros ] ")" [ "->" Tipo ] ":" NL INDENT
-                    Cuerpo DEDENT ;
-Parametros      ::= Ident ":" Tipo { "," Ident ":" Tipo } ;
-Cuerpo          ::= { Sentencia } [ BloqueRestricciones ] ;
-Sentencia       ::= "verificar" [ "que" ] ExpresionLogica
-                  | "asumir" [ "que" ] ExpresionLogica
-                  | "demostrar" [ "que" ] ExpresionLogica
-                  | "let" [ "mut" ] Ident [ ":" Tipo ] "=" Expresion
-                  | "retornar" [ Expresion ]
-                  | "solicitar" "capacidad" Permiso "para" TEXTO
-                    [ "con" "ttl" NUM ] [ "como" Ident ]
-                  | "validar" Ident
-                  | "crear" "canal" [ "con" "capacidad" NUM ] "como" Ident
-                  | "enviar" Expresion "en" Ident
-                  | "enviar" Expresion "en" "red" TEXTO "con" Ident
-                  | "recibir" "de" Ident "como" Ident
-                  | "recibir" "de" "red" TEXTO "con" Ident "como" Ident
-                  | "generar" Ident
-                  | "leer" "archivo" TEXTO "con" Ident "como" Ident
-                  | "escribir" Expresion "en" "archivo" TEXTO "con" Ident ;
-ExpresionLogica ::= Expresion OperadorRelacional Expresion
-                  | Ident ;
-OperadorRelacional ::= ">" | "<" | ">=" | "<=" | "==" | "!=" ;
-Expresion       ::= Ident | Literal | Expresion OperadorAritmetico Expresion ;
-OperadorAritmetico ::= "+" | "-" | "*" | "/" ;
-Literal         ::= NUM | TEXTO | "verdadero" | "falso" ;
-Tipo            ::= "Entero64" | "Flotante64" | "Booleano" | "Texto"
-                  | "USD" | "EUR" | "CapacidadHardware" | "Void"
-                  | "Lista" "de" Tipo | "Mapa" "de" Tipo "a" Tipo
-                  | "Conjunto" "de" Tipo | "Tupla" "(" [ Tipo { "," Tipo } ] ")" ;
-Permiso         ::= "lectura_archivo" | "escritura_archivo" | "red" | "ejecucion" ;
-BloqueRestricciones ::= "bajo" "restricciones" ":" NL INDENT { Restriccion } DEDENT ;
-Restriccion     ::= Ident ":" Ident ;
+Documento       ::= { Sexp } ;
+Sexp            ::= Atomo | Texto | Numero | Lista ;
+Lista           ::= "(" { Sexp } ")" ;
+Atomo           ::= Identificador | Operador ;
+Identificador   ::= [A-Za-z_] [A-Za-z0-9_]* ;
+Operador        ::= "+" | "-" | "*" | "/" | ">" | "<" | "==" | "!=" | ">=" | "<=" ;
+Numero          ::= Entero | Flotante ;
+Entero          ::= [+-]? [0-9]+ ;
+Flotante        ::= [+-]? [0-9]+ "." [0-9]+ ;
+Texto           ::= '"' { CarTexto | Escape } '"' ;
+Comentario      ::= ";" { cualquier-carácter-salvo-NL } ;
 ```
 
-**Restricciones soportadas:** clave y valor son identificadores de un solo token
-(p. ej. `gestion_memoria: arena`, `tiempo_ejecucion: constante`,
-`latencia_maxima: baja`). Unidades compuestas (`200us`) todavía no se aceptan.
+**Átomos especiales:** `verdadero` / `falso` son literales booleanos **solo en posición de expresión**.
+En posición de enlace (parámetro, campo, variable, token de capacidad) son `IdentificadorInvalido`.
+
+### 2.1 Formas de nivel superior (9 declaraciones)
+
+| Decl | Forma S-exp | Notas |
+|------|-------------|-------|
+| Tarea | `(task NOMBRE (params PARAM*) (returns TIPO)? (requires EXPR)* (ensures EXPR)* (body CUERPO))` | `params` obligatorio; `returns` opcional → Void |
+| Struct | `(struct NOMBRE (fields CAMPO*))` | |
+| Model | `(model NOMBRE (fields CAMPO*))` | Igual que struct semánticamente |
+| Memory | `(memory NOMBRE (fields CAMPO*))` | Igual que struct semánticamente |
+| Variant | `(variant NOMBRE (case NOMBRE (fields CAMPO*))+)` | `(fields ...)` obligatorio incluso vacío |
+| Service | `(service NOMBRE (net PUERTO (protocol PROTO)?) (handler EVENTO (params PARAM*) CUERPO)* (task TAREA)* (restrictions RESTRICCION*)?)` | |
+| Capability | `(capability NOMBRE (resource "HOST:PORT") (port PUERTO) (bandwidth "LIMITE"))` | 3 campos obligatorios |
+| Module | `(module NOMBRE (export CLASE NOMBRE)*)` | `CLASE` ∈ `{service,task,struct,variant,capability}` |
+| Migration | `(migration ORIGEN (from VDESDE) (to VA) (field "CAMPO") (record REGISTRO) (default EXPR) (restrictions RESTRICCION*)?)` | |
+
+**Parámetro / Campo:** lista plana de pares `(NOMBRE TIPO)`. TIPO = átomo primitivo o compuesto.
+
+### 2.2 Tipos primitivos y compuestos
+
+| Primitivo | S-exp |
+|-----------|-------|
+| Entero64 | `i64` |
+| Flotante64 | `f64` |
+| Booleano | `booleano` |
+| Texto | `texto` |
+| CapacidadHardware | `capacidad` |
+| Void | `void` |
+| USD / EUR | `USD` / `EUR` |
+
+| Compuesto | S-exp |
+|-----------|-------|
+| Lista | `(list TIPO)` |
+| Mapa | `(map TIPO_CLAVE TIPO_VALOR)` |
+| Conjunto | `(set TIPO)` |
+| Tupla | `(tuple TIPO...)` |
+| Nominal | `Ident` (p.ej. `MiTipo`) |
+
+### 2.3 Cuerpo y sentencias (23 formas)
+
+`Cuerpo` = `(body STMT* (restrictions RESTRICCION*)?)`. `restrictions` **debe ser el último hijo**.
+
+| Stmt | Forma | Aridad |
+|------|-------|--------|
+| Si | `(if COND CUERPO (else CUERPO)?)` | 3 o 4 |
+| Verificar | `(assert COND)` | 2 |
+| Asumir | `(assume COND)` | 2 |
+| Demostrar | `(prove COND)` | 2 |
+| InvarianteBucle | `(invariant COND)` | 2 |
+| Mientras | `(while COND CUERPO)` | 3 |
+| Para | `(for VAR ITER CUERPO)` | 4 |
+| Asignar (sin tipo, sin mut) | `(let NOMBRE EXPR)` | 3 |
+| Asignar (con tipo, sin mut) | `(let NOMBRE TIPO EXPR)` | 4 |
+| Asignar (sin tipo, mut) | `(let-mut NOMBRE EXPR)` | 3 |
+| Asignar (con tipo, mut) | `(let-mut NOMBRE TIPO EXPR)` | 4 |
+| Retornar (con expr) | `(return EXPR)` | 2 |
+| Retornar (sin expr) | `(return)` | 1 |
+| SolicitarCapacidad | `(request PERMISO "RECURSO" (ttl N)? (as NOMBRE)?)` | 3..5 |
+| ValidarCapacidad | `(validate NOMBRE)` | 2 |
+| EnviarCanal | `(send EXPR CANAL)` | 3 |
+| RecibirCanal | `(recv CANAL NOMBRE)` | 3 |
+| GenerarFibra | `(spawn TAREA)` | 2 |
+| CrearCanal | `(chan NOMBRE (capacity N)?)` | 2 o 3 |
+| OperarIO LeerArchivo | `(io-read "RUTA" CAP NOMBRE)` | 4 |
+| OperarIO EscribirArchivo | `(io-write EXPR "RUTA" CAP)` | 4 |
+| OperarIO EnviarRed | `(io-send EXPR "DESTINO" CAP)` | 4 |
+| OperarIO RecibirRed | `(io-recv "DESTINO" CAP NOMBRE)` | 4 |
+
+**Detalles normativos:**
+- `let` vs `let-mut`: dos cabezas distintas, sin átomo `mut` posicional.
+- `return` sin expresión: solo válido si la tarea contenedora es Void.
+- `if` con `else si`: se anida `(else (body (if ...)))`.
+- `request`: orden fijo `ttl` antes de `as`. `PERMISO` ∈ `{lectura_archivo, escritura_archivo, red, ejecucion}`.
+- `chan`: `(capacity N)` opcional; ausente → canal sin buffer declarado.
+- `io-*`: cuatro cabezas con aridad fija 4. `CAP` = átomo que nombra la capacidad ya solicitada.
+- `restrictions`: lista de pares `(clave valor)`; ambos átomos identificadores.
+
+### 2.4 Expresiones (7 formas)
+
+Prefijo uniforme: `(op a b)`. Operandos son sexps.
+
+| Expr | Forma | Aridad |
+|------|-------|--------|
+| Var | `NOMBRE` (átomo) | — |
+| Lit(Entero) | `42`, `-7` | — |
+| Lit(Flotante) | `1.5` | — |
+| Lit(Texto) | `"hola"` | — |
+| Lit(Booleano) | `verdadero`, `falso` | — |
+| AccesoProp | `(get BASE PROP)` | 3 |
+| BinOp | `(OP LHS RHS)` | 3 |
+
+**Los 10 BinOp:** `>`, `<`, `==`, `!=`, `>=`, `<=`, `+`, `-`, `*`, `/`.
+
+**Reglas:**
+- Asociatividad explícita: `a + b + c` → `(+ (+ a b) c)`; `a - b - c` → `(- (- a b) c)`; `a * b / c` → `(/ (* a b) c)`; `a + b * c` → `(+ a (* b c))`.
+- Menos unario: `-x` → `(- 0 x)`. Nunca `(- x)` (aridad 2 inválida).
+- Comparaciones encadenadas: sintácticamente válidas; rechazo en type-checker.
+- Profundidad: límite 256 niveles de listas anidadas en posición de expresión.
+- Sin llamadas: `(f x)` es `forma_desconocida`.
 
 ---
 
 ## 3. Semántica de Contratos (SMT)
 
-### 3.1 `asumir` / `demostrar`
-```sil
-definir tarea f(x: Entero64) -> Entero64:
-    asumir x > 0           // Premisa (precondición)
-    demostrar x > 0        // Meta (postcondición)
-    retornar x
+### 3.1 `assume` / `prove`
+```lisp
+(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))      ; Premisa (precondición)
+    (prove (> x 0))       ; Meta (postcondición)
+    (return x)))
 ```
 
 ### 3.2 Pipeline SMT
-1. Extracción cláusulas: `asumir` → premisas, `demostrar` → metas
+1. Extracción cláusulas: `assume` → premisas, `prove` → metas
 2. Traducción SMT-LIB2: `assert (P ∧ ¬Q)`
 3. Resolución con Z3 (por defecto en el CLI) o con verificación de intervalos
    (`--no-default-features`), con caché SHA3-512
 4. **UNSAT** → Compilación OK | **SAT** → Contraejemplo + Error
 
 ### 3.3 Tipos de Refinamiento
-```sil
-definir tarea descuento(precio: Entero64, pct: Entero64) -> Entero64:
-    asumir precio > 0
-    asumir pct >= 0
-    asumir pct <= 50
-    let final = precio * (100 - pct) / 100
-    demostrar final <= precio
-    demostrar final >= precio / 2
-    retornar final
+```lisp
+(task descuento
+  (params (precio i64) (pct i64))
+  (returns i64)
+  (body
+    (assume (> precio 0))
+    (assume (>= pct 0))
+    (assume (<= pct 50))
+    (let final i64 (/ (* precio (- 100 pct)) 100))
+    (prove (<= final precio))
+    (prove (>= final (/ precio 2)))
+    (return final)))
 ```
 Si `pct = 60` → Error: `SMT SAT: contraejemplo pct=60 rompe final >= precio/2`
 
@@ -154,6 +236,8 @@ Emite SMT-LIB2 (QF_LIA):
 | `silc run <file.sil>` | Compila a C y ejecuta (requiere tarea principal sin parámetros) |
 | `silc lsp` | Inicia servidor LSP (JSON-RPC 2.0 por stdio) |
 
+**Extensiones de archivo:** `.sil` (legacy CNL, deprecated) y `.sexp` (nativo S-exp). El frontend detecta el formato por el primer carácter no-whitespace: `(` → S-exp, otro → error (CNL removido).
+
 **Códigos de salida:** 0=OK, 1=Error (sintaxis, SMT o E/S)
 
 ---
@@ -164,7 +248,7 @@ Emite SMT-LIB2 (QF_LIA):
 
 **Capacidades implementadas:**
 - `textDocument/didOpen` / `didChange` / `didClose` → sincronización completa y diagnósticos léxicos y de sintaxis del frontend real
-- `textDocument/completion` → palabras clave y tipos primitivos
+- `textDocument/completion` → formas S-exp, tipos primitivos y compuestos
 - `textDocument/publishDiagnostics` → mensajes del frontend en lenguaje natural
 - `initialize`, `initialized`, `shutdown`, `exit`
 
@@ -179,9 +263,11 @@ Emite SMT-LIB2 (QF_LIA):
 **Instalación:** `npm install && npm run compile`, luego abrir la carpeta del repositorio como extensión (F5). Requiere `silc` en el `PATH`.
 
 **Features:**
-- Cliente LSP contra `silc lsp`: diagnósticos en tiempo real y completion de palabras clave/tipos
+- Cliente LSP contra `silc lsp`: diagnósticos en tiempo real y completion de formas/tipos S-exp
 - Comando `SIL: Compilar archivo actual a C99` (`sil.compile`)
 - Comando `SIL: Verificar invariantes SMT del archivo actual` (`sil.verify`)
+
+**Grammar:** `syntaxes/sil.tmLanguage.json` (S-exp), `syntaxes/language-configuration.json` (comentarios `;`, brackets `()[]{}`).
 
 **Pendiente:** hover, formateador, empaquetado `.vsix`.
 
@@ -196,7 +282,7 @@ Emite SMT-LIB2 (QF_LIA):
 | Los canales tienen capacidad acotada: `enviar` falla con el canal lleno | Dimensionar con `crear canal con capacidad N` o drenar antes de enviar |
 | El C emitido no emite `cerrar canal`: el pool es de 16 canales por programa | Evitar crear canales dentro de bucles largos (ver AUDITORIA.md R-02) |
 | Los canales aceptan `void *` no nulo; `enviar NULL` devuelve `false` | Enviar un puntero a un valor (el canal no transporta `nulo`) |
-| SMT timeout 60s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `demostrar` |
+| SMT timeout 60s por defecto en postcondiciones complejas | Ajustar `--smt-timeout`; simplificar `prove` |
 | Sin stdlib/prelude | Definir tipos base en cada archivo |
 | Sin `silpm` / `silfmt` / `silup` | Usar `cargo build` + `silc` directo |
 | LSP sin hover, definición ni formateador | Usar completion y diagnósticos |
