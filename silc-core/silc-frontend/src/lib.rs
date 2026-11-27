@@ -1,9 +1,11 @@
 //! silc-frontend: Lexer + Parser + AST para SIL (CNL).
 
+pub mod a_ast;
 pub mod ast;
 pub mod error;
 pub mod lexer;
 pub mod parser;
+pub mod reader;
 pub mod ud;
 
 #[cfg(test)]

@@ -49,4 +49,39 @@ pub enum ErrorFrontend {
         #[label("aquí")]
         span: SourceSpan,
     },
+
+    #[error("Forma desconocida '{nombre}'")]
+    #[diagnostic(
+        code(silc::sexp::forma_desconocida),
+        help("Consulta docs/SPEC-v2.md para la lista de formas válidas.")
+    )]
+    FormaDesconocida {
+        nombre: String,
+        #[label("esta forma")]
+        span: SourceSpan,
+    },
+
+    #[error("'{forma}' esperaba {esperado} y recibió {obtenido}")]
+    #[diagnostic(
+        code(silc::sexp::aridad),
+        help("Revisa el número de elementos de la forma en docs/SPEC-v2.md.")
+    )]
+    AridadIncorrecta {
+        forma: String,
+        esperado: String,
+        obtenido: usize,
+        #[label("esta forma")]
+        span: SourceSpan,
+    },
+
+    #[error("Identificador inválido '{nombre}'")]
+    #[diagnostic(
+        code(silc::sexp::identificador),
+        help("Un identificador empieza por letra o '_' y sigue con letras, dígitos o '_'. 'verdadero' y 'falso' están reservados como literales.")
+    )]
+    IdentificadorInvalido {
+        nombre: String,
+        #[label("aquí")]
+        span: SourceSpan,
+    },
 }

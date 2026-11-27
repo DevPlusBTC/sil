@@ -214,7 +214,10 @@ fn span_de_error(error: &ErrorFrontend) -> (usize, usize) {
     match error {
         ErrorFrontend::CaracterDesconocido { span, .. }
         | ErrorFrontend::TokenInesperado { span, .. }
-        | ErrorFrontend::ExpresionDemasiadoProfunda { span, .. } => (span.offset(), span.len()),
+        | ErrorFrontend::ExpresionDemasiadoProfunda { span, .. }
+        | ErrorFrontend::FormaDesconocida { span, .. }
+        | ErrorFrontend::AridadIncorrecta { span, .. }
+        | ErrorFrontend::IdentificadorInvalido { span, .. } => (span.offset(), span.len()),
         ErrorFrontend::FinInesperado => (usize::MAX, 0),
     }
 }

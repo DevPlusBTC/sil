@@ -1420,7 +1420,8 @@ fn formula_a_c(
     use silc_causal_ir::nodes::{FormulaLogica, OpLogico};
     match f {
         FormulaLogica::Var(v) => v.clone(),
-        FormulaLogica::VarId(v) => e.vars
+        FormulaLogica::VarId(v) => e
+            .vars
             .get(v)
             .cloned()
             .unwrap_or_else(|| format!("v{}", v.data().as_ffi())),

@@ -1232,6 +1232,7 @@ pub fn verificar_tarea(tarea: &TareaIR, timeout_ms: u64) -> Result<(), ErrorSMT>
 /// Retorna true si la fórmula contiene aritmética que puede desbordar dadas
 /// las cotas actuales en `ivs`. Retorna false si la fórmula no tiene aritmética
 /// riesgosa o si todas las vars tienen intervalos puntuales (exactos).
+#[allow(dead_code)]
 fn aritmetica_puede_desbordar(
     f: &FormulaLogica,
     ivs: &Map<String, Intervalo>,
@@ -1249,7 +1250,9 @@ fn aritmetica_puede_desbordar(
         let mut stack = vec![f];
         while let Some(x) = stack.pop() {
             match x {
-                FormulaLogica::Var(v) => { vars.insert(v.clone()); }
+                FormulaLogica::Var(v) => {
+                    vars.insert(v.clone());
+                }
                 FormulaLogica::VarId(v) => {
                     if let Some(nombre) = nombres.get(v) {
                         vars.insert(nombre.clone());
@@ -1257,14 +1260,25 @@ fn aritmetica_puede_desbordar(
                 }
                 FormulaLogica::BinOp { op, lhs, rhs } => {
                     // Solo recolectar vars si la operación es aritmética
-                    if matches!(op, OpLogico::Add | OpLogico::Sub | OpLogico::Mul | OpLogico::Div) {
-                        if let FormulaLogica::Var(v) = lhs.as_ref() { vars.insert(v.clone()); }
-                        if let FormulaLogica::Var(v) = rhs.as_ref() { vars.insert(v.clone()); }
+                    if matches!(
+                        op,
+                        OpLogico::Add | OpLogico::Sub | OpLogico::Mul | OpLogico::Div
+                    ) {
+                        if let FormulaLogica::Var(v) = lhs.as_ref() {
+                            vars.insert(v.clone());
+                        }
+                        if let FormulaLogica::Var(v) = rhs.as_ref() {
+                            vars.insert(v.clone());
+                        }
                         if let FormulaLogica::VarId(v) = lhs.as_ref() {
-                            if let Some(n) = nombres.get(v) { vars.insert(n.clone()); }
+                            if let Some(n) = nombres.get(v) {
+                                vars.insert(n.clone());
+                            }
                         }
                         if let FormulaLogica::VarId(v) = rhs.as_ref() {
-                            if let Some(n) = nombres.get(v) { vars.insert(n.clone()); }
+                            if let Some(n) = nombres.get(v) {
+                                vars.insert(n.clone());
+                            }
                         }
                         // Solo recurse en hijos si es aritmética
                         stack.push(lhs);
@@ -1306,6 +1320,7 @@ fn aritmetica_puede_desbordar(
 
 /// Retorna true si la fórmula contiene división cuyo divisor puede ser cero
 /// en algún punto de los intervalos actuales.
+#[allow(dead_code)]
 fn division_con_divisor_cero_posible(
     f: &FormulaLogica,
     ivs: &Map<String, Intervalo>,
@@ -1334,6 +1349,7 @@ fn division_con_divisor_cero_posible(
     rec(f, ivs, nombres)
 }
 
+#[allow(dead_code)]
 fn puede_ser_cero(
     f: &FormulaLogica,
     ivs: &Map<String, Intervalo>,
@@ -1341,12 +1357,15 @@ fn puede_ser_cero(
 ) -> bool {
     match f {
         FormulaLogica::ConstInt(n) => *n == 0,
-        FormulaLogica::Var(v) => {
-            ivs.get(v).map(|iv| iv.lo <= 0 && iv.hi >= 0).unwrap_or(true)
-        }
-        FormulaLogica::VarId(v) => {
-            nombres.get(v).and_then(|n| ivs.get(n)).map(|iv| iv.lo <= 0 && iv.hi >= 0).unwrap_or(true)
-        }
+        FormulaLogica::Var(v) => ivs
+            .get(v)
+            .map(|iv| iv.lo <= 0 && iv.hi >= 0)
+            .unwrap_or(true),
+        FormulaLogica::VarId(v) => nombres
+            .get(v)
+            .and_then(|n| ivs.get(n))
+            .map(|iv| iv.lo <= 0 && iv.hi >= 0)
+            .unwrap_or(true),
         FormulaLogica::BinOp { op, lhs, rhs } => {
             // Para soundness simple: si es una operación que puede dar cero, asumimos riesgo
             match op {
