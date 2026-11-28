@@ -3,7 +3,7 @@
 **Estado:** contrato de reescritura del frontend (`silc-frontend`).
 **Ámbito:** sustituye la sintaxis CNL indentada por una sintaxis S-expression.
 **Destino:** el AST de `silc-core/silc-frontend/src/ast.rs` (sin cambios de tipos).
-**Fuentes de verdad:** `ast.rs`, `lexer.rs`, `parser.rs`, `examples/**/*.sil`.
+**Fuentes de verdad:** `ast.rs`, `reader.rs`, `a_ast.rs`, `examples/sexp/*.sexp`.
 
 Este documento es normativo. Cada forma listada aquí corresponde a un nodo del AST
 y cada nodo del AST aparece aquí. Si una forma no aparece, es un defecto de este
@@ -487,29 +487,29 @@ fin de archivo (`len..len`).
 
 ## 8. Traducción completa de `examples/`
 
-14 archivos. Tres son idénticos byte a byte: `valid/sumar.sil` =
-`valid/test_calc.sil` = `valid/calculadora_segura.sil`. `invalid/fibra_basica.sil`
-y `invalid/scheduler_real.sil` tienen el mismo cuerpo y solo cambia el nombre de
+14 archivos. Tres son idénticos byte a byte: `sexp/sumar.sexp` =
+`sexp/test_calc.sexp` = `sexp/calculadora_segura.sexp`. `sexp/fibra_basica.sexp`
+y `sexp/scheduler_real.sexp` tienen el mismo cuerpo y solo cambia el nombre de
 la tarea. Se traducen todos, uno por fila, porque el contrato es por archivo.
 
 | # | Archivo | Formas de nivel superior |
 |---|---|---|
-| 1 | `valid/sumar.sil` | 1 `task` |
-| 2 | `valid/calculadora_segura.sil` | 1 `task` |
-| 3 | `valid/test_calc.sil` | 1 `task` |
-| 4 | `valid/descuentos.sil` | 1 `task` |
-| 5 | `valid/factorial.sil` | 4 `task` |
-| 6 | `valid/inventario.sil` | 2 `task` |
-| 7 | `valid/procesar_pago.sil` | 1 `task` |
-| 8 | `valid/programa_confianza.sil` | 2 `task` |
-| 9 | `valid/validacion.sil` | 2 `task` |
-| 10 | `valid/verificacion_z3.sil` | 1 `task` |
-| 11 | `valid/verificacion_z3_compleja.sil` | 1 `task` |
-| 12 | `invalid/falla_smt.sil` | 1 `task` |
-| 13 | `invalid/fibra_basica.sil` | 1 `task` |
-| 14 | `invalid/scheduler_real.sil` | 1 `task` |
+| 1 | `sexp/sumar.sexp` | 1 `task` |
+| 2 | `sexp/calculadora_segura.sexp` | 1 `task` |
+| 3 | `sexp/test_calc.sexp` | 1 `task` |
+| 4 | `sexp/descuentos.sexp` | 1 `task` |
+| 5 | `sexp/factorial.sexp` | 4 `task` |
+| 6 | `sexp/inventario.sexp` | 2 `task` |
+| 7 | `sexp/procesar_pago.sexp` | 1 `task` |
+| 8 | `sexp/programa_confianza.sexp` | 2 `task` |
+| 9 | `sexp/validacion.sexp` | 2 `task` |
+| 10 | `sexp/verificacion_z3.sexp` | 1 `task` |
+| 11 | `sexp/verificacion_z3_compleja.sexp` | 1 `task` |
+| 12 | `sexp/falla_smt.sexp` | 1 `task` |
+| 13 | `sexp/fibra_basica.sexp` | 1 `task` |
+| 14 | `sexp/scheduler_real.sexp` | 1 `task` |
 
-### 8.1 `examples/valid/sumar.sil`
+### 8.1 `examples/sexp/sumar.sexp`
 
 ```sil
 definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:
@@ -526,7 +526,7 @@ definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:
     (return (+ x y))))
 ```
 
-### 8.2 `examples/valid/calculadora_segura.sil`
+### 8.2 `examples/sexp/calculadora_segura.sexp`
 
 Idéntico a 8.1.
 
@@ -545,7 +545,7 @@ definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:
     (return (+ x y))))
 ```
 
-### 8.3 `examples/valid/test_calc.sil`
+### 8.3 `examples/sexp/test_calc.sexp`
 
 Idéntico a 8.1.
 
@@ -564,7 +564,7 @@ definir tarea sumar(x: Entero64, y: Entero64) -> Entero64:
     (return (+ x y))))
 ```
 
-### 8.4 `examples/valid/descuentos.sil`
+### 8.4 `examples/sexp/descuentos.sexp`
 
 ```sil
 definir tarea descuento_porcentaje(precio: Entero64, pct: Entero64) -> Entero64:
@@ -592,7 +592,7 @@ definir tarea descuento_porcentaje(precio: Entero64, pct: Entero64) -> Entero64:
 `precio * (100 - pct) / 100` es `((precio * (100 - pct)) / 100)` en CNL, por
 asociatividad a la izquierda de `*` y `/` al mismo nivel.
 
-### 8.5 `examples/valid/factorial.sil`
+### 8.5 `examples/sexp/factorial.sexp`
 
 ```sil
 definir tarea factorial(n: Entero64) -> Entero64:
@@ -666,7 +666,7 @@ definir tarea factorial_3(n: Entero64) -> Entero64:
     (return 6)))
 ```
 
-### 8.6 `examples/valid/inventario.sil`
+### 8.6 `examples/sexp/inventario.sexp`
 
 ```sil
 definir tarea valor_producto(precio: Entero64, stock: Entero64) -> Entero64:
@@ -716,7 +716,7 @@ definir tarea agregar_stock(stock: Entero64, cantidad: Entero64) -> Entero64:
     (return (+ stock cantidad))))
 ```
 
-### 8.7 `examples/valid/procesar_pago.sil`
+### 8.7 `examples/sexp/procesar_pago.sexp`
 
 ```sil
 definir tarea procesar_pago(monto: Entero64) -> Entero64:
@@ -745,7 +745,7 @@ definir tarea procesar_pago(monto: Entero64) -> Entero64:
       (tiempo_ejecucion constante))))
 ```
 
-### 8.8 `examples/valid/programa_confianza.sil`
+### 8.8 `examples/sexp/programa_confianza.sexp`
 
 ```sil
 definir tarea trabajo() -> Entero64:
@@ -785,7 +785,7 @@ definir tarea principal() -> Entero64:
     (return 42)))
 ```
 
-### 8.9 `examples/valid/validacion.sil`
+### 8.9 `examples/sexp/validacion.sexp`
 
 ```sil
 definir tarea validar_edad(edad: Entero64) -> Entero64:
@@ -823,7 +823,7 @@ definir tarea es_mayor_18(edad: Entero64) -> Entero64:
     (return 1)))
 ```
 
-### 8.10 `examples/valid/verificacion_z3.sil`
+### 8.10 `examples/sexp/verificacion_z3.sexp`
 
 ```sil
 definir tarea test_z3(x: Entero64) -> Booleano:
@@ -844,7 +844,7 @@ definir tarea test_z3(x: Entero64) -> Booleano:
     (return verdadero)))
 ```
 
-### 8.11 `examples/valid/verificacion_z3_compleja.sil`
+### 8.11 `examples/sexp/verificacion_z3_compleja.sexp`
 
 ```sil
 definir tarea test_z3_complex(x: Entero64, y: Entero64) -> Booleano:
@@ -871,7 +871,7 @@ definir tarea test_z3_complex(x: Entero64, y: Entero64) -> Booleano:
     (return verdadero)))
 ```
 
-### 8.12 `examples/invalid/falla_smt.sil`
+### 8.12 `examples/sexp/falla_smt.sexp`
 
 ```sil
 definir tarea insegura(monto: Entero64) -> Entero64:
@@ -890,7 +890,7 @@ definir tarea insegura(monto: Entero64) -> Entero64:
     (return monto)))
 ```
 
-### 8.13 `examples/invalid/fibra_basica.sil`
+### 8.13 `examples/sexp/fibra_basica.sexp`
 
 ```sil
 definir tarea test_fiber():
@@ -911,10 +911,10 @@ definir tarea test_fiber():
 ```
 
 `(returns ...)` se omite: la tarea no declara tipo de retorno, pero devuelve un
-booleano. Es uno de los motivos por los que el archivo vive en `invalid/`; el
+booleano. Es uno de los motivos por los que el archivo vive en `sexp/`; el
 lector lo acepta, el checker lo rechaza (`retorno_con_valor_en_tarea_void`).
 
-### 8.14 `examples/invalid/scheduler_real.sil`
+### 8.14 `examples/sexp/scheduler_real.sexp`
 
 Idéntico a 8.13 salvo el nombre de la tarea (`test_fiber` → `test_scheduler_real`).
 

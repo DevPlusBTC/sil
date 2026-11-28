@@ -55,17 +55,14 @@ Tipos: `Entero64`, `Flotante64`, `Booleano`, `Texto`, `USD`, `EUR`,
 ## 3. Crate `silc-frontend`
 
 ```rust
-use silc_frontend::lexer::{lexear, lexear_con_errores};
-use silc_frontend::parser::parsear;
+use silc_frontend::a_ast::parsear;
+use silc_frontend::reader::leer;
 
-let tokens = lexear(fuente);                 // Vec<TokenFull>
-let programa = parsear(&tokens)?;            // Program
-
-// Variante que además devuelve los errores léxicos con posición.
-let (tokens, errores) = lexear_con_errores(fuente);
+let programa = parsear(fuente)?;             // Program
+let formas = leer(fuente)?;                  // Vec<Sexp>, con spans byte-exactos
 ```
 
-Módulos públicos: `ast`, `error`, `lexer`, `parser`, `ud` (experimental).
+Módulos públicos: `a_ast`, `ast`, `error`, `reader`.
 
 ---
 

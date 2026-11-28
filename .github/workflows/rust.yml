@@ -180,11 +180,18 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Ejemplos válidos están en ../examples/valid/
-          EXAMPLES=(../examples/valid/*.sil)
+          # Ejemplos válidos están en ../examples/sexp/; los tres `*_smt` y los
+          # de Z3 se validan en pasos propios (fallan a propósito / requieren Z3).
+          EXAMPLES=()
+          for f in ../examples/sexp/*.sexp; do
+            case "$(basename "$f")" in
+              falla_smt.sexp|fibra_basica.sexp|scheduler_real.sexp|verificacion_z3.sexp|verificacion_z3_compleja.sexp) continue ;;
+            esac
+            EXAMPLES+=("$f")
+          done
 
           if [ "${#EXAMPLES[@]}" -eq 0 ]; then
-            echo "No hay archivos .sil en ../examples/valid"
+            echo "No hay ejemplos válidos en ../examples/sexp"
             exit 1
           fi
 
@@ -192,7 +199,7 @@ jobs:
           BIN="./target/debug/silc"
 
           for f in "${EXAMPLES[@]}"; do
-            "./target/debug/silc" build "$f" --target c99 -o "_examples/$(basename "${f%.sil}").c" >/dev/null
+            "./target/debug/silc" build "$f" --target c99 -o "_examples/$(basename "${f%.sexp}").c" >/dev/null
           done
 
           for f in _examples/*.c; do
@@ -200,6 +207,18 @@ jobs:
             if command -v clang >/dev/null 2>&1; then
               clang -std=c99 -Wall -Wextra -Werror -fsyntax-only "$f"
             fi
+          done
+
+      # V1a: los ejemplos de Z3 necesitan el backend Z3, no el de intervalos.
+      - name: Validar ejemplos Z3 (feature smt)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: silc-core
+        run: |
+          set -euo pipefail
+          cargo build -p silc-cli --features smt --locked -j 1
+          for f in ../examples/sexp/verificacion_z3.sexp ../examples/sexp/verificacion_z3_compleja.sexp; do
+            SIL_USE_Z3=1 ./target/debug/silc build "$f" --target c99 -o /dev/null
           done
 
       # V1b: validar que los ejemplos inválidos fallan como se espera
@@ -211,11 +230,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Ejemplos inválidos están en ../examples/invalid/
-          INVALID_EXAMPLES=(../examples/invalid/*.sil)
+          # Ejemplos inválidos están en ../examples/sexp/ (falla_smt, fibra_basica, scheduler_real)
+          INVALID_EXAMPLES=(../examples/sexp/falla_smt.sexp ../examples/sexp/fibra_basica.sexp ../examples/sexp/scheduler_real.sexp)
 
           if [ "${#INVALID_EXAMPLES[@]}" -eq 0 ]; then
-            echo "No hay archivos .sil en ../examples/invalid"
+            echo "No hay ejemplos inválidos en ../examples/sexp"
             exit 1
           fi
 

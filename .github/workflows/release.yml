@@ -224,7 +224,7 @@ jobs:
           set -euo pipefail
           chmod +x bin/silc-linux-x64
           ./bin/silc-linux-x64 --version
-          printf 'definir tarea hola() -> Entero64:\n    demostrar 1 > 0\n    retornar 42\n' > hola.sil
+          printf '(task hola\n  (params)\n  (returns i64)\n  (body (prove (> 1 0)) (return 42)))\n' > hola.sil
           ./bin/silc-linux-x64 check hola.sil
           ./bin/silc-linux-x64 build hola.sil --target c99 -o hola.c
           ./bin/silc-linux-x64 build hola.sil --target wasm -o hola.wasm

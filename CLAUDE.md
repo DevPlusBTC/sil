@@ -16,8 +16,8 @@ cargo test --workspace                              # default features (interval
 cargo test --workspace --features smt              # Z3 backend
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
-cargo run -p silc-cli -- check examples/valid/sumar.sil
-cargo run -p silc-cli -- build examples/valid/sumar.sil --target c99 -o out.c
+cargo run -p silc-cli -- check examples/sexp/sumar.sexp
+cargo run -p silc-cli -- build examples/sexp/sumar.sexp --target c99 -o out.c
 ```
 
 Single test: `cargo test -p silc-frontend -- test_name`
@@ -38,7 +38,7 @@ Toolchain pinned to 1.97.1 (`rust-toolchain.toml`), MSRV 1.88.0. Use `--locked`.
 
 ```
 .sil source
-  │ silc-frontend  — logos lexer + recursive-descent parser → AST (INDENT/DEDENT)
+  │ silc-frontend  — reader S-exp + AST builder → AST
   ▼ silc-causal-ir — lower to SSA IR (slotmap); SMT verify contracts
       intervalos (default, pure Rust, sound/incomplete) | Z3 (feature `smt`, vendored)
       SHA3-512 cache skips re-verification

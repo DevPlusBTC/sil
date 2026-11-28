@@ -18,7 +18,7 @@ Este documento describe **qué está implementado y funcional** en SIL v0.1.0 vs
 | CLI (`silc`) | Listo para probar | 6 comandos: check, build, emit-smt, emit-rust, run, lsp |
 | LSP Server | Listo para probar | `silc lsp`: JSON-RPC sobre stdio, diagnósticos y completion |
 | VS Code Extension | Listo para probar | Cliente LSP + comandos `sil.compile`/`sil.verify`; falta `.vsix` |
-| Tests | Listo para probar | 205 Rust + 31 Python + 52 C |
+| Tests | Listo para probar | 190 Rust + 31 Python + 52 C |
 
 **Pendiente para desarrollo:** Codegen de servicios/red, arenas persistentes NVM,
 migración de esquemas lazy, SPIR-V/GPU, eBPF (opt-in `SIL_EBPF=1`; la rama
@@ -308,13 +308,13 @@ Conteo generado con `python3 scripts/test_counts.py`; la CI ejecuta
 |---|---|
 | `silc-backend` | 30 |
 | `silc-causal-ir` | 41 |
-| `silc-cli` | 18 |
+| `silc-cli` | 26 |
 | `silc-contracts` | 17 |
-| `silc-frontend` | 42 |
+| `silc-frontend` | 20 |
 | `silc-runtime` | 16 |
-| `silc-test` | 41 |
+| `silc-test` | 40 |
 | `sil-rt (C, casos)` | 52 |
-| **Total** | **257** |
+| **Total** | **242** |
 <!-- /generado -->
 
 ---
