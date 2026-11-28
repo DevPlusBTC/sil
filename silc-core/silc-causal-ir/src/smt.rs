@@ -1386,11 +1386,10 @@ fn puede_ser_cero(
 mod tests {
     use super::*;
     use crate::lower::bajar_tarea;
-    use silc_frontend::lexer::lexear;
-    use silc_frontend::parser::parsear;
+    use silc_frontend::a_ast::parsear;
 
     fn ir_de(src: &str) -> TareaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -1429,7 +1428,15 @@ mod tests {
 
     #[test]
     fn script_completo_declara_vars() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
         let s = script_completo(&ir);
         assert!(s.contains("(set-logic QF_LIA)"));
         assert!(s.contains("(declare-fun x () Int)"));
@@ -1439,19 +1446,43 @@ mod tests {
 
     #[test]
     fn meta_trivial_valida() {
-        verif_ok("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        verif_ok(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
     }
 
     #[test]
     fn meta_refinada_valida() {
         // x > 5 ⊢ x > 0
-        verif_ok("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 5\n    demostrar x > 0\n    retornar x\n");
+        verif_ok(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 5))
+    (prove (> x 0))
+    (return x)))",
+        );
     }
 
     #[test]
     fn meta_falsa_con_contraejemplo() {
         // x > 0 ⊬ x > 5 (x=1 falsifica)
-        let e = verif_falla("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 5\n    retornar x\n");
+        let e = verif_falla(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 5))
+    (return x)))",
+        );
         match e {
             ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
                 assert!(
@@ -1467,23 +1498,49 @@ mod tests {
     fn sin_asunciones_meta_falsa() {
         // ⊢ x > 0 es falso (x=0). El intervalo por defecto es todo Z.
         let e = verif_falla(
-            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (> x 0))
+    (return x)))",
         );
         assert!(matches!(e, ErrorSMT::InvarianteViolada { .. }));
     }
 
     #[test]
     fn igualdad_exacta() {
-        verif_ok("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        verif_ok(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
         // x == 3 ⊢ x >= 3
         verif_ok(
-            "definir tarea g(x: Entero64) -> Entero64:\n    demostrar 3 > 2\n    retornar x\n",
+            "(task g
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (> 3 2))
+    (return x)))",
         );
     }
 
     #[test]
     fn cache_evita_reverificacion() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
         let mut b = VerificadorIntervalos::new();
         let mut c = CacheLemas::en_memoria();
         assert_eq!(c.len(), 0);
@@ -1514,7 +1571,15 @@ mod tests {
         // asumir pct >= 0, pct <= 0 ⟹ demostrar pct == 0 es falso en general,
         // pero asumir pct == 0 ⊢ demostrar pct <= 0 es válido.
         // Usamos forma directamente soportada:
-        verif_ok("definir tarea f(pct: Entero64) -> Entero64:\n    asumir pct > 0\n    demostrar pct > 0\n    retornar pct\n");
+        verif_ok(
+            "(task f
+  (params (pct i64))
+  (returns i64)
+  (body
+    (assume (> pct 0))
+    (prove (> pct 0))
+    (return pct)))",
+        );
     }
 
     // Gap test: cache debe diferenciar por asunciones
@@ -1522,7 +1587,15 @@ mod tests {
     #[test]
     fn cache_diferencia_por_asunciones() {
         // Tarea A: asumir x > 5 ⊢ demostrar x > 3 (válido)
-        let ir_a = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 5\n    demostrar x > 3\n    retornar x\n");
+        let ir_a = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 5))
+    (prove (> x 3))
+    (return x)))",
+        );
         let mut b = VerificadorIntervalos::new();
         let mut c = CacheLemas::en_memoria();
         verificar_tarea_con(&ir_a, &mut b, &mut c, 5000).unwrap();
@@ -1530,7 +1603,15 @@ mod tests {
 
         // Tarea B: asumir x > 0 ⊢ demostrar x > 3 (FALSO: x=1 falsifica)
         // Debe ser cache MISS y fallar, no cache hit
-        let ir_b = ir_de("definir tarea g(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 3\n    retornar x\n");
+        let ir_b = ir_de(
+            "(task g
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 3))
+    (return x)))",
+        );
         let mut b2 = VerificadorIntervalos::new();
         // Usar MISMO cache - debería ser miss porque asunciones son distintas
         let resultado = verificar_tarea_con(&ir_b, &mut b2, &mut c, 5000);
@@ -1546,13 +1627,29 @@ mod tests {
     #[test]
     fn verificacion_variable_local_ssa() {
         // Con asunción directa sobre y: asumir y > 5 ⊢ demostrar y > 3 (válido)
-        let ir = ir_de("definir tarea f(y: Entero64) -> Entero64:\n    asumir y > 5\n    demostrar y > 3\n    retornar y\n");
+        let ir = ir_de(
+            "(task f
+  (params (y i64))
+  (returns i64)
+  (body
+    (assume (> y 5))
+    (prove (> y 3))
+    (return y)))",
+        );
         let mut b = VerificadorIntervalos::new();
         let mut c = CacheLemas::en_memoria();
         verificar_tarea_con(&ir, &mut b, &mut c, 5000).unwrap();
 
         // Con asunción contradictoria: asumir y > 5 ⊢ demostrar y < 3 (FALSO)
-        let ir2 = ir_de("definir tarea g(y: Entero64) -> Entero64:\n    asumir y > 5\n    demostrar y < 3\n    retornar y\n");
+        let ir2 = ir_de(
+            "(task g
+  (params (y i64))
+  (returns i64)
+  (body
+    (assume (> y 5))
+    (prove (< y 3))
+    (return y)))",
+        );
         let mut b2 = VerificadorIntervalos::new();
         let mut c2 = CacheLemas::en_memoria();
         let r = verificar_tarea_con(&ir2, &mut b2, &mut c2, 5000);
@@ -1563,7 +1660,15 @@ mod tests {
         }
 
         // Test que dos variables distintas (x, y) no se confunden
-        let ir3 = ir_de("definir tarea h(x: Entero64, y: Entero64) -> Entero64:\n    asumir x > 5\n    demostrar y > 3\n    retornar x + y\n");
+        let ir3 = ir_de(
+            "(task h
+  (params (x i64) (y i64))
+  (returns i64)
+  (body
+    (assume (> x 5))
+    (prove (> y 3))
+    (return (+ x y))))",
+        );
         let mut b3 = VerificadorIntervalos::new();
         let mut c3 = CacheLemas::en_memoria();
         let r3 = verificar_tarea_con(&ir3, &mut b3, &mut c3, 5000);
@@ -1580,7 +1685,12 @@ mod tests {
     fn postcondicion_invalida_falla() {
         // sin precondición, x > 5 es falsificable (x = 0)
         let ir = ir_de(
-            "definir tarea f(x: Entero64) -> Entero64 garantiza que x > 5:\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (> x 5))
+    (return x)))",
         );
         let mut b = VerificadorIntervalos::new();
         let mut c = CacheLemas::en_memoria();
@@ -1600,7 +1710,14 @@ mod tests {
     #[test]
     fn precondicion_sostiene_postcondicion() {
         // requiere x > 10 ⊢ garantiza x > 5 → válido
-        verif_ok("definir tarea g(x: Entero64) -> Entero64 requiere que x > 10 garantiza que x > 5:\n    retornar x\n");
+        verif_ok(
+            "(task g
+  (params (x i64))
+  (returns i64)
+  (requires (> x 10))
+  (ensures (> x 5))
+  (body (return x)))",
+        );
     }
 
     #[test]
@@ -1608,7 +1725,11 @@ mod tests {
         // `requiere que` sin `garantiza` no genera metas → no se verifica nada
         // (los pre solo restringen; sin post no hay obligación que comprobar)
         let ir = ir_de(
-            "definir tarea h(x: Entero64) -> Entero64 requiere que x > 10:\n    retornar x\n",
+            "(task h
+  (params (x i64))
+  (returns i64)
+  (requires (> x 10))
+  (body (return x)))",
         );
         let mut b = VerificadorIntervalos::new();
         let mut c = CacheLemas::en_memoria();
@@ -1625,11 +1746,10 @@ mod tests {
 mod tests_z3 {
     use super::*;
     use crate::lower::bajar_tarea;
-    use silc_frontend::lexer::lexear;
-    use silc_frontend::parser::parsear;
+    use silc_frontend::a_ast::parsear;
 
     fn ir_de(src: &str) -> TareaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
             panic!("se esperaba una tarea")
         };
@@ -1677,19 +1797,43 @@ mod tests_z3 {
     #[test]
     fn z3_meta_trivial_valida() {
         // asumir x > 0 ⊢ demostrar x > 0 → Válido
-        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        verif_ok_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
     }
 
     #[test]
     fn z3_meta_refinada_valida() {
         // asumir x > 5 ⊢ demostrar x > 0 → Válido
-        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 5\n    demostrar x > 0\n    retornar x\n");
+        verif_ok_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 5))
+    (prove (> x 0))
+    (return x)))",
+        );
     }
 
     #[test]
     fn z3_meta_falsa_con_contraejemplo() {
         // asumir x > 0 ⊬ demostrar x > 5 → Violada (x=1 falsifica)
-        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 5\n    retornar x\n");
+        let e = verif_falla_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 5))
+    (return x)))",
+        );
         match e {
             ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
                 assert!(
@@ -1709,7 +1853,12 @@ mod tests_z3 {
     fn z3_sin_asunciones_meta_falsa() {
         // ⊢ demostrar x > 0 → Violada (x = 0 o negativo)
         let e = verif_falla_z3(
-            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (> x 0))
+    (return x)))",
         );
         match e {
             ErrorSMT::InvarianteViolada { .. } => {}
@@ -1723,25 +1872,58 @@ mod tests_z3 {
     #[test]
     fn z3_multiples_variables_y_suma() {
         // asumir x > 5, y > 10 ⊢ demostrar x + y > 15 → Válido
-        verif_ok_z3("definir tarea f(x: Entero64, y: Entero64) -> Entero64:\n    asumir x > 5\n    asumir y > 10\n    demostrar x + y > 15\n    retornar x + y\n");
+        verif_ok_z3(
+            "(task f
+  (params (x i64) (y i64))
+  (returns i64)
+  (body
+    (assume (> x 5))
+    (assume (> y 10))
+    (prove (> (+ x y) 15))
+    (return (+ x y))))",
+        );
     }
 
     #[test]
     fn z3_igualdad_valida() {
         // asumir x == 5 ⊢ demostrar x == 5 → Válido
-        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x == 5\n    demostrar x == 5\n    retornar x\n");
+        verif_ok_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (== x 5))
+    (prove (== x 5))
+    (return x)))",
+        );
     }
 
     #[test]
     fn z3_menor_igual_valido() {
         // asumir x >= 5 ⊢ demostrar x >= 0 → Válido
-        verif_ok_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x >= 5\n    demostrar x >= 0\n    retornar x\n");
+        verif_ok_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (>= x 5))
+    (prove (>= x 0))
+    (return x)))",
+        );
     }
 
     #[test]
     fn z3_contraejemplo_con_valor_concreto() {
         // asumir x > 0 ⊬ demostrar x > 100 → Violada con contraejemplo
-        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 100\n    retornar x\n");
+        let e = verif_falla_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 100))
+    (return x)))",
+        );
         match e {
             ErrorSMT::InvarianteViolada { contraejemplo, .. } => {
                 assert!(
@@ -1759,7 +1941,16 @@ mod tests_z3 {
     #[test]
     fn z3_dos_metas_una_valida_una_no() {
         // Primera meta válida, segunda falsa → debe fallar en la segunda
-        let e = verif_falla_z3("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    demostrar x > 100\n    retornar x\n");
+        let e = verif_falla_z3(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (prove (> x 100))
+    (return x)))",
+        );
         match e {
             ErrorSMT::InvarianteViolada { .. } => {}
             ErrorSMT::Indecidible { .. } => {
@@ -1771,7 +1962,15 @@ mod tests_z3 {
 
     #[test]
     fn z3_cache_evita_reverificacion() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (prove (> x 0))
+    (return x)))",
+        );
         let mut b = VerificadorZ3::new();
         let mut c = CacheLemas::en_memoria();
         assert_eq!(c.len(), 0);

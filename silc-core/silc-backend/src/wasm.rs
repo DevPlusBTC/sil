@@ -1416,10 +1416,10 @@ fn emitir_instr(
 mod tests {
     use super::*;
     use silc_causal_ir::{lower::bajar_tarea, nodes::*};
-    use silc_frontend::{lexer::lexear, parser::parsear};
+    use silc_frontend::a_ast::parsear;
 
     fn ir_de(src: &str) -> TareaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -1434,7 +1434,7 @@ mod tests {
 
     #[test]
     fn emite_identidad_valida() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de("(task f (params (x i64)) (returns i64) (body (return x)))");
         let b = emitir(&ir).unwrap();
         assert!(!b.is_empty());
         valida_wasm(&b);
@@ -1442,7 +1442,7 @@ mod tests {
 
     #[test]
     fn exporta_nombre_y_memoria() {
-        let ir = ir_de("definir tarea mifunc(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de("(task mifunc (params (x i64)) (returns i64) (body (return x)))");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
         // Verificar exports e imports parseando el módulo.
@@ -1477,8 +1477,7 @@ mod tests {
     #[test]
     fn aritmetica_params_valida() {
         // x + y con ambos params → local.get + add. Válido M6.
-        let ir =
-            ir_de("definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n");
+        let ir = ir_de("(task s (params (x i64) (y i64)) (returns i64) (body (return (+ x y))))");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
     }
@@ -1489,9 +1488,7 @@ mod tests {
         // M6: `retornar x > 0` no es sintaxis CNL válida (retornar expr aritmética).
         // Usamos tarea que retorna param y tiene verificación (la verificación
         // no emite código que rompa la pila en M6 por diseño).
-        let ir = ir_de(
-            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
-        );
+        let ir = ir_de("(task f (params (x i64)) (returns i64) (body (prove (> x 0)) (return x)))");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
     }
@@ -1500,14 +1497,16 @@ mod tests {
     fn intermedio_reutilizado_valido() {
         // let y = x * 2; retornar x + y → `y` es intermedio reutilizado.
         // M6 con locals-para-todo: funciona correctamente.
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    let y: Entero64 = x * 2\n    retornar x + y\n");
+        let ir = ir_de(
+            "(task f (params (x i64)) (returns i64) (body (let y i64 (* x 2)) (return (+ x y))))",
+        );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
     }
 
     #[test]
     fn tipos_no_soportados_error_limpio() {
-        let ir = ir_de("definir tarea f(xs: Lista de Entero64) -> Entero64:\n    retornar 0\n");
+        let ir = ir_de("(task f (params (xs (list i64))) (returns i64) (body (return 0)))");
         let r = emitir(&ir);
         assert!(r.is_err());
     }
@@ -1515,7 +1514,7 @@ mod tests {
     #[test]
     fn capacidades_emiten_imports_sil() {
         let ir = ir_de(
-            "definir tarea f() -> Booleano:\n    solicitar capacidad lectura_archivo para \"/tmp/x\" como cap\n    validar cap\n    retornar verdadero\n",
+            "(task f (params) (returns booleano) (body (request lectura_archivo \"/tmp/x\" (as cap)) (validate cap) (return verdadero)))",
         );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
@@ -1542,7 +1541,7 @@ mod tests {
     #[test]
     fn canal_valido() {
         let ir = ir_de(
-            "definir tarea f() -> Entero64:\n    crear canal con capacidad 8 como c\n    enviar 40 en c\n    recibir de c como v\n    retornar v\n",
+            "(task f (params) (returns i64) (body (chan c (capacity 8)) (send 40 c) (recv c v) (return v)))",
         );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
@@ -1551,7 +1550,7 @@ mod tests {
     #[test]
     fn texto_en_segmento_de_datos() {
         let ir = ir_de(
-            "definir tarea f() -> Booleano:\n    solicitar capacidad lectura_archivo para \"/tmp/datos\" como cap\n    leer archivo \"/tmp/datos\" con cap como t\n    retornar verdadero\n",
+            "(task f (params) (returns booleano) (body (request lectura_archivo \"/tmp/datos\" (as cap)) (io-read \"/tmp/datos\" cap t) (return verdadero)))",
         );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
@@ -1573,7 +1572,7 @@ mod tests {
         // El export de la tarea debe apuntar a la función definida,
         // no a un import (bug histórico: índice 0).
         let ir = ir_de(
-            "definir tarea mifunc() -> Booleano:\n    solicitar capacidad red para \"h:1\" como cap\n    retornar verdadero\n",
+            "(task mifunc (params) (returns booleano) (body (request red \"h:1\" (as cap)) (return verdadero)))",
         );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
@@ -1611,7 +1610,7 @@ mod tests {
     fn si_bloque_valido() {
         // Si simple: retorna valor según condición.
         let ir = ir_de(
-            "definir tarea f(x: Entero64) -> Entero64:\n    si x > 0 entonces:\n        retornar x\n    sino:\n        retornar -x\n",
+            "(task f (params (x i64)) (returns i64) (body (if (> x 0) (body (return x)) (else (body (return (- 0 x)))))))",
         );
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
@@ -1622,7 +1621,7 @@ mod tests {
     fn mientras_bloque_valido() {
         // Mientras simple: estructura de bucle válida.
         // Nota: asignaciones mutables aún no están soportadas en el parser.
-        let ir = ir_de("definir tarea f(n: Entero64) -> Entero64:\n    si n > 0 entonces:\n        retornar n\n    sino:\n        retornar 0\n");
+        let ir = ir_de("(task f (params (n i64)) (returns i64) (body (if (> n 0) (body (return n)) (else (body (return 0))))))");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
         assert!(!b.is_empty(), "módulo wasm vacío");
@@ -1631,7 +1630,7 @@ mod tests {
     #[test]
     fn anidamiento_si_dentro_si_valido() {
         // If anidado dentro de if.
-        let ir = ir_de("definir tarea f(a: Entero64, b: Entero64) -> Entero64:\n    si a > 0 entonces:\n        si b > 0 entonces:\n            retornar a + b\n        sino:\n            retornar a\n    sino:\n        retornar 0\n");
+        let ir = ir_de("(task f (params (a i64) (b i64)) (returns i64) (body (if (> a 0) (body (if (> b 0) (body (return (+ a b))) (else (body (return a))))) (else (body (return 0))))))");
         let b = emitir(&ir).unwrap();
         valida_wasm(&b);
         assert!(!b.is_empty(), "módulo wasm vacío");
@@ -1643,7 +1642,7 @@ mod tests {
     /// Baja un programa que contiene un bloque `servicio` y retorna el
     /// `ProgramaIR` resultante. Útil para tests de codegen de servicios.
     fn programa_ir_de(src: &str) -> ProgramaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         for d in &prog.defs {
             if let silc_frontend::ast::Decl::Servicio(s) = d {
                 let mut tareas_ir = Vec::new();
@@ -1680,7 +1679,7 @@ mod tests {
     #[test]
     fn servicio_emite_seccion_custom() {
         let ir = programa_ir_de(
-                "definir servicio mi_servicio:\n    escuchar en puerto 8080 con protocolo tcp\n    cuando llegue evento on_data(p: Entero64):\n        retornar 0\n    definir tarea handler_main() -> Entero64:\n        retornar 0\n",
+                "(service mi_servicio\n  (net 8080 (protocol tcp))\n  (handler on_data (params (p i64)) (body (return 0)))\n  (task handler_main (params) (returns i64) (body (return 0))))",
             );
         assert_eq!(ir.servicio_nombre.as_deref(), Some("mi_servicio"));
         assert_eq!(ir.red.as_ref().unwrap().puerto, 8080);
@@ -1720,7 +1719,7 @@ mod tests {
             servicio_nombre: None,
             red: None,
             manejadores: Vec::new(),
-            tareas: vec![ir_de("definir tarea f() -> Entero64:\n    retornar 1\n")],
+            tareas: vec![ir_de("(task f (params) (returns i64) (body (return 1)))")],
             restricciones: Vec::new(),
             tipos_definidos: Vec::new(),
         };

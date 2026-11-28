@@ -66,11 +66,10 @@ struct Lector<'a> {
 
 impl<'a> Lector<'a> {
     fn nuevo(fuente: &'a str) -> Self {
-        Self {
-            fuente,
-            chars: fuente.char_indices().collect(),
-            pos: 0,
-        }
+        let chars: Vec<(usize, char)> = fuente.char_indices().collect();
+        // La BOM no es whitespace para Rust; se consume sin desplazar los spans.
+        let pos = usize::from(chars.first().is_some_and(|(_, c)| *c == '\u{feff}'));
+        Self { fuente, chars, pos }
     }
 
     /// Offset en bytes del carácter `i` (o el final de la fuente).

@@ -23,8 +23,6 @@ rust-version = "1.88.0"
 
 [workspace.dependencies]
 # Frontend
-logos = "0.15"
-chumsky = "0.9"
 miette = { version = "7.0", features = ["fancy"] }
 thiserror = "2.0"
 

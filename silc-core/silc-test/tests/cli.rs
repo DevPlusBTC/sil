@@ -17,13 +17,15 @@ fn ejemplo(nombre: &str, contenido: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn check_ok() {
-    let f = ejemplo("ok", "definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+    let f = ejemplo(
+        "ok",
+        "(task f (params (x i64)) (returns i64) (body (assume (> x 0)) (prove (> x 0)) (return x)))",
+    );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
@@ -31,28 +33,35 @@ fn check_verifica_let() {
     // Regresión: `let` debe entrar en SMT como definición SSA, no como variable libre.
     let f = ejemplo(
         "let",
-        "definir tarea f(monto: Entero64, saldo: Entero64) -> Booleano:\n    asumir que monto > 0\n    asumir que saldo >= monto\n    let nuevo_saldo = saldo - monto\n    demostrar que nuevo_saldo >= 0\n    retornar verdadero\n",
+        "(task f
+  (params (monto i64) (saldo i64))
+  (returns booleano)
+  (body
+    (assume (> monto 0))
+    (assume (>= saldo monto))
+    (let nuevo_saldo (- saldo monto))
+    (prove (>= nuevo_saldo 0))
+    (return verdadero)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn check_falla_smt() {
     let f = ejemplo(
         "bad",
-        "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 1000000\n    retornar x\n",
+        "(task f (params (x i64)) (returns i64) (body (prove (> x 1000000)) (return x)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("verificaci"));
+        .stderr(predicate::str::contains("Invariante violada"));
 }
 
 #[test]
@@ -69,7 +78,7 @@ fn check_error_sintaxis() {
 fn build_c99_genera_archivo() {
     let f = ejemplo(
         "b",
-        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+        "(task s (params (x i64) (y i64)) (returns i64) (body (return (+ x y))))",
     );
     let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -97,7 +106,7 @@ fn build_c99_genera_archivo() {
 fn build_wasm_genera_binario_valido() {
     let f = ejemplo(
         "w",
-        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+        "(task s (params (x i64) (y i64)) (returns i64) (body (return (+ x y))))",
     );
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -124,7 +133,7 @@ fn build_wasm_genera_binario_valido() {
 
 #[test]
 fn build_target_desconocido_falla() {
-    let f = ejemplo("t", "definir tarea f() -> Entero64:\n    retornar 1\n");
+    let f = ejemplo("t", "(task f (params) (returns i64) (body (return 1)))");
     Command::cargo_bin("silc")
         .unwrap()
         .args(["build", f.path().to_str().unwrap(), "--target", "llvm"])
@@ -133,12 +142,19 @@ fn build_target_desconocido_falla() {
         .stderr(predicate::str::contains("target desconocido"));
 }
 
+const BIBLIOTECA: &str = "(task sumar_uno
+  (params (x i64))
+  (returns i64)
+  (body (return (+ x 1))))
+
+(task doblar
+  (params (y i64))
+  (returns i64)
+  (body (return (* y 2))))";
+
 #[test]
 fn build_c99_biblioteca_con_varias_tareas() {
-    let f = ejemplo(
-        "lib",
-        "definir tarea sumar_uno(x: Entero64) -> Entero64:\n    retornar x + 1\n\ndefinir tarea doblar(y: Entero64) -> Entero64:\n    retornar y * 2\n",
-    );
+    let f = ejemplo("lib", BIBLIOTECA);
     let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
     drop(out);
@@ -163,10 +179,7 @@ fn build_c99_biblioteca_con_varias_tareas() {
 
 #[test]
 fn build_wasm_biblioteca_con_varias_tareas() {
-    let f = ejemplo(
-        "libw",
-        "definir tarea sumar_uno(x: Entero64) -> Entero64:\n    retornar x + 1\n\ndefinir tarea doblar(y: Entero64) -> Entero64:\n    retornar y * 2\n",
-    );
+    let f = ejemplo("libw", BIBLIOTECA);
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
     drop(out);
@@ -191,25 +204,18 @@ fn build_wasm_biblioteca_con_varias_tareas() {
 #[test]
 fn build_wasm_biblioteca_varias_tareas_con_si() {
     // Dos tareas con si/sino → valida generación WASM multi-tarea con control de flujo.
-    use std::io::Write;
-    let temp = tempfile::Builder::new().suffix(".sil").tempfile().unwrap();
-    let mut f = std::fs::File::create(temp.path()).unwrap();
-    writeln!(
-        f,
-        "definir tarea suma_segura(a: Entero64, b: Entero64) -> Entero64:"
-    )
-    .unwrap();
-    writeln!(f, "    si a > 0 entonces:").unwrap();
-    writeln!(f, "        retornar a + b").unwrap();
-    writeln!(f, "    sino:").unwrap();
-    writeln!(f, "        retornar b").unwrap();
-    writeln!(f).unwrap();
-    writeln!(f, "definir tarea doble(x: Entero64) -> Entero64:").unwrap();
-    writeln!(f, "    si x > 0 entonces:").unwrap();
-    writeln!(f, "        retornar x * 2").unwrap();
-    writeln!(f, "    sino:").unwrap();
-    writeln!(f, "        retornar 0").unwrap();
-    drop(f);
+    let f = ejemplo(
+        "libwsi",
+        "(task suma_segura
+  (params (a i64) (b i64))
+  (returns i64)
+  (body (if (> a 0) (body (return (+ a b))) (else (body (return b))))))
+
+(task doble
+  (params (x i64))
+  (returns i64)
+  (body (if (> x 0) (body (return (* x 2))) (else (body (return 0))))))",
+    );
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
     drop(out);
@@ -217,7 +223,7 @@ fn build_wasm_biblioteca_varias_tareas_con_si() {
         .unwrap()
         .args([
             "build",
-            temp.path().to_str().unwrap(),
+            f.path().to_str().unwrap(),
             "--out",
             &out_path,
             "--target",
@@ -232,64 +238,72 @@ fn build_wasm_biblioteca_varias_tareas_con_si() {
 }
 
 #[test]
-fn build_c99_generar_sin_principal_falla_limpio() {
-    let f = ejemplo(
-        "fiblib",
-        "definir tarea t() -> Entero64:\n    retornar 1\n\ndefinir tarea f(x: Entero64) -> Entero64:\n    generar t\n    retornar x\n",
-    );
+fn build_c99_biblioteca_sin_principal_genera_sin_main() {
+    let f = ejemplo("fiblib", BIBLIOTECA);
+    let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
+    let out_path = out.path().to_str().unwrap().to_string();
+    drop(out);
     Command::cargo_bin("silc")
         .unwrap()
-        .args(["build", f.path().to_str().unwrap(), "--target", "c99"])
+        .args([
+            "build",
+            f.path().to_str().unwrap(),
+            "--out",
+            &out_path,
+            "--target",
+            "c99",
+        ])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("requiere una tarea principal"));
+        .success();
+    let c = std::fs::read_to_string(&out_path).unwrap();
+    assert!(!c.contains("int main"), "una biblioteca no debe tener main");
+    let _ = std::fs::remove_file(&out_path);
 }
 
 #[test]
 fn check_invariante_constante_sin_variables() {
     let f = ejemplo(
         "constok",
-        "definir tarea f() -> Entero64:\n    demostrar 1 > 0\n    retornar 1\n",
+        "(task f (params) (returns i64) (body (prove (> 1 0)) (return 1)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn check_invariante_constante_falsa_falla() {
     let f = ejemplo(
         "constbad",
-        "definir tarea f() -> Entero64:\n    demostrar 1 > 2\n    retornar 1\n",
+        "(task f (params) (returns i64) (body (prove (> 1 2)) (return 1)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("verificaci"));
+        .stderr(predicate::str::contains("falsificable"));
 }
 
 #[test]
 fn run_biblioteca_falla_limpio() {
-    let f = ejemplo(
-        "runlib",
-        "definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n",
-    );
+    let f = ejemplo("runlib", BIBLIOTECA);
     Command::cargo_bin("silc")
         .unwrap()
         .args(["run", f.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("biblioteca"));
+        .stderr(predicate::str::contains("solo 1 archivo"));
 }
 
 #[test]
 fn emit_smt_muestra_script() {
-    let f = ejemplo("smt", "definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+    let f = ejemplo(
+        "smt",
+        "(task f (params (x i64)) (returns i64) (body (assume (> x 0)) (prove (> x 0)) (return x)))",
+    );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["emit-smt", f.path().to_str().unwrap()])

@@ -465,7 +465,9 @@ fn migracion(f: &Forma) -> Result<MigracionDecl, ErrorFrontend> {
 
     for h in f.hijos().iter().skip(1) {
         let g = Forma::abrir(h)?;
-        g.exacta(2)?;
+        if g.nombre != "restrictions" {
+            g.exacta(2)?;
+        }
         match g.nombre {
             "from" => {
                 if desde.is_some() {

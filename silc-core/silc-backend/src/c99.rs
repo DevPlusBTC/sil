@@ -1466,10 +1466,10 @@ fn esc(s: &str) -> String {
 mod tests {
     use super::*;
     use silc_causal_ir::{lower::bajar_tarea, nodes::TareaIR};
-    use silc_frontend::{lexer::lexear, parser::parsear};
+    use silc_frontend::a_ast::parsear;
 
     fn ir_de(src: &str) -> TareaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -1477,8 +1477,6 @@ mod tests {
     }
 
     fn compila_gcc(codigo: &str) -> Result<(), String> {
-        // Nombre único: los tests corren en paralelo dentro del mismo proceso,
-        // un nombre fijo por PID provoca carreras (uno borra el .c del otro).
         static CONTADOR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = CONTADOR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut path = std::env::temp_dir();
@@ -1501,7 +1499,12 @@ mod tests {
 
     #[test]
     fn emite_funcion_minima() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body (return x)))",
+        );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("long long f("));
         assert!(c.contains("return x;"));
@@ -1510,7 +1513,12 @@ mod tests {
 
     #[test]
     fn runtime_arena_embebido() {
-        let ir = ir_de("definir tarea f() -> Entero64:\n    retornar 1\n");
+        let ir = ir_de(
+            "(task f
+  (params)
+  (returns i64)
+  (body (return 1)))",
+        );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("sil_arena_crear_"));
         assert!(c.contains("sil_arena_asignar_"));
@@ -1520,7 +1528,12 @@ mod tests {
     #[test]
     fn verificacion_emitida_como_if_exit() {
         let ir = ir_de(
-            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assert (> x 0))
+    (return x)))",
         );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("if (!("));
@@ -1529,7 +1542,12 @@ mod tests {
 
     #[test]
     fn gcc_acepta_minima() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body (return x)))",
+        );
         let c = emitir(&ir).unwrap();
         match compila_gcc(&c) {
             Ok(()) => {}
@@ -1541,7 +1559,12 @@ mod tests {
     #[test]
     fn gcc_acepta_con_verificacion() {
         let ir = ir_de(
-            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assert (> x 0))
+    (return x)))",
         );
         let c = emitir(&ir).unwrap();
         match compila_gcc(&c) {
@@ -1553,7 +1576,14 @@ mod tests {
 
     #[test]
     fn gcc_acepta_aritmetica() {
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    let y: Entero64 = x * 2\n    retornar x + y\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (let y i64 (* x 2))
+    (return (+ x y))))",
+        );
         let c = emitir(&ir).unwrap();
         match compila_gcc(&c) {
             Ok(()) => {}
@@ -1564,7 +1594,12 @@ mod tests {
 
     #[test]
     fn tipos_no_soportados_error_limpio() {
-        let ir = ir_de("definir tarea f(xs: Lista de Entero64) -> Entero64:\n    retornar 0\n");
+        let ir = ir_de(
+            "(task f
+  (params (xs (list i64)))
+  (returns i64)
+  (body (return 0)))",
+        );
         let r = emitir(&ir);
         assert!(
             r.is_err(),
@@ -1575,7 +1610,13 @@ mod tests {
     #[test]
     fn capacidades_emiten_runtime_real() {
         let ir = ir_de(
-            "definir tarea f() -> Booleano:\n    solicitar capacidad lectura_archivo para \"/tmp/x\" como cap\n    validar cap\n    retornar verdadero\n",
+            "(task f
+  (params)
+  (returns booleano)
+  (body
+    (request lectura_archivo \"/tmp/x\" (as cap))
+    (validate cap)
+    (return verdadero)))",
         );
         let c = emitir(&ir).unwrap();
         assert!(
@@ -1589,7 +1630,14 @@ mod tests {
     #[test]
     fn canal_fifo_real() {
         let ir = ir_de(
-            "definir tarea f() -> Entero64:\n    crear canal con capacidad 8 como c\n    enviar 40 en c\n    recibir de c como v\n    retornar v\n",
+            "(task f
+  (params)
+  (returns i64)
+  (body
+    (chan c (capacity 8))
+    (send 40 c)
+    (recv c v)
+    (return v)))",
         );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("sil_canal_crear_(8"), "sin crear:\n{c}");
@@ -1600,7 +1648,13 @@ mod tests {
     #[test]
     fn io_archivo_con_capacidad() {
         let ir = ir_de(
-            "definir tarea f() -> Booleano:\n    solicitar capacidad lectura_archivo para \"/tmp/d\" como cap\n    leer archivo \"/tmp/d\" con cap como t\n    retornar verdadero\n",
+            "(task f
+  (params)
+  (returns booleano)
+  (body
+    (request lectura_archivo \"/tmp/d\" (as cap))
+    (io-read \"/tmp/d\" cap t)
+    (return verdadero)))",
         );
         let c = emitir(&ir).unwrap();
         assert!(c.contains("sil_io_leer_(__arena,"), "sin leer:\n{c}");
@@ -1610,7 +1664,12 @@ mod tests {
     fn ramas_con_goto_real() {
         // Terminadores Rama/Salto emiten goto con etiquetas, no TODO.
         // Y un bloque sin gotos hacia él no lleva etiqueta (evita -Wunused-label).
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body (return x)))",
+        );
         let c = emitir(&ir).unwrap();
         assert!(!c.contains("TODO(M6)"), "queda TODO:\n{c}");
         assert!(c.contains("return x;"), "cuerpo no emitido:\n{c}");
@@ -1620,7 +1679,14 @@ mod tests {
     #[test]
     fn aritmetica_emite_casts_c() {
         // Los casts deben ser de tipos C, no del lenguaje SIL (Entero64 no existe en C).
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    let y: Entero64 = x * 2\n    retornar x + y\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (let y i64 (* x 2))
+    (return (+ x y))))",
+        );
         let c = emitir(&ir).unwrap();
         assert!(!c.contains("(Entero64)"), "cast a tipo SIL:\n{c}");
         assert!(c.contains("(int64_t)"), "sin cast C:\n{c}");
@@ -1629,7 +1695,12 @@ mod tests {
     #[test]
     fn prologo_posix_antes_de_includes() {
         // Bajo -std=c99 estricto hacen falta las feature macros POSIX.
-        let ir = ir_de("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
+        let ir = ir_de(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body (return x)))",
+        );
         let c = emitir(&ir).unwrap();
         let pos = c.find("_POSIX_C_SOURCE").expect("sin _POSIX_C_SOURCE");
         let inc = c.find("#include").expect("sin include");

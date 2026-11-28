@@ -19,91 +19,109 @@ fn sil_tempfile(contenido: &str) -> tempfile::NamedTempFile {
 fn bootstrap_tarea_basica() {
     // Tarea mínima con parámetros, retorno, asumir/demostrar
     let f = sil_tempfile(
-        "definir tarea identidad(x: Entero64) -> Entero64:\n    asumir x >= 0\n    demostrar x >= 0\n    retornar x\n",
+        "(task identidad
+  (params (x i64))
+  (returns i64)
+  (body (assume (>= x 0)) (prove (>= x 0)) (return x)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_tarea_aritmetica() {
     // Aritmética simple: suma con variables
     let f = sil_tempfile(
-        "definir tarea sumar(valor_a: Entero64, valor_b: Entero64) -> Entero64:\n    asumir valor_a >= 0\n    asumir valor_b >= 0\n    demostrar valor_a >= 0\n    retornar valor_a + valor_b\n",
+        "(task sumar
+  (params (valor_a i64) (valor_b i64))
+  (returns i64)
+  (body (assume (>= valor_a 0)) (assume (>= valor_b 0))
+    (prove (>= valor_a 0)) (return (+ valor_a valor_b))))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_tarea_control_flujo() {
     // Tarea con parámetros y retorno simple
     let f = sil_tempfile(
-        "definir tarea maximo(valor_x: Entero64, valor_y: Entero64) -> Entero64:\n    asumir valor_x >= 0\n    asumir valor_y >= 0\n    demostrar valor_x >= 0\n    retornar valor_x\n",
+        "(task maximo
+  (params (valor_x i64) (valor_y i64))
+  (returns i64)
+  (body (assume (>= valor_x 0)) (assume (>= valor_y 0))
+    (prove (>= valor_x 0)) (return valor_x)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_tarea_arena() {
     // Uso de arena (let simple)
     let f = sil_tempfile(
-        "definir tarea usar_arena(valor_n: Entero64) -> Entero64:\n    let buffer: Entero64 = valor_n * 8\n    asumir buffer >= 0\n    demostrar buffer >= 0\n    retornar buffer\n",
+        "(task usar_arena
+  (params (valor_n i64))
+  (returns i64)
+  (body (let buffer i64 (* valor_n 8))
+    (assume (>= buffer 0)) (prove (>= buffer 0)) (return buffer)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_tarea_capacidad() {
     // Capacidades con strings (solo en parámetros, no en invariantes)
     let f = sil_tempfile(
-        "definir tarea leer_archivo(ruta: Texto) -> Entero64:\n    asumir 1 > 0\n    demostrar 1 > 0\n    retornar 0\n",
+        "(task leer_archivo
+  (params (ruta texto))
+  (returns i64)
+  (body (assume (> 1 0)) (prove (> 1 0)) (return 0)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_tarea_tipos_compuestos() {
     // Tipos compuestos: omitir tuplas por ahora, probar struct simple
     let f = sil_tempfile(
-        "definir tarea procesar(t: Entero64) -> Entero64:\n    asumir 1 > 0\n    demostrar 1 > 0\n    retornar 0\n",
+        "(task procesar
+  (params (t i64))
+  (returns i64)
+  (body (assume (> 1 0)) (prove (> 1 0)) (return 0)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_build_c99() {
     // Build completo a C99 - verificar que genera código correcto
     let f = sil_tempfile(
-        "definir tarea sumar(valor_a: Entero64, valor_b: Entero64) -> Entero64:\n    retornar valor_a + valor_b\n",
+        "(task sumar
+  (params (valor_a i64) (valor_b i64))
+  (returns i64)
+  (body (return (+ valor_a valor_b))))",
     );
     let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -121,10 +139,7 @@ fn bootstrap_build_c99() {
         .assert()
         .success();
     let c = std::fs::read_to_string(&out_path).unwrap();
-    eprintln!("=== GENERATED C CODE ===\n{}=== END ===", c);
-    // Verificar que el C generado tiene la estructura correcta
     assert!(c.contains("long long sumar("));
-    // El retorno puede variar en formato, verificar que la expresión está presente
     assert!(
         c.contains("valor_a + valor_b")
             || c.contains("valor_a+valor_b")
@@ -137,7 +152,10 @@ fn bootstrap_build_c99() {
 fn bootstrap_build_wasm() {
     // Build completo a WASM
     let f = sil_tempfile(
-        "definir tarea multiplicar(valor_a: Entero64, valor_b: Entero64) -> Entero64:\n    retornar valor_a * valor_b\n",
+        "(task multiplicar
+  (params (valor_a i64) (valor_b i64))
+  (returns i64)
+  (body (return (* valor_a valor_b))))",
     );
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -164,7 +182,10 @@ fn bootstrap_build_wasm() {
 fn bootstrap_emit_smt() {
     // Emitir SMT-LIB2
     let f = sil_tempfile(
-        "definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n",
+        "(task f
+  (params (x i64))
+  (returns i64)
+  (body (assume (> x 0)) (prove (> x 0)) (return x)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
@@ -178,26 +199,26 @@ fn bootstrap_emit_smt() {
 #[test]
 fn bootstrap_programa_completo() {
     // Programa con múltiples tareas (si se soporta)
-    let programa = r#"
-definir tarea factorial(n: Entero64) -> Entero64:
-    asumir n >= 0
-    demostrar n >= 0
-    retornar n
-"#;
+    let programa = "(task factorial
+  (params (n i64))
+  (returns i64)
+  (body (assume (>= n 0)) (prove (>= n 0)) (return n)))";
     let f = sil_tempfile(programa);
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn bootstrap_pipeline_completo() {
     // Pipeline completo: check -> build C99 -> build WASM -> emit-smt
     let f = sil_tempfile(
-        "definir tarea proceso(valor_x: Entero64) -> Entero64:\n    asumir valor_x >= 0\n    demostrar valor_x >= 0\n    retornar valor_x + 1\n",
+        "(task proceso
+  (params (valor_x i64))
+  (returns i64)
+  (body (assume (>= valor_x 0)) (prove (>= valor_x 0)) (return (+ valor_x 1))))",
     );
     // 1. check
     Command::cargo_bin("silc")

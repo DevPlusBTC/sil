@@ -980,13 +980,16 @@ pub fn bajar_tipo_definido(decl: &A::Decl) -> Result<Option<TipoDefinido>, Error
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silc_frontend::lexer::lexear;
-    use silc_frontend::parser::parsear;
+    use silc_frontend::a_ast::parsear;
 
     #[test]
     fn rechaza_retornar_en_void() {
-        let src = "definir tarea f():\n    let x: Entero64 = 1\n    retornar x\n";
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let src = "(task f
+  (params)
+  (body
+    (let x i64 1)
+    (return x)))";
+        let prog = parsear(src).expect("parse OK");
         let A::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -996,9 +999,13 @@ mod tests {
 
     #[test]
     fn permite_retornar_sin_expr_en_void() {
-        let src =
-            "definir tarea f():\n    asumir verdadero\n    demostrar verdadero\n    retornar\n";
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let src = "(task f
+  (params)
+  (body
+    (assume verdadero)
+    (prove verdadero)
+    (return)))";
+        let prog = parsear(src).expect("parse OK");
         let A::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -1007,7 +1014,7 @@ mod tests {
     }
 
     fn bajar(src: &str) -> TareaIR {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         assert_eq!(prog.defs.len(), 1);
         let A::Decl::Tarea(t) = &prog.defs[0] else {
             panic!("esperaba tarea")
@@ -1017,10 +1024,13 @@ mod tests {
 
     #[test]
     fn ssa_valor_unico_por_definicion() {
-        let ir = bajar("definir tarea f(x: Entero64) -> Entero64:\n    retornar x\n");
-        // params: 1 valor; retorno: sin valor nuevo. Total valores = 1.
+        let ir = bajar(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body (return x)))",
+        );
         assert_eq!(ir.tipos.len(), 1);
-        // Cada valor tiene tipo registrado.
         for t in ir.tipos.values() {
             assert_eq!(*t, SilType::Entero64);
         }
@@ -1028,11 +1038,15 @@ mod tests {
 
     #[test]
     fn asignacion_registra_nombre_y_tipo() {
-        let ir =
-            bajar("definir tarea f() -> Entero64:\n    let x: Entero64 = 42\n    retornar x\n");
-        // Valores: const 42, asign x. Nombres: x registrado.
+        let ir = bajar(
+            "(task f
+  (params)
+  (returns i64)
+  (body
+    (let x i64 42)
+    (return x)))",
+        );
         assert!(ir.nombres.values().any(|n| n == "x"));
-        // La variable x resuelve al valor de la asignación.
         let total_instrs = ir.num_instrs();
         assert!(
             total_instrs >= 3,
@@ -1042,18 +1056,28 @@ mod tests {
 
     #[test]
     fn asumir_genera_invariante_asuncion() {
-        let ir =
-            bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
+        let ir = bajar(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (return x)))",
+        );
         let asunciones = ir.invariantes(ClaseInvariante::Asuncion);
         assert_eq!(asunciones.len(), 1);
-        // Hash de 64 bytes no nulo.
         assert!(asunciones[0].hash.iter().any(|b| *b != 0));
     }
 
     #[test]
     fn demostrar_genera_invariante_demostracion() {
         let ir = bajar(
-            "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (prove (> x 0))
+    (return x)))",
         );
         let demos = ir.invariantes(ClaseInvariante::Demostracion);
         assert_eq!(demos.len(), 1);
@@ -1062,7 +1086,12 @@ mod tests {
     #[test]
     fn verificar_es_demostracion() {
         let ir = bajar(
-            "definir tarea f(x: Entero64) -> Entero64:\n    verificar que x > 0\n    retornar x\n",
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assert (> x 0))
+    (return x)))",
         );
         let demos = ir.invariantes(ClaseInvariante::Demostracion);
         assert_eq!(demos.len(), 1);
@@ -1070,10 +1099,22 @@ mod tests {
 
     #[test]
     fn hash_determinista_misma_formula() {
-        let ir1 =
-            bajar("definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
-        let ir2 =
-            bajar("definir tarea g(x: Entero64) -> Entero64:\n    asumir x > 0\n    retornar x\n");
+        let ir1 = bajar(
+            "(task f
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (return x)))",
+        );
+        let ir2 = bajar(
+            "(task g
+  (params (x i64))
+  (returns i64)
+  (body
+    (assume (> x 0))
+    (return x)))",
+        );
         let h1 = ir1.invariantes(ClaseInvariante::Asuncion)[0].hash;
         let h2 = ir2.invariantes(ClaseInvariante::Asuncion)[0].hash;
         assert_eq!(h1, h2, "misma fórmula → mismo hash (caché incremental)");
@@ -1081,15 +1122,26 @@ mod tests {
 
     #[test]
     fn tipos_colecciones() {
-        let ir = bajar("definir tarea f(xs: Lista de Entero64) -> Entero64:\n    retornar 0\n");
+        let ir = bajar(
+            "(task f
+  (params (xs (list i64)))
+  (returns i64)
+  (body (return 0)))",
+        );
         assert_eq!(ir.params[0].1, SilType::Lista(Box::new(SilType::Entero64)));
     }
 
     #[test]
     fn restricciones_preservadas() {
-        let ir = bajar("definir tarea f() -> Entero64:\n    retornar 1\n    bajo restricciones:\n        gestion_memoria: arena\n");
+        let ir = bajar(
+            "(task f
+  (params)
+  (returns i64)
+  (body
+    (return 1)
+    (restrictions (gestion_memoria arena))))",
+        );
         assert_eq!(ir.restricciones.len(), 1);
-        // La clave preserva el nombre original del token (minúsculas).
         assert!(
             ir.restricciones[0].clave.contains("gestion")
                 || ir.restricciones[0].clave.contains("Gestion")
@@ -1099,7 +1151,13 @@ mod tests {
 
     #[test]
     fn variable_no_definida_error() {
-        let prog = parsear(&lexear("definir tarea f() -> Entero64:\n    retornar z\n")).unwrap();
+        let prog = parsear(
+            "(task f
+  (params)
+  (returns i64)
+  (body (return z)))",
+        )
+        .unwrap();
         let A::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -1111,7 +1169,12 @@ mod tests {
     fn precedencia_preservada_en_ir() {
         // 1 + 2 * 3 → BinOp(Add, 1, BinOp(Mul, 2, 3)). Verificamos estructura por conteo:
         // consts(3) + mul(1) + add(1) + retorno = 5 instrs mínimo.
-        let ir = bajar("definir tarea f() -> Entero64:\n    retornar 1 + 2 * 3\n");
+        let ir = bajar(
+            "(task f
+  (params)
+  (returns i64)
+  (body (return (+ 1 (* 2 3)))))",
+        );
         assert!(ir.num_instrs() >= 5, "got {}", ir.num_instrs());
     }
 }

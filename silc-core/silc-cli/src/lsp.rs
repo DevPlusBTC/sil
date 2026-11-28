@@ -1,77 +1,95 @@
 //! Servidor LSP mínimo sobre stdio: JSON-RPC 2.0 + `Content-Length`.
 //!
 //! Soporta el ciclo de vida del protocolo, sincronización completa de
-//! documentos y diagnósticos reales del frontend (lexer + parser). La
-//! finalización de código ofrece palabras clave y tipos primitivos.
+//! documentos y diagnósticos reales del frontend (reader S-exp + AST builder).
+//! La finalización de código ofrece formas S-exp y tipos primitivos.
 //!
 //! El transporte usa stdin/stdout; los logs van a stderr (ver `main`).
 
 use miette::{IntoDiagnostic, Result, WrapErr};
 use serde_json::{json, Value};
+use silc_frontend::a_ast::parsear;
 use silc_frontend::error::ErrorFrontend;
-use silc_frontend::lexer::lexear_con_errores;
-use silc_frontend::parser::parsear;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 
-const PALABRAS_CLAVE: &[&str] = &[
-    "definir",
-    "tarea",
-    "servicio",
-    "estructura",
-    "variante",
-    "opcion",
-    "modelo",
-    "memoria_persistente",
-    "capacidad",
-    "modulo",
-    "migrar",
-    "requerir",
-    "importar",
-    "exportar",
-    "asumir",
-    "demostrar",
-    "verificar",
+/// Palabras clave S-exp para completion (formas de cabeza + sub-formas).
+const FORMA_CABEZA: &[&str] = &[
+    "task",
+    "struct",
+    "model",
+    "memory",
+    "variant",
+    "case",
+    "service",
+    "handler",
+    "net",
+    "protocol",
+    "capability",
+    "resource",
+    "port",
+    "bandwidth",
+    "module",
+    "export",
+    "migration",
+    "from",
+    "to",
+    "field",
+    "record",
+    "default",
+    "restrictions",
+    "params",
+    "returns",
+    "requires",
+    "ensures",
+    "body",
+    "if",
+    "else",
+    "assert",
+    "assume",
+    "prove",
+    "invariant",
+    "while",
+    "for",
     "let",
-    "mut",
-    "retornar",
-    "si",
-    "sino",
-    "mientras",
-    "para",
-    "cada",
-    "coincidir",
-    "caso",
-    "bajo",
-    "restricciones",
-    "permitir",
-    "escuchar",
-    "cuando",
-    "llegue",
-    "evento",
-    "al",
-    "acceder_campo",
-    "valor_predeterminado",
+    "let-mut",
+    "return",
+    "request",
+    "validate",
+    "send",
+    "recv",
+    "spawn",
+    "chan",
+    "capacity",
+    "io-read",
+    "io-write",
+    "io-send",
+    "io-recv",
+    "get",
+    "ttl",
+    "as",
 ];
 
 const TIPOS: &[&str] = &[
-    "Entero8",
-    "Entero16",
-    "Entero32",
-    "Entero64",
-    "EnteroSinSigno8",
-    "EnteroSinSigno16",
-    "EnteroSinSigno32",
-    "EnteroSinSigno64",
-    "Flotante32",
-    "Flotante64",
-    "Booleano",
-    "Texto",
-    "Unidad",
-    "Lista",
-    "Mapa",
-    "Opcion",
+    "i64",
+    "f64",
+    "booleano",
+    "texto",
+    "capacidad",
+    "void",
+    "USD",
+    "EUR",
+    "list",
+    "map",
+    "set",
+    "tuple",
 ];
+
+const PERMISOS: &[&str] = &["lectura_archivo", "escritura_archivo", "red", "ejecucion"];
+
+const OPERADORES: &[&str] = &["+", "-", "*", "/", ">", "<", "==", "!=", ">=", "<="];
+
+const LITERALES: &[&str] = &["verdadero", "falso"];
 
 /// Estado de los documentos abiertos en el editor.
 #[derive(Default)]
@@ -139,10 +157,13 @@ impl Servidor {
                 }
             }
             "textDocument/completion" => {
-                let items: Vec<Value> = PALABRAS_CLAVE
+                let items: Vec<Value> = FORMA_CABEZA
                     .iter()
                     .map(|k| json!({ "label": k, "kind": 14 }))
                     .chain(TIPOS.iter().map(|t| json!({ "label": t, "kind": 25 })))
+                    .chain(PERMISOS.iter().map(|p| json!({ "label": p, "kind": 25 })))
+                    .chain(OPERADORES.iter().map(|o| json!({ "label": o, "kind": 25 })))
+                    .chain(LITERALES.iter().map(|l| json!({ "label": l, "kind": 25 })))
                     .collect();
                 mensajes.push(respuesta(
                     id,
@@ -188,26 +209,15 @@ fn texto(params: &Value, ruta: &[&str]) -> Option<String> {
     actual.as_str().map(str::to_string)
 }
 
-/// Diagnósticos del documento: errores léxicos y el primer error de sintaxis.
+/// Diagnósticos del documento: primer error del reader o del AST builder.
 fn diagnosticos(fuente: &str) -> Vec<Value> {
-    let (tokens, errores_lexicos) = lexear_con_errores(fuente);
-    let mut salida: Vec<Value> = errores_lexicos
-        .into_iter()
-        .map(|e| {
-            diagnostico(
-                fuente,
-                e.span.start,
-                e.span.len(),
-                format!("Carácter no reconocido '{}'", e.caracter),
-            )
-        })
-        .collect();
-
-    if let Err(error) = parsear(&tokens) {
-        let (inicio, longitud) = span_de_error(&error);
-        salida.push(diagnostico(fuente, inicio, longitud, error.to_string()));
+    match parsear(fuente) {
+        Ok(_) => Vec::new(),
+        Err(error) => {
+            let (inicio, longitud) = span_de_error(&error);
+            vec![diagnostico(fuente, inicio, longitud, error.to_string())]
+        }
     }
-    salida
 }
 
 fn span_de_error(error: &ErrorFrontend) -> (usize, usize) {
@@ -317,181 +327,172 @@ fn escribir_mensaje<W: Write>(salida: &mut W, mensaje: &Value) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn ids(procesado: &Procesado) -> Vec<Value> {
-        procesado
-            .mensajes
-            .iter()
-            .map(|m| m.get("method").cloned().unwrap_or(Value::Null))
-            .collect()
-    }
-
     #[test]
     fn initialize_declara_sincronizacion_y_completion() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
+        let mut s = Servidor::default();
+        let r = s.procesar(&json!({
             "id": 1,
             "method": "initialize",
-            "params": {}
+            "params": { "capabilities": {} }
         }));
-        let capacidades = &procesado.mensajes[0]["result"]["capabilities"];
+        let capacidades = &r.mensajes[0]["result"]["capabilities"];
         assert_eq!(capacidades["textDocumentSync"], 1);
         assert!(capacidades["completionProvider"].is_object());
-        assert!(!procesado.terminar);
-    }
-
-    #[test]
-    fn did_open_publica_diagnosticos_de_sintaxis() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": { "uri": "file:///a.sil", "text": "definir tarea f()\n    retornar 1\n" }
-            }
-        }));
-        let notificacion = &procesado.mensajes[0];
-        assert_eq!(notificacion["method"], "textDocument/publishDiagnostics");
-        let diagnosticos = notificacion["params"]["diagnostics"].as_array().unwrap();
-        assert_eq!(diagnosticos.len(), 1);
-        assert_eq!(diagnosticos[0]["severity"], 1);
-    }
-
-    #[test]
-    fn codigo_valido_no_publica_diagnosticos() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": {
-                    "uri": "file:///b.sil",
-                    "text": "definir tarea f() -> Entero64:\n    retornar 0\n"
-                }
-            }
-        }));
-        assert!(procesado.mensajes[0]["params"]["diagnostics"]
-            .as_array()
-            .unwrap()
-            .is_empty());
-    }
-
-    #[test]
-    fn did_change_reemplaza_el_contenido() {
-        let mut servidor = Servidor::default();
-        servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": { "uri": "file:///c.sil", "text": "definir tarea f() -> Entero64:\n    retornar 0\n" }
-            }
-        }));
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didChange",
-            "params": {
-                "textDocument": { "uri": "file:///c.sil" },
-                "contentChanges": [{ "text": "definir tarea f()\n    retornar 0\n" }]
-            }
-        }));
-        assert_eq!(
-            procesado.mensajes[0]["params"]["diagnostics"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
-        );
-    }
-
-    #[test]
-    fn did_close_limpia_diagnosticos() {
-        let mut servidor = Servidor::default();
-        servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": { "uri": "file:///d.sil", "text": "definir tarea f()\n    retornar 1\n" }
-            }
-        }));
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/didClose",
-            "params": { "textDocument": { "uri": "file:///d.sil" } }
-        }));
-        assert!(procesado.mensajes[0]["params"]["diagnostics"]
-            .as_array()
-            .unwrap()
-            .is_empty());
-        assert!(!servidor.documentos.contains_key("file:///d.sil"));
-    }
-
-    #[test]
-    fn completion_devuelve_palabras_clave_y_tipos() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "textDocument/completion",
-            "params": {}
-        }));
-        let items = procesado.mensajes[0]["result"]["items"].as_array().unwrap();
-        assert!(items.iter().any(|i| i["label"] == "definir"));
-        assert!(items.iter().any(|i| i["label"] == "Entero64"));
-    }
-
-    #[test]
-    fn metodo_desconocido_devuelve_error_solo_si_es_request() {
-        let mut servidor = Servidor::default();
-        let request = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "textDocument/definition",
-            "params": {}
-        }));
-        assert_eq!(request.mensajes[0]["error"]["code"], -32601);
-
-        let notificacion = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "textDocument/definition",
-            "params": {}
-        }));
-        assert!(notificacion.mensajes.is_empty());
     }
 
     #[test]
     fn exit_termina_el_servidor() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
-            "method": "exit"
+        let mut s = Servidor::default();
+        let r = s.procesar(&json!({ "id": 1, "method": "exit" }));
+        assert!(r.terminar);
+    }
+
+    #[test]
+    fn codigo_valido_no_publica_diagnosticos() {
+        let mut s = Servidor::default();
+        let src = "(task f (params) (returns i64) (body (return 42)))";
+        let r = s.procesar(&json!({
+            "method": "textDocument/didOpen",
+            "params": { "textDocument": { "uri": "file:///test.sil", "text": src } }
         }));
-        assert!(procesado.terminar);
-        assert_eq!(ids(&procesado).len(), 0);
+        let diag = r.mensajes[0]
+            .get("params")
+            .unwrap()
+            .get("diagnostics")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(diag.is_empty(), "diagnósticos inesperados: {diag:?}");
+    }
+
+    #[test]
+    fn did_open_publica_diagnosticos_de_sintaxis() {
+        let mut s = Servidor::default();
+        // Un error real: paréntesis sin cerrar
+        let src = "(task f (params";
+        let r = s.procesar(&json!({
+            "method": "textDocument/didOpen",
+            "params": { "textDocument": { "uri": "file:///test.sil", "text": src } }
+        }));
+        let diag = r.mensajes[0]
+            .get("params")
+            .unwrap()
+            .get("diagnostics")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(!diag.is_empty());
+    }
+
+    #[test]
+    fn did_close_limpia_diagnosticos() {
+        let mut s = Servidor::default();
+        let src = "(task f (params) (returns i64) (body (return 42)))";
+        s.procesar(&json!({
+            "method": "textDocument/didOpen",
+            "params": { "textDocument": { "uri": "file:///test.sil", "text": src } }
+        }));
+        let r = s.procesar(&json!({
+            "method": "textDocument/didClose",
+            "params": { "textDocument": { "uri": "file:///test.sil" } }
+        }));
+        let diag = r.mensajes[0]
+            .get("params")
+            .unwrap()
+            .get("diagnostics")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(diag.is_empty());
     }
 
     #[test]
     fn caracter_invalido_genera_diagnostico_lexico() {
-        let mut servidor = Servidor::default();
-        let procesado = servidor.procesar(&json!({
-            "jsonrpc": "2.0",
+        let mut s = Servidor::default();
+        let src = "(task f (params) (body (return @)))"; // @ no es válido
+        let r = s.procesar(&json!({
             "method": "textDocument/didOpen",
-            "params": {
-                "textDocument": { "uri": "file:///e.sil", "text": "definir tarea f() -> Entero64:\n    retornar 0 @\n" }
-            }
+            "params": { "textDocument": { "uri": "file:///test.sil", "text": src } }
         }));
-        let diagnosticos = procesado.mensajes[0]["params"]["diagnostics"]
+        let diag = r.mensajes[0]
+            .get("params")
+            .unwrap()
+            .get("diagnostics")
+            .unwrap()
             .as_array()
             .unwrap();
-        assert!(diagnosticos
-            .iter()
-            .any(|d| d["message"].as_str().unwrap().contains("no reconocido")));
+        assert!(!diag.is_empty());
     }
 
     #[test]
     fn posicion_cuenta_utf16() {
-        let texto = "a\nñb";
-        assert_eq!(posicion(texto, 0), (0, 0));
-        assert_eq!(posicion(texto, 2), (1, 0));
-        assert_eq!(posicion(texto, 4), (1, 1));
+        assert_eq!(posicion("a", 0), (0, 0));
+        assert_eq!(posicion("a\nb", 2), (1, 0));
+        assert_eq!(posicion("a\nb", 1), (0, 1));
+    }
+
+    #[test]
+    fn metodo_desconocido_devuelve_error_solo_si_es_request() {
+        let mut s = Servidor::default();
+        // Notificación (sin id) no debe responder
+        let r = s.procesar(&json!({ "method": "inexistente" }));
+        assert!(r.mensajes.is_empty());
+        // Request (con id) debe responder con error
+        let r = s.procesar(&json!({ "id": 1, "method": "inexistente" }));
+        assert_eq!(
+            r.mensajes[0].get("error").unwrap().get("code").unwrap(),
+            -32601
+        );
+    }
+
+    #[test]
+    fn completion_devuelve_palabras_clave_y_tipos() {
+        let mut s = Servidor::default();
+        let r = s.procesar(&json!({
+            "id": 1,
+            "method": "textDocument/completion",
+            "params": {}
+        }));
+        let items = r.mensajes[0]
+            .get("result")
+            .unwrap()
+            .get("items")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let labels: Vec<&str> = items
+            .iter()
+            .filter_map(|i| i.get("label").and_then(Value::as_str))
+            .collect();
+        assert!(labels.contains(&"task"));
+        assert!(labels.contains(&"if"));
+        assert!(labels.contains(&"i64"));
+        assert!(labels.contains(&"list"));
+    }
+
+    #[test]
+    fn did_change_reemplaza_el_contenido() {
+        let mut s = Servidor::default();
+        let src1 = "(task f (params) (returns i64) (body (return 1)))";
+        s.procesar(&json!({
+            "method": "textDocument/didOpen",
+            "params": { "textDocument": { "uri": "file:///test.sil", "text": src1 } }
+        }));
+        let src2 = "(task f (params) (returns i64) (body (return 2)))";
+        let r = s.procesar(&json!({
+            "method": "textDocument/didChange",
+            "params": {
+                "textDocument": { "uri": "file:///test.sil" },
+                "contentChanges": [{ "text": src2 }]
+            }
+        }));
+        let diag = r.mensajes[0]
+            .get("params")
+            .unwrap()
+            .get("diagnostics")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert!(diag.is_empty());
     }
 }

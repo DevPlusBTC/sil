@@ -6,13 +6,13 @@
 use miette::{Diagnostic, SourceSpan};
 use thiserror::Error;
 
-/// Error del frontend (lexer + parser).
+/// Error del frontend (reader + AST builder).
 #[derive(Debug, Error, Diagnostic)]
 pub enum ErrorFrontend {
     #[error("Carácter no reconocido '{car}'")]
     #[diagnostic(
-        code(silc::lexer::caracter_desconocido),
-        help("Revisa la sintaxis CNL. Caracteres válidos: letras, dígitos, _, -, \"...\". Palabras clave en minúsculas.")
+        code(silc::reader::caracter_desconocido),
+        help("Revisa la sintaxis S-exp. Caracteres válidos: letras, dígitos, _, -, \"...\". Palabras clave en minúsculas.")
     )]
     CaracterDesconocido {
         car: char,
@@ -22,8 +22,8 @@ pub enum ErrorFrontend {
 
     #[error("Se esperaba {esperado} pero se encontró '{encontrado}'")]
     #[diagnostic(
-        code(silc::parser::inesperado),
-        help("Revisa la gramática CNL. Ejemplo: `definir tarea nombre(param: Tipo) -> Tipo:`")
+        code(silc::a_ast::inesperado),
+        help("Revisa la gramática S-exp. Ejemplo: `(task nombre (params (x i64)) (returns i64) (body (return x)))`")
     )]
     TokenInesperado {
         esperado: String,
@@ -34,15 +34,15 @@ pub enum ErrorFrontend {
 
     #[error("Fin de archivo inesperado")]
     #[diagnostic(
-        code(silc::parser::eof_inesperado),
-        help("Falta cerrar un bloque con la indentación correcta o falta el cuerpo de la tarea.")
+        code(silc::reader::eof_inesperado),
+        help("Falta cerrar un paréntesis o el cuerpo de la tarea.")
     )]
     FinInesperado,
 
     #[error("Expresión anidada demasiado profunda (máximo {max})")]
     #[diagnostic(
-        code(silc::parser::expresion_profunda),
-        help("Simplifica la expresión. SIL limita el anidamiento para evitar desbordamiento de pila en el parser.")
+        code(silc::reader::expresion_profunda),
+        help("Simplifica la expresión. SIL limita el anidamiento para evitar desbordamiento de pila en el reader.")
     )]
     ExpresionDemasiadoProfunda {
         max: u32,

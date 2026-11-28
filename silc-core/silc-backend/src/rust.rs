@@ -269,11 +269,10 @@ pub fn tipo_rust(t: &SilType) -> String {
 mod tests {
     use super::*;
     use silc_causal_ir::lower::bajar_tarea;
-    use silc_frontend::lexer::lexear;
-    use silc_frontend::parser::parsear;
+    use silc_frontend::a_ast::parsear;
 
     fn emitir_src(src: &str) -> String {
-        let prog = parsear(&lexear(src)).expect("parse OK");
+        let prog = parsear(src).expect("parse OK");
         let silc_frontend::ast::Decl::Tarea(t) = &prog.defs[0] else {
             panic!()
         };
@@ -284,7 +283,10 @@ mod tests {
     #[test]
     fn emite_funcion_plana_sin_ramas() {
         let r = emitir_src(
-            "definir tarea sumar(a: Entero64, b: Entero64) -> Entero64:\n    retornar a + b\n",
+            "(task sumar
+  (params (a i64) (b i64))
+  (returns i64)
+  (body (return (+ a b))))",
         );
         assert!(r.contains("pub fn sumar(a: i64, b: i64) -> i64 {"));
         assert!(!r.contains("__bloque"), "no debe emitir loop en 1 bloque");
@@ -294,7 +296,13 @@ mod tests {
     #[test]
     fn emite_control_de_flujo_en_ramas() {
         let r = emitir_src(
-            "definir tarea abs(x: Entero64) -> Entero64:\n    si x >= 0:\n        retornar x\n    sino:\n        retornar 0 - x\n",
+            "(task abs
+  (params (x i64))
+  (returns i64)
+  (body
+    (if (>= x 0)
+      (body (return x))
+      (else (body (return (- 0 x)))))))",
         );
         assert!(r.contains("loop {"), "debe emitir dispatch loop:\n{r}");
         assert!(r.contains("if "), "debe emitir condición if:\n{r}");

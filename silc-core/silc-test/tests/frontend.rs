@@ -1,35 +1,35 @@
-//! Integración del frontend: lexer → parser → AST → lowering.
+//! Integración del frontend S-exp: reader → AST builder → AST → lowering.
 //!
 //! Complementa los tests unitarios de cada módulo con el pipeline completo a
 //! nivel de biblioteca: programa multi-declaración, spans reales, errores de
-//! sintaxis y robustez del lexer/parser ante entradas arbitrarias.
+//! sintaxis y robustez del reader/AST builder ante entradas arbitrarias.
 
 use proptest::prelude::*;
 use silc_causal_ir::lower::bajar_tarea;
 use silc_causal_ir::nodes::SilType;
+use silc_frontend::a_ast::parsear;
 use silc_frontend::ast::{Decl, Expr, Stmt};
 use silc_frontend::error::ErrorFrontend;
-use silc_frontend::lexer::lexear;
-use silc_frontend::parser::parsear;
 
 const PROGRAMA: &str = "\
-definir estructura Punto:
-    x: Entero64
-    y: Entero64
+(struct Punto
+  (fields (x i64) (y i64)))
 
-definir variante Resultado:
-    opcion Ok con datos (valor: Entero64)
-    opcion Error
+(variant Resultado
+  (case Ok  (fields (valor i64)))
+  (case Err (fields)))
 
-definir tarea sumar(valor_a: Entero64, valor_b: Entero64) -> Entero64:
-    asumir valor_a >= 0
-    let total: Entero64 = valor_a + valor_b
-    demostrar total >= valor_a
-    retornar total
-";
+(task sumar
+  (params (valor_a i64) (valor_b i64))
+  (returns i64)
+  (body
+    (assume (>= valor_a 0))
+    (let total i64 (+ valor_a valor_b))
+    (prove (>= total valor_a))
+    (return total)))";
 
 fn defs(fuente: &str) -> Vec<Decl> {
-    parsear(&lexear(fuente)).expect("parse OK").defs
+    parsear(fuente).expect("parse OK").defs
 }
 
 #[test]
@@ -97,12 +97,12 @@ fn binop_abarca_ambos_operandos() {
     let Expr::BinOp { span, .. } = cond else {
         panic!("se esperaba comparación")
     };
-    assert_eq!(&PROGRAMA[span.clone()], "total >= valor_a");
+    assert_eq!(&PROGRAMA[span.clone()], "(>= total valor_a)");
 }
 
 #[test]
-fn error_por_falta_de_dos_puntos() {
-    let err = parsear(&lexear("definir tarea f()\n    retornar 1\n")).unwrap_err();
+fn error_por_parentesis_sin_cerrar() {
+    let err = parsear("(task f (params) (body (return 1))").unwrap_err();
     assert!(matches!(
         err,
         ErrorFrontend::TokenInesperado { .. } | ErrorFrontend::FinInesperado
@@ -111,8 +111,8 @@ fn error_por_falta_de_dos_puntos() {
 
 #[test]
 fn error_por_declaracion_desconocida() {
-    let err = parsear(&lexear("definir castillo f\n")).unwrap_err();
-    assert!(matches!(err, ErrorFrontend::TokenInesperado { .. }));
+    let err = parsear("(castle f)").unwrap_err();
+    assert!(matches!(err, ErrorFrontend::FormaDesconocida { .. }));
 }
 
 #[test]
@@ -128,38 +128,38 @@ fn lowering_preserva_firma_de_tarea() {
     assert!(ir.nombres.values().any(|n| n == "total"));
 }
 
-const PROGRAMA_EXTENDIDO: &str = r#"definir servicio Puerta:
-    escuchar en puerto 8080 con protocolo HTTP
-    cuando llegue evento Peticion(ruta: Texto):
-        retornar
-    definir tarea despachar(ruta: Texto) -> Entero64:
-        retornar 0
-    bajo restricciones:
-        latencia_maxima: baja
+const PROGRAMA_EXTENDIDO: &str = r#"(service Puerta
+  (net 8080 (protocol HTTP))
+  (handler Peticion (params (ruta texto))
+    (body (return 0)))
+  (task despachar
+    (params (ruta texto))
+    (returns i64)
+    (body (return 0)))
+  (restrictions (latencia_maxima baja)))
 
-definir modelo Cliente:
-    id: Entero64
-    nombre: Texto
+(model Cliente
+  (fields (id i64) (nombre texto)))
 
-definir memoria_persistente Cache:
-    clave: Entero64
-    valor: Texto
+(memory Cache
+  (fields (clave i64) (valor texto)))
 
-definir capacidad RedSalida:
-    permitir conectar a "api.ejemplo.com" en puerto 443
-    limite_ancho_banda: "100mb"
+(capability RedSalida
+  (resource "api.ejemplo.com")
+  (port 443)
+  (bandwidth "100mb"))
 
-modulo Principal:
-    exportar servicio Puerta
-    exportar tarea despachar
+(module Principal
+  (export service Puerta)
+  (export task despachar))
 
-migrar Archivo desde v1 a v2:
-    al acceder_campo "notas" en registro Archivo:
-        retornar valor_predeterminado "sin notas"
-        bajo restricciones:
-            migracion_memoria: lazy_on_read
-            reestructuracion_disco: cero_copia
-"#;
+(migration Archivo
+  (from v1)
+  (to v2)
+  (field "notas")
+  (record Archivo)
+  (default "sin notas")
+  (restrictions (migracion_memoria lazy_on_read) (reestructuracion_disco cero_copia)))"#;
 
 #[test]
 fn parsea_servicio_completo() {
@@ -253,22 +253,21 @@ fn servicio_con_tareas_se_baja_a_ir() {
 
 #[test]
 fn error_si_capacidad_no_declara_ancho_de_banda() {
-    let err = parsear(&lexear(
-        r#"definir capacidad C:
-    permitir conectar a "x" en puerto 1
-    otra_clave: "v"
-"#,
-    ))
+    let err = parsear(
+        r#"(capability C
+  (resource "x")
+  (port 1)
+  (otra_clave "v"))"#,
+    )
     .unwrap_err();
     assert!(matches!(err, ErrorFrontend::TokenInesperado { .. }));
 }
 
 proptest! {
-    /// El lexer y el parser deben devolver un resultado (no entrar en pánico)
+    /// El reader y el AST builder deben devolver un resultado (no entrar en pánico)
     /// para cualquier entrada, incluso si no es SIL válido.
     #[test]
-    fn lexer_y_parser_no_entran_en_panico(fuente in any::<String>()) {
-        let toks = lexear(&fuente);
-        let _ = parsear(&toks);
+    fn reader_y_ast_no_entran_en_panico(fuente in any::<String>()) {
+        let _ = parsear(&fuente);
     }
 }

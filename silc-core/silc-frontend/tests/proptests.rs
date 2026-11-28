@@ -1,144 +1,95 @@
-//! Property-based tests para silc-frontend
-//! Valida invariantes estructurales: lexer/parser round-trip, AST well-formedness.
+//! Property-based tests para silc-frontend S-exp
+//! Valida invariantes estructurales: reader/AST round-trip, AST well-formedness.
 
 use proptest::prelude::*;
-use silc_frontend::{ast::*, lexer::lexear, parser::parsear};
+use silc_frontend::{a_ast::parsear, ast::*};
 use std::fmt::Write as FmtWrite;
 
-// Palabras reservadas de CNL que no pueden usarse como identificadores
-const RESERVADAS: &[&str] = &[
-    "a",
-    "de",
-    "en",
-    "con",
-    "para",
-    "cada",
-    "si",
-    "al",
-    "por",
-    "que",
-    "es",
-    "el",
-    "la",
-    "lo",
-    "un",
-    "una",
-    "definir",
-    "tarea",
-    "servicio",
-    "modelo",
-    "evento",
-    "estructura",
-    "variante",
-    "opcion",
-    "memoria_persistente",
-    "migrar",
-    "capacidad",
-    "modulo",
-    "requerir",
-    "importar",
-    "exportar",
-    "vincular",
-    "biblioteca_nativa",
-    "funcion_externa",
-    "cuando",
-    "llegue",
-    "escuchar",
-    "en",
-    "puerto",
-    "con",
-    "protocolo",
-    "para",
-    "cada",
-    "mientras",
-    "si",
-    "entonces",
-    "retornar",
-    "ejecutar",
-    "cualquier",
-    "otro",
-    "caso",
-    "coincidir",
-    "desde",
-    "hasta",
-    "como",
-    "datos",
-    "de",
-    "forma",
-    "verificar",
-    "que",
-    "sea",
-    "igual",
-    "mayor",
-    "menor",
-    "diferente",
-    "esta_activo",
-    "asumir",
-    "demostrar",
-    "probar",
-    "propiedad",
-    "convertir",
-    "a",
-    "usando",
-    "guardar",
-    "enviar",
-    "permitir",
-    "conectar",
-    "promover",
-    "al",
-    "acceder_campo",
-    "valor_predeterminado",
-    "bajo",
-    "restricciones",
-    "let",
-    "mut",
+/// Símbolos reservados en S-exp (no identificadores válidos)
+const RESERVADOS: &[&str] = &[
     "verdadero",
-    "falso",
-    "nulo",
-    "atomica",
-    "asincrona",
-    "en_memoria",
-    "arena",
-    "cero_pausas",
-    "solicitar",
-    "validar",
-    "generar",
-    "recibir",
-    "canal",
-    "fibra",
-    "leer",
-    "escribir",
-    "archivo",
-    "red",
-    "ttl",
-    "crear",
-    "Entero64",
-    "Flotante64",
-    "Booleano",
-    "Texto",
-    "CapacidadHardware",
-    "Void",
-    "Tensor",
+    "falso", // literales booleanos
+    "+",
+    "-",
+    "*",
+    "/", // operadores aritméticos
+    ">",
+    "<",
+    "==",
+    "!=",
+    ">=",
+    "<=", // operadores relacionales
+    "task",
+    "struct",
+    "model",
+    "memory",
+    "variant",
+    "case",
+    "service",
+    "handler",
+    "net",
+    "protocol",
+    "capability",
+    "resource",
+    "port",
+    "bandwidth",
+    "module",
+    "export",
+    "migration",
+    "from",
+    "to",
+    "field",
+    "record",
+    "default",
+    "restrictions",
+    "params",
+    "returns",
+    "requires",
+    "ensures",
+    "body",
+    "if",
+    "else",
+    "assert",
+    "assume",
+    "prove",
+    "invariant",
+    "while",
+    "for",
+    "let",
+    "let-mut",
+    "return",
+    "request",
+    "validate",
+    "send",
+    "recv",
+    "spawn",
+    "chan",
+    "capacity",
+    "io-read",
+    "io-write",
+    "io-send",
+    "io-recv",
+    "i64",
+    "f64",
+    "booleano",
+    "texto",
+    "capacidad",
+    "void",
     "USD",
     "EUR",
-    "Lista",
-    "Mapa",
-    "Conjunto",
-    "Tupla",
-    "Nominal",
-    "opcion",
-    "con",
-    "datos",
-    "forma",
-    "true",
-    "false",
-    "null",
+    "list",
+    "map",
+    "set",
+    "tuple",
+    "get",
+    "ttl",
+    "as",
 ];
 
 fn ident_strategy() -> impl Strategy<Value = String> {
     prop::string::string_regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
         .unwrap()
-        .prop_filter("no reservada", |s| !RESERVADAS.contains(&s.as_str()))
+        .prop_filter("no reservado", |s| !RESERVADOS.contains(&s.as_str()))
 }
 
 fn entero_strategy() -> impl Strategy<Value = i64> {
@@ -146,7 +97,10 @@ fn entero_strategy() -> impl Strategy<Value = i64> {
 }
 
 fn flotante_strategy() -> impl Strategy<Value = f64> {
-    prop::num::f64::ANY.prop_filter("finito", |f| f.is_finite())
+    // La sintaxis SIL admite decimales, no notación exponencial.
+    prop::num::f64::ANY.prop_filter("decimal finito", |f| {
+        f.is_finite() && !format!("{f:?}").contains('e')
+    })
 }
 
 fn texto_strategy() -> impl Strategy<Value = String> {
@@ -154,9 +108,18 @@ fn texto_strategy() -> impl Strategy<Value = String> {
 }
 
 fn binop_opcion() -> impl Strategy<Value = BinOp> {
-    // Solo aritmética: el parser acepta comparaciones únicamente en el
-    // nivel de condición (verificar/asumir/demostrar), nunca anidadas.
-    prop::sample::select(vec![BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div])
+    prop::sample::select(vec![
+        BinOp::Add,
+        BinOp::Sub,
+        BinOp::Mul,
+        BinOp::Div,
+        BinOp::Gt,
+        BinOp::Lt,
+        BinOp::Eq,
+        BinOp::Ne,
+        BinOp::Ge,
+        BinOp::Le,
+    ])
 }
 
 fn literal_strategy() -> impl Strategy<Value = Literal> {
@@ -174,12 +137,7 @@ fn expr_strategy() -> impl Strategy<Value = Expr> {
             nombre: s,
             span: 0..0
         })),
-        literal_strategy()
-            .prop_filter("no float or bool", |l| !matches!(
-                l,
-                Literal::Flotante(_) | Literal::Booleano(_)
-            ))
-            .prop_map(Expr::Lit),
+        literal_strategy().prop_map(Expr::Lit),
     ];
     hoja.prop_recursive(3, 8, 2, |inner| {
         (binop_opcion(), inner.clone(), inner).prop_map(|(op, lhs, rhs)| Expr::BinOp {
@@ -294,7 +252,6 @@ fn restriccion_valor_strategy() -> impl Strategy<Value = String> {
             "nulo".to_string(),
         ]),
     ]
-    .prop_filter("no A keyword", |s| s != "A")
     .prop_filter("no parentesis", |s| !s.contains('(') && !s.contains(')'))
     .prop_filter("no empty", |s| !s.is_empty())
 }
@@ -349,33 +306,30 @@ fn program_strategy() -> impl Strategy<Value = Program> {
 // =============================================================================
 
 proptest! {
-    /// Propiedad: Lexer es idempotente en tokens válidos
-    /// lexer(lexer(input)) ≈ lexer(input) para entrada bien formada
+    /// Propiedad: Reader es idempotente en átomos válidos
     #[test]
-    fn lexer_idempotente(input in ident_strategy()) {
-        let tokens1 = lexear(&input);
-        let tokens2 = lexear(&input);
-        prop_assert_eq!(tokens1, tokens2);
+    fn reader_idempotente(input in ident_strategy()) {
+        let sexps1 = silc_frontend::reader::leer(&input).unwrap();
+        let sexps2 = silc_frontend::reader::leer(&input).unwrap();
+        prop_assert_eq!(sexps1, sexps2);
     }
 
-    /// Propiedad: Parser + Lexer round-trip en AST serializado
-    /// AST → source → parse(lexer(source)) ≈ AST original
+    /// Propiedad: Reader + AST Builder round-trip
+    /// AST → S-exp source → parse → AST ≈ original (modulo spans)
     #[test]
-    fn parser_lexer_roundtrip(ast in program_strategy()) {
-        let source = ast_a_source(&ast);
-        let tokens = lexear(&source);
-        let parsed = parsear(&tokens);
+    fn sexp_ast_roundtrip(ast in program_strategy()) {
+        let source = ast_a_sexp_source(&ast);
+        let parsed = parsear(&source);
 
         match parsed {
             Ok(program) => {
                 prop_assert_eq!(program.defs.len(), ast.defs.len());
                 for (orig, parsed_decl) in ast.defs.iter().zip(program.defs.iter()) {
-                    prop_assert!(decls_equiv(orig, parsed_decl));
+                    prop_assert!(decls_equiv(orig, parsed_decl), "source: {source}\norig: {orig:?}\nparsed: {parsed_decl:?}");
                 }
             }
             Err(e) => {
-                // El parser puede fallar en casos edge; documentar
-                prop_assert!(false, "Parser falló en AST válido generado: {:?}\nSource: {}", e, source);
+                prop_assert!(false, "Parse falló en AST válido generado: {:?}\nSource: {}", e, source);
             }
         }
     }
@@ -394,34 +348,32 @@ proptest! {
         prop_assert!(tipo_bien_formado(&tipo));
     }
 
-    /// Propiedad: Serialización de AST a fuente es determinista
+    /// Propiedad: Serialización de AST a S-exp source es determinista
     #[test]
     fn serializacion_determinista(ast in program_strategy()) {
-        let s1 = ast_a_source(&ast);
-        let s2 = ast_a_source(&ast);
+        let s1 = ast_a_sexp_source(&ast);
+        let s2 = ast_a_sexp_source(&ast);
         prop_assert_eq!(s1, s2);
     }
 
-    /// Propiedad: Lexer no pierde tokens en entrada válida
+    /// Propiedad: Reader no pierde formas en entrada válida
     #[test]
-    fn lexer_no_pierde_tokens(input in ident_strategy()) {
-        let tokens = lexear(&input);
-        prop_assert!(!tokens.is_empty() || input.is_empty());
+    fn reader_no_pierde_formas(input in ident_strategy()) {
+        let sexps = silc_frontend::reader::leer(&input).unwrap();
+        prop_assert!(!sexps.is_empty() || input.is_empty());
     }
 }
 
-/// Test unitario: parser rechaza expresiones con anidamiento > 256
+/// Test unitario: reader/AST rechaza profundidad > 256
 #[test]
 fn parser_rechaza_expresion_profunda() {
-    // Genera una expresión con 300 niveles de paréntesis: ((((x))))...
     let depth = 300;
     let mut expr = "x".to_string();
     for _ in 0..depth {
         expr = format!("({expr})");
     }
-    let source = format!("definir tarea test(x: Entero64) -> Entero64:\n    retornar {expr}\n");
-    let tokens = lexear(&source);
-    let result = parsear(&tokens);
+    let source = format!("(task test (params (x i64)) (returns i64) (body (return {expr})))");
+    let result = parsear(&source);
     assert!(result.is_err(), "Debería rechazar profundidad > 256");
     if let Err(e) = result {
         let msg = format!("{e:?}");
@@ -436,73 +388,69 @@ fn parser_rechaza_expresion_profunda() {
 // Helpers
 // =============================================================================
 
-fn ast_a_source(ast: &Program) -> String {
+fn ast_a_sexp_source(ast: &Program) -> String {
     let mut out = String::new();
     for decl in &ast.defs {
-        FmtWrite::write_fmt(&mut out, format_args!("{}", decl_a_source(decl))).unwrap();
+        FmtWrite::write_fmt(&mut out, format_args!("{}", decl_a_sexp_source(decl))).unwrap();
         out.push('\n');
     }
     out
 }
 
-fn decl_a_source(decl: &Decl) -> String {
+fn decl_a_sexp_source(decl: &Decl) -> String {
     match decl {
-        Decl::Tarea(t) => tarea_a_source(t),
+        Decl::Tarea(t) => tarea_a_sexp_source(t),
         _ => "/* decl no soportado */".to_string(),
     }
 }
 
-fn tarea_a_source(t: &TareaDecl) -> String {
-    let mut out = format!("definir tarea {}(", t.nombre.nombre);
-    for (i, p) in t.params.iter().enumerate() {
-        if i > 0 {
-            out.push_str(", ");
-        }
-        write!(&mut out, "{}: {}", p.nombre.nombre, tipo_a_source(&p.tipo)).unwrap();
+fn tarea_a_sexp_source(t: &TareaDecl) -> String {
+    let mut out = String::new();
+    out.push_str("(task ");
+    out.push_str(&t.nombre.nombre);
+
+    // params: cada parámetro es una forma `(nombre tipo)`.
+    out.push_str(" (params");
+    for p in &t.params {
+        out.push_str(&format!(
+            " ({} {})",
+            p.nombre.nombre,
+            tipo_a_sexp_source(&p.tipo)
+        ));
     }
     out.push(')');
+
+    // returns
     if let Some(ret) = &t.retorno {
-        write!(&mut out, " -> {}", tipo_a_source(ret)).unwrap();
-    }
-    out.push_str(":\n");
-
-    let has_content = !t.cuerpo.stmts.is_empty() || !t.cuerpo.restricciones.is_empty();
-    if !has_content {
-        // Empty body: INDENT + DEDENT
-        out.push_str("    \n");
-        out.push('\n');
-        return out;
+        out.push_str(" (returns ");
+        out.push_str(&tipo_a_sexp_source(ret));
+        out.push(')');
     }
 
-    // INDENT for body
-    out.push_str("    \n");
-
-    // Statements (stmt_a_source already includes newline)
+    // body
+    out.push_str(" (body");
     for stmt in &t.cuerpo.stmts {
-        write!(&mut out, "    {}", stmt_a_source(stmt)).unwrap();
+        out.push(' ');
+        out.push_str(&stmt_a_sexp_source(stmt));
     }
-
-    // Restrictions at same indent level
-    for r in &t.cuerpo.restricciones {
-        write!(
-            &mut out,
-            "    bajo restricciones:\n        {}: {}\n",
-            r.clave, r.valor
-        )
-        .unwrap();
+    if !t.cuerpo.restricciones.is_empty() {
+        out.push_str(" (restrictions");
+        for r in &t.cuerpo.restricciones {
+            out.push_str(&format!(" ({} {})", r.clave, r.valor));
+        }
+        out.push(')');
     }
-
-    // DEDENT
-    out.push('\n');
+    out.push(')'); // close body
+    out.push(')'); // close task
     out
 }
 
-fn stmt_a_source(stmt: &Stmt) -> String {
+fn stmt_a_sexp_source(stmt: &Stmt) -> String {
     match stmt {
-        Stmt::Verificar { cond, .. } => format!("verificar que {}\n", expr_a_source(cond)),
-        Stmt::Asumir { cond, .. } => format!("asumir {}\n", expr_a_source(cond)),
-        Stmt::Demostrar { cond, .. } => format!("demostrar {}\n", expr_a_source(cond)),
-        Stmt::InvarianteBucle { cond, .. } => format!("invariante {}\n", expr_a_source(cond)),
+        Stmt::Verificar { cond, .. } => format!("(assert {})", expr_a_sexp_source(cond)),
+        Stmt::Asumir { cond, .. } => format!("(assume {})", expr_a_sexp_source(cond)),
+        Stmt::Demostrar { cond, .. } => format!("(prove {})", expr_a_sexp_source(cond)),
+        Stmt::InvarianteBucle { cond, .. } => format!("(invariant {})", expr_a_sexp_source(cond)),
         Stmt::Asignar {
             nombre,
             tipo,
@@ -510,20 +458,19 @@ fn stmt_a_source(stmt: &Stmt) -> String {
             mutable,
             ..
         } => {
-            let mut s = if *mutable { "let mut " } else { "let " }.to_string();
-            s.push_str(&nombre.nombre);
+            let head = if *mutable { "let-mut" } else { "let" };
+            let mut s = format!("({} {}", head, nombre.nombre);
             if let Some(t) = tipo {
-                write!(&mut s, ": {}", tipo_a_source(t)).unwrap();
+                write!(&mut s, " {}", tipo_a_sexp_source(t)).unwrap();
             }
-            write!(&mut s, " = {}", expr_a_source(expr)).unwrap();
-            s.push('\n');
+            write!(&mut s, " {})", expr_a_sexp_source(expr)).unwrap();
             s
         }
         Stmt::Retornar { expr, .. } => {
             if let Some(e) = expr {
-                format!("retornar {}\n", expr_a_source(e))
+                format!("(return {})", expr_a_sexp_source(e))
             } else {
-                "retornar\n".to_string()
+                "(return)".to_string()
             }
         }
         Stmt::SolicitarCapacidad {
@@ -539,64 +486,41 @@ fn stmt_a_source(stmt: &Stmt) -> String {
                 PermisoCap::Red => "red",
                 PermisoCap::Ejecucion => "ejecucion",
             };
-            let mut s = format!("solicitar capacidad {p} para \"{recurso}\"");
+            let mut s = format!("(request {} \"{}\"", p, recurso);
             if let Some(t) = ttl_ns {
-                write!(&mut s, " con ttl {t}").unwrap();
+                write!(&mut s, " (ttl {})", t).unwrap();
             }
             if let Some(n) = guardar_como {
-                write!(&mut s, " como {}", n.nombre).unwrap();
+                write!(&mut s, " (as {})", n.nombre).unwrap();
             }
-            s.push('\n');
+            s.push(')');
             s
         }
         Stmt::ValidarCapacidad { token, .. } => {
-            format!("validar {}\n", token.nombre)
+            format!("(validate {})", token.nombre)
         }
         Stmt::EnviarCanal { valor, canal, .. } => {
-            format!("enviar {} en {}\n", expr_a_source(valor), canal.nombre)
+            format!("(send {} {})", expr_a_sexp_source(valor), canal.nombre)
         }
         Stmt::RecibirCanal {
             canal,
             guardar_como,
             ..
         } => {
-            format!("recibir de {} como {}\n", canal.nombre, guardar_como.nombre)
+            format!("(recv {} {})", canal.nombre, guardar_como.nombre)
         }
         Stmt::GenerarFibra { tarea, .. } => {
-            format!("generar {}\n", tarea.nombre)
-        }
-        Stmt::Si { cond, .. } => {
-            format!("si {} entonces:\n    <cuerpo>\n", expr_a_source(cond))
-        }
-        Stmt::Mientras { cond, .. } => {
-            format!(
-                "mientras {}:
-    <cuerpo>
-",
-                expr_a_source(cond)
-            )
-        }
-        Stmt::Para {
-            variable, iterable, ..
-        } => {
-            format!(
-                "para {} en {}:
-    <cuerpo>
-",
-                variable,
-                expr_a_source(iterable)
-            )
+            format!("(spawn {})", tarea.nombre)
         }
         Stmt::CrearCanal {
             capacidad,
             guardar_como,
             ..
         } => {
-            let mut s = "crear canal".to_string();
+            let mut s = format!("(chan {})", guardar_como.nombre);
             if let Some(c) = capacidad {
-                write!(&mut s, " con capacidad {c}").unwrap();
+                s = format!("(chan {} (capacity {}))", guardar_como.nombre, c);
             }
-            writeln!(&mut s, " como {}", guardar_como.nombre).unwrap();
             s
         }
         Stmt::OperarIO {
@@ -607,48 +531,97 @@ fn stmt_a_source(stmt: &Stmt) -> String {
             guardar_como,
             ..
         } => match operacion {
-            OpIOStmt::LeerArchivo => {
-                format!(
-                    "leer archivo \"{ruta}\" con {} como {}\n",
-                    capacidad.nombre,
-                    guardar_como
-                        .as_ref()
-                        .map(|i| i.nombre.as_str())
-                        .unwrap_or("_")
-                )
-            }
-            OpIOStmt::EscribirArchivo => {
-                format!(
-                    "escribir {} en archivo \"{ruta}\" con {}\n",
-                    datos.as_ref().map(expr_a_source).unwrap_or_default(),
-                    capacidad.nombre
-                )
-            }
-            OpIOStmt::EnviarRed => {
-                format!(
-                    "enviar {} en red \"{ruta}\" con {}\n",
-                    datos.as_ref().map(expr_a_source).unwrap_or_default(),
-                    capacidad.nombre
-                )
-            }
-            OpIOStmt::RecibirRed => {
-                format!(
-                    "recibir de red \"{ruta}\" con {} como {}\n",
-                    capacidad.nombre,
-                    guardar_como
-                        .as_ref()
-                        .map(|i| i.nombre.as_str())
-                        .unwrap_or("_")
-                )
-            }
+            OpIOStmt::LeerArchivo => format!(
+                "(io-read \"{}\" {} {})",
+                ruta,
+                capacidad.nombre,
+                guardar_como
+                    .as_ref()
+                    .map(|i| i.nombre.as_str())
+                    .unwrap_or("_")
+            ),
+            OpIOStmt::EscribirArchivo => format!(
+                "(io-write {} \"{}\" {})",
+                datos.as_ref().map(expr_a_sexp_source).unwrap_or_default(),
+                ruta,
+                capacidad.nombre
+            ),
+            OpIOStmt::EnviarRed => format!(
+                "(io-send {} \"{}\" {})",
+                datos.as_ref().map(expr_a_sexp_source).unwrap_or_default(),
+                ruta,
+                capacidad.nombre
+            ),
+            OpIOStmt::RecibirRed => format!(
+                "(io-recv \"{}\" {} {})",
+                ruta,
+                capacidad.nombre,
+                guardar_como
+                    .as_ref()
+                    .map(|i| i.nombre.as_str())
+                    .unwrap_or("_")
+            ),
         },
+        Stmt::Si {
+            cond, cuerpo, sino, ..
+        } => {
+            let mut s = format!(
+                "(if {} {}",
+                expr_a_sexp_source(cond),
+                cuerpo_a_sexp_source(cuerpo)
+            );
+            if let Some(sino) = sino {
+                s.push_str(" (else ");
+                s.push_str(&cuerpo_a_sexp_source(sino));
+                s.push(')');
+            }
+            s.push(')');
+            s
+        }
+        Stmt::Mientras { cond, cuerpo, .. } => {
+            format!(
+                "(while {} {})",
+                expr_a_sexp_source(cond),
+                cuerpo_a_sexp_source(cuerpo)
+            )
+        }
+        Stmt::Para {
+            variable,
+            iterable,
+            cuerpo,
+            ..
+        } => {
+            format!(
+                "(for {} {} {})",
+                variable,
+                expr_a_sexp_source(iterable),
+                cuerpo_a_sexp_source(cuerpo)
+            )
+        }
     }
 }
 
-fn expr_a_source(expr: &Expr) -> String {
+fn cuerpo_a_sexp_source(c: &Cuerpo) -> String {
+    let mut s = "(body".to_string();
+    for stmt in &c.stmts {
+        s.push(' ');
+        s.push_str(&stmt_a_sexp_source(stmt));
+    }
+    if !c.restricciones.is_empty() {
+        s.push_str(" (restrictions");
+        for r in &c.restricciones {
+            s.push_str(&format!(" ({} {})", r.clave, r.valor));
+        }
+        s.push(')');
+    }
+    s.push(')');
+    s
+}
+
+fn expr_a_sexp_source(expr: &Expr) -> String {
     match expr {
         Expr::Var(v) => v.nombre.clone(),
-        Expr::Lit(l) => literal_a_source(l),
+        Expr::Lit(l) => literal_a_sexp_source(l),
         Expr::BinOp { op, lhs, rhs, .. } => {
             let op_str = match op {
                 BinOp::Add => "+",
@@ -662,47 +635,52 @@ fn expr_a_source(expr: &Expr) -> String {
                 BinOp::Ge => ">=",
                 BinOp::Le => "<=",
             };
-            format!("({} {} {})", expr_a_source(lhs), op_str, expr_a_source(rhs))
+            format!(
+                "({} {} {})",
+                op_str,
+                expr_a_sexp_source(lhs),
+                expr_a_sexp_source(rhs)
+            )
         }
         Expr::AccesoProp { base, prop, .. } => {
-            format!("{}.{}", expr_a_source(base), prop.nombre)
+            format!("(get {} {})", expr_a_sexp_source(base), prop.nombre)
         }
     }
 }
 
-fn literal_a_source(lit: &Literal) -> String {
+fn literal_a_sexp_source(lit: &Literal) -> String {
     match lit {
         Literal::Entero(n) => n.to_string(),
-        Literal::Flotante(f) => f.to_string(),
+        Literal::Flotante(f) => format!("{f:?}"),
         Literal::Texto(s) => {
-            // Escapar para el lexer: \ -> \\, " -> \"
             let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
             format!("\"{}\"", escaped)
         }
-        Literal::Booleano(b) => b.to_string(),
+        Literal::Booleano(true) => "verdadero".to_string(),
+        Literal::Booleano(false) => "falso".to_string(),
     }
 }
 
-fn tipo_a_source(t: &TipoDato) -> String {
+fn tipo_a_sexp_source(t: &TipoDato) -> String {
     match t {
-        TipoDato::Entero64 => "Entero64".to_string(),
-        TipoDato::Flotante64 => "Flotante64".to_string(),
-        TipoDato::Booleano => "Booleano".to_string(),
-        TipoDato::Texto => "Texto".to_string(),
-        TipoDato::CapacidadHardware => "CapacidadHardware".to_string(),
-        TipoDato::Void => "Void".to_string(),
+        TipoDato::Entero64 => "i64".to_string(),
+        TipoDato::Flotante64 => "f64".to_string(),
+        TipoDato::Booleano => "booleano".to_string(),
+        TipoDato::Texto => "texto".to_string(),
+        TipoDato::CapacidadHardware => "capacidad".to_string(),
+        TipoDato::Void => "void".to_string(),
         TipoDato::USD => "USD".to_string(),
         TipoDato::EUR => "EUR".to_string(),
-        TipoDato::Lista(t) => format!("Lista de {}", tipo_a_source(t)),
-        TipoDato::Mapa(k, v) => format!("Mapa de {} a {}", tipo_a_source(k), tipo_a_source(v)),
-        TipoDato::Conjunto(t) => format!("Conjunto de {}", tipo_a_source(t)),
+        TipoDato::Lista(t) => format!("(list {})", tipo_a_sexp_source(t)),
+        TipoDato::Mapa(k, v) => {
+            format!("(map {} {})", tipo_a_sexp_source(k), tipo_a_sexp_source(v))
+        }
+        TipoDato::Conjunto(t) => format!("(set {})", tipo_a_sexp_source(t)),
         TipoDato::Tupla(ts) => {
-            let mut s = "Tupla(".to_string();
-            for (i, t) in ts.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
-                s.push_str(&tipo_a_source(t));
+            let mut s = "(tuple".to_string();
+            for t in ts {
+                s.push(' ');
+                s.push_str(&tipo_a_sexp_source(t));
             }
             s.push(')');
             s

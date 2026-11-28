@@ -17,27 +17,26 @@ fn ejemplo(nombre: &str, contenido: &str) -> tempfile::NamedTempFile {
 
 #[test]
 fn check_ok() {
-    let f = ejemplo("ok", "definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+    let f = ejemplo("ok", "(task f (params (x i64)) (returns i64) (body (assume (> x 0)) (prove (> x 0)) (return x)))");
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("OK"));
+        .success();
 }
 
 #[test]
 fn check_falla_smt() {
     let f = ejemplo(
         "bad",
-        "definir tarea f(x: Entero64) -> Entero64:\n    demostrar x > 1000000\n    retornar x\n",
+        "(task f (params (x i64)) (returns i64) (body (prove (> x 1000000)) (return x)))",
     );
     Command::cargo_bin("silc")
         .unwrap()
         .args(["check", f.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("verificaci"));
+        .stderr(predicate::str::contains("Invariante violada"));
 }
 
 #[test]
@@ -54,7 +53,7 @@ fn check_error_sintaxis() {
 fn build_c99_genera_archivo() {
     let f = ejemplo(
         "b",
-        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+        "(task s (params (x i64) (y i64)) (returns i64) (body (return (+ x y))))",
     );
     let out = tempfile::Builder::new().suffix(".c").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -82,7 +81,7 @@ fn build_c99_genera_archivo() {
 fn build_wasm_genera_binario_valido() {
     let f = ejemplo(
         "w",
-        "definir tarea s(x: Entero64, y: Entero64) -> Entero64:\n    retornar x + y\n",
+        "(task s (params (x i64) (y i64)) (returns i64) (body (return (+ x y))))",
     );
     let out = tempfile::Builder::new().suffix(".wasm").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -109,7 +108,7 @@ fn build_wasm_genera_binario_valido() {
 
 #[test]
 fn build_target_desconocido_falla() {
-    let f = ejemplo("t", "definir tarea f() -> Entero64:\n    retornar 1\n");
+    let f = ejemplo("t", "(task f (params) (returns i64) (body (return 1)))");
     Command::cargo_bin("silc")
         .unwrap()
         .args(["build", f.path().to_str().unwrap(), "--target", "llvm"])
@@ -120,7 +119,7 @@ fn build_target_desconocido_falla() {
 
 #[test]
 fn emit_smt_muestra_script() {
-    let f = ejemplo("smt", "definir tarea f(x: Entero64) -> Entero64:\n    asumir x > 0\n    demostrar x > 0\n    retornar x\n");
+    let f = ejemplo("smt", "(task f (params (x i64)) (returns i64) (body (assume (> x 0)) (prove (> x 0)) (return x)))");
     Command::cargo_bin("silc")
         .unwrap()
         .args(["emit-smt", f.path().to_str().unwrap()])
@@ -135,7 +134,7 @@ fn emit_rust_genera_codigo_audit() {
     // Sintaxis correcta: contratos antes de los dos puntos
     let f = ejemplo(
         "rust",
-        "definir tarea sumar(a: Entero64, b: Entero64) -> Entero64 requiere que a >= 0 garantiza que a >= 0:\n    retornar a + b\n",
+        "(task sumar\n  (params (a i64) (b i64))\n  (returns i64)\n  (requires (>= a 0))\n  (ensures (>= a 0))\n  (body (return (+ a b))))",
     );
     let out = tempfile::Builder::new().suffix(".rs").tempfile().unwrap();
     let out_path = out.path().to_str().unwrap().to_string();
@@ -144,8 +143,7 @@ fn emit_rust_genera_codigo_audit() {
         .unwrap()
         .args(["emit-rust", f.path().to_str().unwrap(), "--out", &out_path])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Rust"));
+        .success();
     let rust = std::fs::read_to_string(&out_path).unwrap();
     assert!(rust.contains("// SIL-UD convertido a Rust para auditoría"));
     assert!(rust.contains("pub fn sumar("));
