@@ -1,3 +1,0 @@
-definir tarea insegura(monto: Entero64) -> Entero64:
-    demostrar monto > 1000000
-    retornar monto
